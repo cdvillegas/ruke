@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppView, OnboardingState } from '@shared/types';
+import type { AppView, OnboardingState, ProtocolType } from '@shared/types';
 
 function loadOnboarding(): OnboardingState {
   try {
@@ -15,6 +15,7 @@ function saveOnboarding(state: OnboardingState) {
 
 interface UiState {
   activeView: AppView;
+  activeProtocol: ProtocolType;
   sidebarWidth: number;
   aiPanelOpen: boolean;
   aiPanelWidth: number;
@@ -23,8 +24,10 @@ interface UiState {
   commandPaletteOpen: boolean;
   theme: 'dark' | 'light';
   onboarding: OnboardingState;
+  aiModeEnabled: boolean;
 
   setActiveView: (view: AppView) => void;
+  setActiveProtocol: (protocol: ProtocolType) => void;
   setSidebarWidth: (w: number) => void;
   toggleAiPanel: () => void;
   setAiPanelOpen: (open: boolean) => void;
@@ -35,10 +38,13 @@ interface UiState {
   setOnboarding: (state: Partial<OnboardingState>) => void;
   completeOnboarding: () => void;
   resetOnboarding: () => void;
+  setAiMode: (enabled: boolean) => void;
+  toggleAiMode: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
   activeView: 'home',
+  activeProtocol: 'rest' as ProtocolType,
   sidebarWidth: 260,
   aiPanelOpen: false,
   aiPanelWidth: 360,
@@ -47,8 +53,10 @@ export const useUiStore = create<UiState>((set) => ({
   commandPaletteOpen: false,
   theme: (localStorage.getItem('ruke:theme') === 'light' ? 'light' : 'dark') as 'dark' | 'light',
   onboarding: loadOnboarding(),
+  aiModeEnabled: localStorage.getItem('ruke:ai_mode') !== 'false',
 
   setActiveView: (view) => set({ activeView: view }),
+  setActiveProtocol: (protocol) => set({ activeProtocol: protocol }),
   setSidebarWidth: (w) => set({ sidebarWidth: w }),
   toggleAiPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
   setAiPanelOpen: (open) => set({ aiPanelOpen: open }),
@@ -72,4 +80,13 @@ export const useUiStore = create<UiState>((set) => ({
     saveOnboarding(initial);
     set({ onboarding: initial });
   },
+  setAiMode: (enabled) => {
+    localStorage.setItem('ruke:ai_mode', String(enabled));
+    set({ aiModeEnabled: enabled });
+  },
+  toggleAiMode: () => set((s) => {
+    const next = !s.aiModeEnabled;
+    localStorage.setItem('ruke:ai_mode', String(next));
+    return { aiModeEnabled: next };
+  }),
 }));

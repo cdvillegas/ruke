@@ -9,6 +9,12 @@ declare global {
       db: { query: (method: string, ...args: any[]) => Promise<any> };
       ai: { chat: (messages: any[], context?: any) => Promise<any>; setKey: (key: string) => Promise<any> };
       agent: { discover: (query: string) => Promise<DiscoveryResult[]> };
+      grpc: {
+        loadProto: (filePath: string) => Promise<any>;
+        sendRequest: (request: any) => Promise<any>;
+        serverReflection: (serverUrl: string, tlsEnabled: boolean) => Promise<any>;
+        cancelStream: (streamId: string) => Promise<any>;
+      };
       file: { export: (data: string) => Promise<any>; import: (filters?: any) => Promise<any> };
       getAppPath: () => Promise<string>;
     };

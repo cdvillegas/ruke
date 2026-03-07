@@ -142,6 +142,98 @@ export interface RukeExport {
   variables: EnvVariable[];
 }
 
+export type ProtocolType = 'rest' | 'graphql' | 'grpc';
+
+export type GrpcMethodType = 'unary' | 'server_streaming' | 'client_streaming' | 'bidi_streaming';
+
+export interface ProtoField {
+  name: string;
+  type: string;
+  repeated: boolean;
+  mapKey?: string;
+  mapValue?: string;
+  oneofGroup?: string;
+  nested?: ProtoField[];
+  enumValues?: string[];
+  comment?: string;
+}
+
+export interface ProtoMessageType {
+  name: string;
+  fullName: string;
+  fields: ProtoField[];
+}
+
+export interface ProtoMethod {
+  name: string;
+  fullName: string;
+  serviceName: string;
+  inputType: string;
+  outputType: string;
+  methodType: GrpcMethodType;
+  inputFields?: ProtoField[];
+  outputFields?: ProtoField[];
+  comment?: string;
+}
+
+export interface ProtoService {
+  name: string;
+  fullName: string;
+  methods: ProtoMethod[];
+  comment?: string;
+}
+
+export interface ProtoDefinition {
+  packageName: string;
+  services: ProtoService[];
+  messageTypes: ProtoMessageType[];
+  filePath: string;
+}
+
+export interface GrpcMetadata {
+  key: string;
+  value: string;
+  enabled: boolean;
+}
+
+export interface GrpcRequest {
+  id: string;
+  collectionId: string | null;
+  name: string;
+  protocol: 'grpc';
+  serverUrl: string;
+  protoFilePath: string;
+  serviceName: string;
+  methodName: string;
+  methodType: GrpcMethodType;
+  message: string;
+  metadata: GrpcMetadata[];
+  tlsEnabled: boolean;
+  deadline?: number;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GrpcStreamMessage {
+  id: string;
+  direction: 'sent' | 'received';
+  data: string;
+  timestamp: string;
+  index: number;
+}
+
+export interface GrpcResponse {
+  status: number;
+  statusMessage: string;
+  metadata: Record<string, string>;
+  trailers: Record<string, string>;
+  body: string;
+  messages: GrpcStreamMessage[];
+  duration: number;
+  timestamp: string;
+}
+
 export type AppView = 'home' | 'request' | 'history' | 'environments' | 'connections' | 'settings';
 
 export interface OnboardingState {
@@ -155,11 +247,14 @@ export interface ApiConnection {
   name: string;
   baseUrl: string;
   specUrl?: string;
-  specType: 'openapi' | 'graphql' | 'manual' | 'imported';
+  specType: 'openapi' | 'graphql' | 'grpc' | 'manual' | 'imported';
   auth: AuthConfig;
   endpoints: ApiEndpoint[];
   description?: string;
   iconColor: string;
+  iconLetter?: string;
+  iconName?: string;
+  protoDefinition?: ProtoDefinition;
   createdAt: string;
   updatedAt: string;
 }
@@ -207,8 +302,9 @@ export interface DiscoveryResult {
   description: string;
   baseUrl: string;
   specUrl?: string;
-  specType: 'openapi' | 'graphql';
+  specType: 'openapi' | 'graphql' | 'grpc';
   endpointCount: number;
   endpoints: ApiEndpoint[];
+  protoDefinition?: ProtoDefinition;
   error?: string;
 }

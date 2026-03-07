@@ -1,15 +1,282 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useRequestStore } from '../../stores/requestStore';
+import { useGrpcStore } from '../../stores/grpcStore';
+import { useEnvironmentStore } from '../../stores/environmentStore';
 import { useUiStore } from '../../stores/uiStore';
 import {
   Plug, Plus, Trash2, Globe, ChevronRight, ChevronDown,
   Search, Play, Upload, Loader2, Check, AlertCircle, Sparkles,
-  FileJson, Send,
+  FileJson, Send, Copy, ExternalLink, Shield,
+  Terminal, Code2, Braces, ChevronUp, Info,
+  Zap, Database, Cloud, Server, Lock, Key, Cpu,
+  Box, Layers, Radio, Wifi, Activity, Heart,
+  Star, Bookmark, Flag, Bell, Mail, MessageSquare,
+  ShoppingCart, CreditCard, Users, User, Map,
+  Camera, Music, Film, Gamepad2, Rocket, Flame,
+  Package, Headphones, Monitor, Smartphone, Tablet,
+  Hash, AtSign, Link, Anchor, Compass, MapPin,
+  Building2, Store, Home, Warehouse, TreePine, Mountain, Waves,
+  Sun, Moon, Leaf, Flower2, Dog, Cat, Bird, Bug, Fish,
+  Plane, Car, Ship, Bike, TrainFront,
+  Coffee, Pizza, Apple, Cake, Utensils, Wine,
+  Palette, Brush, Pencil, Wrench, Cog, SlidersHorizontal,
+  Eye, Microscope, Telescope, Dumbbell, Timer, Hourglass, Calendar,
+  Fingerprint, ShieldCheck, QrCode, Signal, Scan,
+  Award, Trophy, Crown, Target, Gift, PartyPopper,
+  Gem, Diamond, Coins, Wallet, BarChart3, TrendingUp,
+  PieChart, LineChart, Gauge, Mic, Headset, Tv,
+  Image, Aperture, FileCode2, GitBranch, GitMerge,
+  Github, Container, Blocks, Puzzle, Component,
+  LayoutGrid, LayoutDashboard, BookOpen, Library,
+  GraduationCap, Lightbulb, Brain, Atom,
+  Dna, Pill, HeartPulse, Stethoscope, Bone,
+  Globe2, Earth, Orbit, Satellite, Space,
+  Sparkle, Wand2, Ghost, Skull, Bot,
+  HardDrive, CircuitBoard, Binary, Podcast,
+  Navigation, LocateFixed, Receipt, PiggyBank,
+  Scissors, Eraser, Printer, FolderOpen, FolderGit2,
+  Table2, ListChecks, ClipboardList, FileText, Truck,
+  Umbrella, AlarmClock, Popcorn, Clapperboard,
+  Snowflake, Wind, Sprout, Squirrel,
+  BadgeCheck, Medal, Siren,
+  Rabbit, Turtle, Snail, Worm, PawPrint, Shell,
+  Cherry, Grape, Banana, Carrot, Croissant, Sandwich,
+  IceCreamCone, Cookie, Donut, Candy, CupSoda, Martini,
+  Beer, Egg, EggFried, Ham, Drumstick, Beef,
+  CakeSlice, ChefHat, CookingPot,
+  type LucideIcon,
 } from 'lucide-react';
-import { METHOD_COLORS } from '@shared/constants';
-import type { ApiConnection, ApiEndpoint, DiscoveryResult } from '@shared/types';
+import * as Popover from '@radix-ui/react-popover';
+import Markdown from 'react-markdown';
+import { METHOD_COLORS, VARIABLE_REGEX } from '@shared/constants';
+import type { ApiConnection, ApiEndpoint, EndpointParam, DiscoveryResult, GrpcMethodType } from '@shared/types';
 import yaml from 'js-yaml';
+
+const ALL_ICONS: Record<string, LucideIcon> = {
+  Globe, Zap, Database, Cloud, Server, Lock, Key, Rocket,
+  Star, Heart, Shield, Flame, Bot, Sparkle, Wand2,
+  Cpu, Monitor, Smartphone, Tablet, Code2, Terminal, Braces, FileCode2,
+  Container, GitBranch, GitMerge, Github, Blocks, Puzzle, Component,
+  Globe2, Link, AtSign, Hash, Wifi, Signal, Radio, QrCode, Satellite, Earth,
+  ShoppingCart, CreditCard, Coins, Wallet, Store, Package, Truck, Warehouse,
+  BarChart3, TrendingUp, PieChart, LineChart, Gauge, Gift, Receipt, PiggyBank,
+  Mail, MessageSquare, Bell, Mic, Headset, Send, Tv, Podcast,
+  Users, User, GraduationCap, Brain, Lightbulb, Award, Trophy, Crown, Target,
+  BadgeCheck, Medal,
+  Palette, Brush, Pencil, Eraser, Scissors, Camera, Image, Aperture,
+  Sun, Moon, Waves, Mountain, TreePine, Leaf, Flower2, Sprout, Snowflake, Wind,
+  Dog, Cat, Bird, Bug, Fish, Squirrel, Rabbit, Turtle,
+  Snail, Worm, PawPrint, Shell,
+  Plane, Car, Ship, Bike, TrainFront, MapPin, Compass, Anchor, Map,
+  Navigation, LocateFixed,
+  Coffee, Pizza, Apple, Cake, Utensils, Wine, Cherry, Grape,
+  Banana, Carrot, Croissant, Sandwich, IceCreamCone, Cookie, Donut, Candy,
+  CupSoda, Martini, Beer, Egg, EggFried, Ham, Drumstick, Beef,
+  CakeSlice, ChefHat, CookingPot,
+  HeartPulse, Pill, Dna, Atom, Microscope, Telescope, Dumbbell, Activity,
+  Stethoscope, Bone,
+  Wrench, Cog, SlidersHorizontal, Fingerprint, ShieldCheck, Eye, Scan, Siren,
+  LayoutGrid, LayoutDashboard, Layers, Box, BookOpen, Library,
+  FolderOpen, FolderGit2, Table2, ListChecks, ClipboardList, FileText,
+  Home, Building2, Hourglass, Timer, Calendar, AlarmClock, Umbrella,
+  Gem, Diamond, PartyPopper, Popcorn, Clapperboard,
+  Gamepad2, Music, Film, Bookmark, Flag,
+  Headphones, Printer, HardDrive, CircuitBoard, Binary,
+  Ghost, Skull, Plug, Space, Orbit,
+};
+
+const ICON_PALETTE = [
+  '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7',
+  '#ec4899', '#ef4444', '#f97316', '#f59e0b',
+  '#22c55e', '#14b8a6', '#06b6d4', '#0ea5e9',
+  '#64748b', '#78716c', '#a3a3a3', '#ffffff',
+];
+
+export function ConnectionIcon({ conn, size = 'md', className = '' }: {
+  conn: ApiConnection;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  className?: string;
+}) {
+  const dims = { xs: 'w-2 h-2', sm: 'w-7 h-7', md: 'w-10 h-10', lg: 'w-12 h-12' }[size];
+  const textSize = { xs: 'text-[6px]', sm: 'text-[10px]', md: 'text-sm', lg: 'text-lg' }[size];
+  const iconSize = { xs: 6, sm: 10, md: 16, lg: 20 }[size];
+  const rounding = { xs: 'rounded-full', sm: 'rounded-md', md: 'rounded-xl', lg: 'rounded-2xl' }[size];
+
+  if (size === 'xs') {
+    return <div className={`${dims} ${rounding} ${className}`} style={{ background: conn.iconColor }} />;
+  }
+
+  const IconComp = conn.iconName ? ALL_ICONS[conn.iconName] : null;
+  const letter = conn.iconLetter || conn.name.charAt(0).toUpperCase();
+
+  return (
+    <div
+      className={`${dims} ${rounding} flex items-center justify-center shrink-0 text-white font-bold shadow-sm ${className}`}
+      style={{ background: conn.iconColor }}
+    >
+      {IconComp ? <IconComp size={iconSize} strokeWidth={2.5} /> : <span className={textSize}>{letter}</span>}
+    </div>
+  );
+}
+
+function IconCustomizer({ conn }: { conn: ApiConnection }) {
+  const { updateConnection } = useConnectionStore();
+  const [iconSearch, setIconSearch] = useState('');
+  const [symbolMode, setSymbolMode] = useState<'icon' | 'letter'>(conn.iconName ? 'icon' : 'letter');
+  const [letterInput, setLetterInput] = useState(conn.iconLetter || conn.name.charAt(0).toUpperCase());
+
+  const applyIcon = (name: string) => {
+    updateConnection(conn.id, { iconName: name, iconLetter: undefined });
+    setSymbolMode('icon');
+  };
+
+  const applyLetter = (letter: string) => {
+    if (!letter.trim()) return;
+    const val = letter.trim().slice(0, 2).toUpperCase();
+    setLetterInput(val);
+    updateConnection(conn.id, { iconName: undefined, iconLetter: val });
+  };
+
+  const visibleIcons = useMemo(() => {
+    const entries = Object.entries(ALL_ICONS);
+    if (!iconSearch.trim()) return entries;
+    const q = iconSearch.toLowerCase();
+    return entries.filter(([name]) => name.toLowerCase().includes(q));
+  }, [iconSearch]);
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button className="group relative" title="Customize icon">
+          <ConnectionIcon conn={conn} size="md" />
+          <div className="absolute inset-0 rounded-xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            <Sparkles size={14} className="text-white" />
+          </div>
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="start"
+          sideOffset={8}
+          className="z-50 w-[280px] rounded-2xl bg-bg-secondary border border-border shadow-xl p-4 animate-fade-in"
+        >
+          {/* Color */}
+          <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">Color</p>
+          <div className="grid grid-cols-8 gap-1.5 mb-4">
+            {ICON_PALETTE.map((color) => (
+              <button
+                key={color}
+                onClick={() => updateConnection(conn.id, { iconColor: color })}
+                className={`w-7 h-7 rounded-lg transition-all ${
+                  conn.iconColor === color ? 'ring-2 ring-accent ring-offset-2 ring-offset-bg-secondary scale-110' : 'hover:scale-110'
+                } ${color === '#ffffff' ? 'border border-border' : ''}`}
+                style={{ background: color }}
+              />
+            ))}
+          </div>
+
+          {/* Symbol — toggle between Icon and Letter */}
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">Symbol</p>
+            <div className="flex rounded-md bg-bg-tertiary p-0.5 ml-auto">
+              <button
+                onClick={() => setSymbolMode('icon')}
+                className={`px-2.5 py-0.5 rounded text-[9px] font-medium transition-colors ${
+                  symbolMode === 'icon' ? 'bg-bg-secondary text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                Icon
+              </button>
+              <button
+                onClick={() => setSymbolMode('letter')}
+                className={`px-2.5 py-0.5 rounded text-[9px] font-medium transition-colors ${
+                  symbolMode === 'letter' ? 'bg-bg-secondary text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                Letter
+              </button>
+            </div>
+          </div>
+
+          {symbolMode === 'icon' ? (
+            <>
+              <div className="relative mb-2">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
+                <input
+                  type="text"
+                  value={iconSearch}
+                  onChange={(e) => setIconSearch(e.target.value)}
+                  placeholder="Search icons..."
+                  className="w-full pl-7 pr-3 py-1.5 text-[11px] rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+              <div className="h-[168px] overflow-y-auto rounded-lg">
+                <div className="grid grid-cols-8 gap-1.5">
+                  {visibleIcons.map(([name, Icon]) => (
+                    <button
+                      key={name}
+                      onClick={() => applyIcon(name)}
+                      title={name}
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                        conn.iconName === name
+                          ? 'bg-accent text-white'
+                          : 'bg-bg-tertiary text-text-muted hover:text-text-primary hover:bg-bg-hover'
+                      }`}
+                    >
+                      <Icon size={13} />
+                    </button>
+                  ))}
+                </div>
+                {visibleIcons.length === 0 && (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-[10px] text-text-muted">No icons match "{iconSearch}"</p>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="h-[200px] flex flex-col gap-2">
+              <input
+                type="text"
+                maxLength={2}
+                value={letterInput}
+                onChange={(e) => {
+                  const val = e.target.value.toUpperCase();
+                  setLetterInput(val);
+                  if (val.trim()) applyLetter(val);
+                }}
+                placeholder={conn.name.charAt(0).toUpperCase()}
+                className="w-full py-1.5 text-center text-sm font-bold rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+              />
+              <p className="text-[10px] text-text-muted mb-1">Type 1–2 characters, or pick one:</p>
+              <div className="flex-1 overflow-y-auto rounded-lg">
+                <div className="grid grid-cols-8 gap-1.5">
+                  {'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#@&!?+$%'.split('').map((ch) => (
+                    <button
+                      key={ch}
+                      onClick={() => applyLetter(ch)}
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold transition-all ${
+                        !conn.iconName && (conn.iconLetter || conn.name.charAt(0).toUpperCase()) === ch
+                          ? 'bg-accent text-white'
+                          : 'bg-bg-tertiary text-text-muted hover:text-text-primary hover:bg-bg-hover'
+                      }`}
+                    >
+                      {ch}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <Popover.Arrow className="fill-border" />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
 
 const SPEC_SUFFIXES = [
   '/openapi.json', '/openapi.yaml', '/swagger.json',
@@ -119,13 +386,18 @@ function WavePlaceholder({ text, phase }: { text: string; phase: Phase }) {
 
 type ResolveStatus = 'idle' | 'resolving' | 'resolved' | 'error';
 
+interface ResolveStep {
+  text: string;
+  status: 'active' | 'done' | 'failed';
+}
+
 interface ResolveResult {
   name: string;
   description?: string;
   baseUrl: string;
   specUrl?: string;
   endpointCount: number;
-  specType: 'openapi' | 'graphql' | 'manual';
+  specType: 'openapi' | 'graphql' | 'grpc' | 'manual';
   specText?: string;
   discoveryResults?: DiscoveryResult[];
 }
@@ -137,21 +409,72 @@ export function ConnectionsView() {
   const activeConn = connections.find(c => c.id === activeConnectionId);
 
   const handleRunEndpoint = (conn: ApiConnection, endpoint: ApiEndpoint) => {
-    const url = conn.baseUrl + endpoint.path;
+    if (conn.specType === 'grpc') {
+      const parts = endpoint.path.split('/');
+      const methodName = parts.pop() || '';
+      const serviceName = parts.join('/');
+      const proto = conn.protoDefinition;
+      const service = proto?.services.find(s => s.name === serviceName);
+      const method = service?.methods.find(m => m.name === methodName);
+
+      const grpcStore = useGrpcStore.getState();
+      grpcStore.updateActiveRequest({
+        serverUrl: conn.baseUrl,
+        protoFilePath: proto?.filePath || '',
+        serviceName: service?.fullName || serviceName,
+        methodName,
+        methodType: method?.methodType || 'unary',
+        name: endpoint.summary || `${serviceName}.${methodName}`,
+        message: '{}',
+        metadata: [{ key: '', value: '', enabled: true }],
+      });
+
+      if (proto) {
+        grpcStore.setProtoForRequest(proto.filePath, proto);
+      }
+
+      useUiStore.getState().setActiveProtocol('grpc');
+      useUiStore.getState().setActiveView('request');
+      return;
+    }
+
+    const url = conn.specType === 'graphql' ? conn.baseUrl : conn.baseUrl + endpoint.path;
     const store = useRequestStore.getState();
-    store.updateActiveRequest({
-      method: endpoint.method,
-      url,
-      name: endpoint.summary || `${endpoint.method} ${endpoint.path}`,
-      headers: [{ key: '', value: '', enabled: true }],
-      params: (endpoint.parameters || [])
-        .filter(p => p.in === 'query')
-        .map(p => ({ key: p.name, value: '', enabled: true })),
-      body: endpoint.requestBody
-        ? { type: endpoint.requestBody.type, raw: endpoint.requestBody.example || endpoint.requestBody.schema || '' }
-        : { type: 'none' },
-      auth: conn.auth,
-    });
+
+    if (conn.specType === 'graphql') {
+      store.updateActiveRequest({
+        method: 'POST',
+        url,
+        name: endpoint.summary || endpoint.path,
+        headers: [{ key: 'Content-Type', value: 'application/json', enabled: true }],
+        params: [],
+        body: {
+          type: 'graphql',
+          graphql: {
+            query: `{\n  ${endpoint.path} {\n    \n  }\n}`,
+            variables: '{}',
+          },
+        },
+        auth: conn.auth,
+      });
+      useUiStore.getState().setActiveProtocol('graphql');
+    } else {
+      store.updateActiveRequest({
+        method: endpoint.method,
+        url,
+        name: endpoint.summary || `${endpoint.method} ${endpoint.path}`,
+        headers: [{ key: '', value: '', enabled: true }],
+        params: (endpoint.parameters || [])
+          .filter(p => p.in === 'query')
+          .map(p => ({ key: p.name, value: '', enabled: true })),
+        body: endpoint.requestBody
+          ? { type: endpoint.requestBody.type, raw: endpoint.requestBody.example || endpoint.requestBody.schema || '' }
+          : { type: 'none' },
+        auth: conn.auth,
+      });
+      useUiStore.getState().setActiveProtocol('rest');
+    }
+
     useUiStore.getState().setActiveView('request');
   };
 
@@ -185,12 +508,7 @@ export function ConnectionsView() {
                   : 'hover:bg-bg-hover'
               }`}
             >
-              <div
-                className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 text-white text-[10px] font-bold"
-                style={{ background: conn.iconColor }}
-              >
-                {conn.name.charAt(0).toUpperCase()}
-              </div>
+              <ConnectionIcon conn={conn} size="sm" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-text-primary truncate">{conn.name}</p>
                 <p className="text-[9px] text-text-muted font-mono truncate">{conn.baseUrl}</p>
@@ -228,20 +546,53 @@ export function ConnectionsView() {
   );
 }
 
-function SmartAddPanel() {
+export interface QuickExample {
+  label: string;
+  desc: string;
+  type: 'openapi' | 'graphql' | 'grpc';
+  url: string;
+  icon: typeof Globe;
+  color: string;
+}
+
+export function SmartAddPanel({ onConnected, quickExamples }: {
+  onConnected?: (name: string, count: number, type: 'openapi' | 'graphql' | 'grpc') => void;
+  quickExamples?: QuickExample[];
+} = {}) {
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<ResolveStatus>('idle');
-  const [statusText, setStatusText] = useState('');
+  const [steps, setSteps] = useState<ResolveStep[]>([]);
   const [result, setResult] = useState<ResolveResult | null>(null);
   const [error, setError] = useState('');
   const [dragging, setDragging] = useState(false);
   const [manualName, setManualName] = useState('');
   const [manualUrl, setManualUrl] = useState('');
   const [showManual, setShowManual] = useState(false);
+  const [loadingExample, setLoadingExample] = useState<string | null>(null);
+  const [showGrpcSetup, setShowGrpcSetup] = useState(false);
+  const [grpcServerUrl, setGrpcServerUrl] = useState('');
+  const [grpcProtoPath, setGrpcProtoPath] = useState('');
+  const [grpcName, setGrpcName] = useState('');
+  const [grpcLoading, setGrpcLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
-  const { importOpenApiSpec, addConnection, setActiveConnection } = useConnectionStore();
+  const { importOpenApiSpec, importGraphQLEndpoint, importGrpcProto, addConnection, setActiveConnection } = useConnectionStore();
   const placeholder = useWavePlaceholder(CONNECTION_PLACEHOLDERS);
+
+  const addStep = (text: string) => {
+    setSteps(prev => {
+      const updated = prev.map(s => s.status === 'active' ? { ...s, status: 'done' as const } : s);
+      return [...updated, { text, status: 'active' }];
+    });
+  };
+
+  const failActiveStep = () => {
+    setSteps(prev => prev.map(s => s.status === 'active' ? { ...s, status: 'failed' as const } : s));
+  };
+
+  const completeActiveStep = () => {
+    setSteps(prev => prev.map(s => s.status === 'active' ? { ...s, status: 'done' as const } : s));
+  };
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -249,7 +600,7 @@ function SmartAddPanel() {
 
   const reset = () => {
     setStatus('idle');
-    setStatusText('');
+    setSteps([]);
     setResult(null);
     setError('');
     setShowManual(false);
@@ -274,6 +625,63 @@ function SmartAddPanel() {
     return false;
   };
 
+  const tryFetchSpec = async (specUrl: string): Promise<boolean> => {
+    try {
+      addStep(`Fetching spec from ${new URL(specUrl).hostname}...`);
+      const res = await fetch(specUrl, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) { failActiveStep(); return false; }
+      const text = await res.text();
+      if (resolveSpecText(text, specUrl)) {
+        completeActiveStep();
+        return true;
+      }
+      failActiveStep();
+    } catch {
+      failActiveStep();
+    }
+    return false;
+  };
+
+  const handleDiscoveryResults = async (results: DiscoveryResult[], fallbackUrl?: string): Promise<boolean> => {
+    const valid = results.filter(r => !r.error);
+    if (valid.length === 0) return false;
+
+    completeActiveStep();
+
+    for (const r of valid) {
+      if (r.specUrl) {
+        const fetched = await tryFetchSpec(r.specUrl);
+        if (fetched) return true;
+      }
+    }
+
+    const withEndpoints = valid.filter(r => r.endpointCount > 0);
+    if (withEndpoints.length > 0) {
+      setResult({
+        name: withEndpoints[0].name,
+        description: withEndpoints[0].description,
+        baseUrl: withEndpoints[0].baseUrl,
+        specUrl: withEndpoints[0].specUrl,
+        endpointCount: withEndpoints[0].endpointCount,
+        specType: withEndpoints[0].specType,
+        discoveryResults: withEndpoints.length > 1 ? withEndpoints : undefined,
+      });
+      setStatus('resolved');
+      return true;
+    }
+
+    setResult({
+      name: valid[0].name,
+      description: valid[0].description,
+      baseUrl: valid[0].baseUrl || fallbackUrl || '',
+      specType: 'manual',
+      endpointCount: 0,
+      discoveryResults: valid.length > 1 ? valid : undefined,
+    });
+    setStatus('resolved');
+    return true;
+  };
+
   const resolveInput = useCallback(async (raw: string) => {
     const trimmed = raw.trim();
     if (!trimmed) return;
@@ -282,110 +690,98 @@ function SmartAddPanel() {
     setStatus('resolving');
 
     if (isSpecContent(trimmed)) {
-      setStatusText('Parsing spec...');
+      addStep('Parsing spec...');
       await new Promise(r => setTimeout(r, 100));
-      if (resolveSpecText(trimmed)) return;
+      if (resolveSpecText(trimmed)) {
+        completeActiveStep();
+        return;
+      }
+      failActiveStep();
       setStatus('error');
       setError('Could not parse spec. Check the format and try again.');
       return;
     }
 
     if (isUrl(trimmed)) {
+      let hostname: string;
+      try { hostname = new URL(trimmed).hostname.replace(/^www\./, ''); } catch { hostname = trimmed; }
+
       if (isSpecUrl(trimmed)) {
-        setStatusText('Fetching spec...');
+        addStep(`Fetching spec from ${hostname}...`);
         try {
           const res = await fetch(trimmed, { signal: AbortSignal.timeout(10000) });
           const text = await res.text();
-          if (resolveSpecText(text, trimmed)) return;
+          if (resolveSpecText(text, trimmed)) {
+            completeActiveStep();
+            return;
+          }
         } catch {}
+        failActiveStep();
       }
 
-      setStatusText('Probing for API spec...');
+      addStep(`Checking ${hostname} for API documentation...`);
       const probed = await tryProbeSpec(trimmed);
       if (probed) {
-        if (resolveSpecText(JSON.stringify(probed.spec), probed.url)) return;
+        if (resolveSpecText(JSON.stringify(probed.spec), probed.url)) {
+          completeActiveStep();
+          return;
+        }
       }
+      failActiveStep();
 
-      setStatusText('Asking AI to find this API...');
+      addStep(`Looking up known APIs for ${hostname}...`);
       try {
-        let hostname: string;
-        try { hostname = new URL(trimmed).hostname; } catch { hostname = trimmed; }
         const results: DiscoveryResult[] = await window.ruke.agent.discover(
           `Find the API for ${hostname}. The website is ${trimmed}`
         );
-        const valid = results.filter(r => !r.error && r.endpointCount > 0);
-        if (valid.length > 0) {
-          setResult({
-            name: valid[0].name,
-            description: valid[0].description,
-            baseUrl: valid[0].baseUrl,
-            specUrl: valid[0].specUrl,
-            endpointCount: valid[0].endpointCount,
-            specType: valid[0].specType,
-            discoveryResults: valid,
-          });
-          setStatus('resolved');
-          return;
-        }
-
-        const anyResult = results.filter(r => !r.error);
-        if (anyResult.length > 0) {
-          setResult({
-            name: anyResult[0].name,
-            description: anyResult[0].description,
-            baseUrl: anyResult[0].baseUrl || trimmed,
-            specType: 'manual',
-            endpointCount: 0,
-          });
-          setStatus('resolved');
-          return;
-        }
+        if (await handleDiscoveryResults(results, trimmed)) return;
       } catch {}
+      failActiveStep();
+
+      addStep(`Searching the web for ${hostname} API spec...`);
+      await new Promise(r => setTimeout(r, 800));
+      try {
+        const results: DiscoveryResult[] = await window.ruke.agent.discover(
+          `Find the OpenAPI or Swagger spec URL for ${hostname}. Look for their developer documentation or API reference. The main website is ${trimmed}`
+        );
+        if (await handleDiscoveryResults(results, trimmed)) return;
+      } catch {}
+      failActiveStep();
 
       setManualUrl(trimmed);
-      try { setManualName(new URL(trimmed).hostname.replace(/^(www|api)\./, '')); } catch { setManualName(trimmed); }
+      setManualName(hostname.replace(/^api\./, ''));
       setShowManual(true);
       setStatus('error');
-      setError('Could not find an API spec. You can add it manually.');
+      setError(`Could not find an API spec for ${hostname}. You can add it manually.`);
       return;
     }
 
-    setStatusText('Searching for API...');
+    addStep('Thinking...');
+    await new Promise(r => setTimeout(r, 400));
+
+    addStep(`Looking up ${trimmed}...`);
     try {
       const results: DiscoveryResult[] = await window.ruke.agent.discover(trimmed);
-      const valid = results.filter(r => !r.error);
-      if (valid.length > 0) {
-        const withEndpoints = valid.filter(r => r.endpointCount > 0);
-        if (withEndpoints.length > 0) {
-          setResult({
-            name: withEndpoints[0].name,
-            description: withEndpoints[0].description,
-            baseUrl: withEndpoints[0].baseUrl,
-            specUrl: withEndpoints[0].specUrl,
-            endpointCount: withEndpoints[0].endpointCount,
-            specType: withEndpoints[0].specType,
-            discoveryResults: withEndpoints.length > 1 ? withEndpoints : undefined,
-          });
-          setStatus('resolved');
-          return;
-        }
+      if (await handleDiscoveryResults(results)) return;
+      failActiveStep();
+    } catch {
+      failActiveStep();
+    }
 
-        setResult({
-          name: valid[0].name,
-          description: valid[0].description,
-          baseUrl: valid[0].baseUrl,
-          specType: 'manual',
-          endpointCount: 0,
-          discoveryResults: valid.length > 1 ? valid : undefined,
-        });
-        setStatus('resolved');
-        return;
-      }
-    } catch {}
+    addStep(`Searching for ${trimmed} API spec...`);
+    try {
+      const results: DiscoveryResult[] = await window.ruke.agent.discover(
+        `Find the OpenAPI or Swagger spec URL for the ${trimmed} API. Include the direct spec file URL if possible.`
+      );
+      if (await handleDiscoveryResults(results)) return;
+      failActiveStep();
+    } catch {
+      failActiveStep();
+    }
 
     setShowManual(true);
     setStatus('error');
-    setError('Could not find that API. Try pasting a spec URL or adding manually.');
+    setError(`Could not find the ${trimmed} API. Try pasting a spec URL or adding manually.`);
   }, [importOpenApiSpec]);
 
   const handleSubmit = () => {
@@ -405,10 +801,10 @@ function SmartAddPanel() {
   const handleFileContent = async (file: File) => {
     reset();
     setStatus('resolving');
-    setStatusText(`Reading ${file.name}...`);
+    addStep(`Reading ${file.name}...`);
     try {
       const text = await file.text();
-      if (resolveSpecText(text, file.name)) return;
+      if (resolveSpecText(text, file.name)) { completeActiveStep(); return; }
       setStatus('error');
       setError(`Could not parse ${file.name}. Make sure it's a valid OpenAPI/Swagger spec.`);
     } catch {
@@ -447,16 +843,36 @@ function SmartAddPanel() {
     if (result.success && result.content) {
       reset();
       setStatus('resolving');
-      setStatusText('Parsing spec...');
-      if (resolveSpecText(result.content, result.path)) return;
+      addStep('Parsing spec...');
+      if (resolveSpecText(result.content, result.path)) { completeActiveStep(); return; }
       setStatus('error');
       setError('Could not parse the file. Make sure it\'s a valid OpenAPI/Swagger spec.');
+    }
+  };
+
+  const handleBrowseProto = async () => {
+    const result = await window.ruke.file.import([
+      { name: 'Protocol Buffer', extensions: ['proto'] },
+    ]);
+    if (result?.success && result.path) {
+      reset();
+      setStatus('resolving');
+      addStep('Loading .proto file...');
+      setShowGrpcSetup(true);
+      setGrpcProtoPath(result.path);
+      setGrpcName(result.path.split('/').pop()?.replace('.proto', '') || '');
+      completeActiveStep();
+      setStatus('idle');
     }
   };
 
   const selectLatest = () => {
     const conns = useConnectionStore.getState().connections;
     if (conns.length > 0) setActiveConnection(conns[conns.length - 1].id);
+  };
+
+  const notifyConnected = (name: string, endpointCt: number, specType: string) => {
+    onConnected?.(name, endpointCt, specType === 'graphql' ? 'graphql' : 'openapi');
   };
 
   const handleConnect = (r: ResolveResult) => {
@@ -472,12 +888,14 @@ function SmartAddPanel() {
           endpoints: match.endpoints,
         });
         setActiveConnection(conn.id);
+        notifyConnected(match.name, match.endpoints.length, match.specType);
         return;
       }
     }
 
     if (r.endpointCount > 0) {
       selectLatest();
+      notifyConnected(r.name, r.endpointCount, r.specType);
       return;
     }
 
@@ -489,23 +907,72 @@ function SmartAddPanel() {
       description: r.description,
     });
     setActiveConnection(conn.id);
+    notifyConnected(r.name, 0, r.specType);
   };
 
   const handleManualSubmit = () => {
     if (!manualName.trim() || !manualUrl.trim()) return;
     const conn = addConnection({ name: manualName.trim(), baseUrl: manualUrl.trim(), specType: 'manual' });
     setActiveConnection(conn.id);
+    notifyConnected(manualName.trim(), 0, 'manual');
+  };
+
+  const handleGrpcConnect = async () => {
+    if (!grpcServerUrl.trim() || !grpcProtoPath) return;
+    setGrpcLoading(true);
+    try {
+      const conn = await importGrpcProto(grpcServerUrl.trim(), grpcProtoPath, grpcName.trim() || undefined);
+      if (conn) {
+        setActiveConnection(conn.id);
+        onConnected?.(conn.name, conn.endpoints.length, 'openapi');
+        setShowGrpcSetup(false);
+      }
+    } catch (e) {
+      console.error('gRPC import failed:', e);
+    }
+    setGrpcLoading(false);
+  };
+
+  const handleQuickExample = async (example: QuickExample) => {
+    setLoadingExample(example.url);
+    try {
+      if (example.type === 'graphql') {
+        const conn = await importGraphQLEndpoint(example.url, example.label);
+        if (conn) {
+          setActiveConnection(conn.id);
+          notifyConnected(conn.name, conn.endpoints.length, 'graphql');
+        }
+      } else {
+        reset();
+        setStatus('resolving');
+        addStep(`Fetching ${example.label}...`);
+        const res = await fetch(example.url);
+        const text = await res.text();
+        if (resolveSpecText(text, example.url)) {
+          completeActiveStep();
+        } else {
+          failActiveStep();
+          setStatus('error');
+          setError('Failed to import the example spec.');
+        }
+      }
+    } catch {
+      failActiveStep();
+      setStatus('error');
+      setError('Failed to load the example. Check your connection and try again.');
+    }
+    setLoadingExample(null);
   };
 
   return (
     <div
-      className="h-full flex flex-col items-center justify-center"
+      className={onConnected ? '' : 'h-full flex flex-col items-center justify-center'}
       onDragOver={(e) => e.preventDefault()}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="w-full max-w-lg px-8">
+      <div className={onConnected ? 'w-full' : 'w-full max-w-lg px-8'}>
 
         {/* Drop Zone */}
         <div
@@ -554,9 +1021,9 @@ function SmartAddPanel() {
                   {!input && status === 'idle' && (
                     <WavePlaceholder text={placeholder.text} phase={placeholder.phase} />
                   )}
-                  {!input && status === 'resolving' && statusText && (
+                  {!input && status === 'resolving' && steps.length > 0 && (
                     <span className="absolute left-11 text-sm text-text-muted pointer-events-none select-none z-[2]">
-                      {statusText}
+                      {steps[steps.length - 1].text}
                     </span>
                   )}
                   <button
@@ -573,6 +1040,31 @@ function SmartAddPanel() {
                     {status === 'resolving' ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Progress steps */}
+            {steps.length > 0 && (
+              <div className="mt-4 space-y-1.5">
+                {steps.map((step, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-2.5 text-xs transition-opacity duration-300 ${
+                      step.status === 'active' ? 'text-text-primary' : step.status === 'done' ? 'text-text-muted' : 'text-text-muted/50'
+                    }`}
+                  >
+                    {step.status === 'active' && (
+                      <Loader2 size={12} className="animate-spin text-accent shrink-0" />
+                    )}
+                    {step.status === 'done' && (
+                      <Check size={12} className="text-green-400 shrink-0" />
+                    )}
+                    {step.status === 'failed' && (
+                      <span className="w-3 h-3 flex items-center justify-center shrink-0 text-text-muted/40">—</span>
+                    )}
+                    <span className={step.status === 'active' ? 'animate-pulse' : ''}>{step.text}</span>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -601,7 +1093,7 @@ function SmartAddPanel() {
                       </span>
                     )}
                     <span className="shrink-0 px-1.5 py-0.5 rounded bg-bg-tertiary">
-                      {result.specType === 'graphql' ? 'GraphQL' : result.specType === 'manual' ? 'Manual' : 'REST'}
+                      {result.specType === 'graphql' ? 'GraphQL' : result.specType === 'grpc' ? 'gRPC' : result.specType === 'manual' ? 'Manual' : 'REST'}
                     </span>
                   </div>
                   <div className="flex gap-2">
@@ -689,13 +1181,20 @@ function SmartAddPanel() {
         </div>
 
         {/* Secondary actions */}
-        {status === 'idle' && (
+        {status === 'idle' && !showGrpcSetup && (
           <div className="flex items-center justify-center gap-4 mt-4">
             <button
               onClick={handleBrowse}
               className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
             >
               <FileJson size={12} /> Browse spec file
+            </button>
+            <span className="text-border">|</span>
+            <button
+              onClick={handleBrowseProto}
+              className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
+            >
+              <Radio size={12} /> Load .proto
             </button>
             <span className="text-border">|</span>
             <button
@@ -707,7 +1206,341 @@ function SmartAddPanel() {
           </div>
         )}
 
+        {showGrpcSetup && (
+          <div className="mt-4 animate-fade-in">
+            <div className="rounded-xl border border-accent/20 bg-bg-secondary p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Radio size={14} className="text-accent" />
+                <h3 className="text-xs font-semibold text-text-primary">Connect gRPC Service</h3>
+              </div>
+              {grpcProtoPath && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-bg-tertiary border border-border">
+                  <FileJson size={12} className="text-accent shrink-0" />
+                  <span className="text-[10px] font-mono text-text-secondary truncate">{grpcProtoPath}</span>
+                  <button
+                    onClick={handleBrowseProto}
+                    className="ml-auto text-[10px] text-accent hover:text-accent-hover transition-colors shrink-0"
+                  >
+                    Change
+                  </button>
+                </div>
+              )}
+              <input
+                type="text"
+                value={grpcName}
+                onChange={(e) => setGrpcName(e.target.value)}
+                placeholder="Service name (optional)"
+                className="w-full px-3 py-2 text-xs rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+              />
+              <input
+                type="text"
+                value={grpcServerUrl}
+                onChange={(e) => setGrpcServerUrl(e.target.value)}
+                placeholder="Server address — e.g. localhost:50051"
+                className="w-full px-3 py-2 text-xs font-mono rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleGrpcConnect}
+                  disabled={!grpcServerUrl.trim() || !grpcProtoPath || grpcLoading}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white disabled:opacity-50 transition-colors font-medium"
+                >
+                  {grpcLoading ? <Loader2 size={14} className="animate-spin" /> : <Plug size={14} />}
+                  Connect
+                </button>
+                <button
+                  onClick={() => { setShowGrpcSetup(false); setGrpcProtoPath(''); setGrpcServerUrl(''); setGrpcName(''); }}
+                  className="px-4 py-2.5 text-xs rounded-xl bg-bg-tertiary border border-border hover:bg-bg-hover text-text-primary transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quick examples */}
+        {quickExamples && quickExamples.length > 0 && status === 'idle' && (
+          <div className="mt-5">
+            <p className="text-[10px] text-text-muted mb-2.5 text-center">Or try one of these:</p>
+            <div className="flex flex-col gap-1.5">
+              {quickExamples.map((example) => {
+                const isLoading = loadingExample === example.url;
+                return (
+                  <button
+                    key={example.url}
+                    onClick={() => handleQuickExample(example)}
+                    disabled={!!loadingExample}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-bg-secondary/60 border border-border/50 hover:border-accent/30 text-left transition-colors disabled:opacity-60"
+                  >
+                    {isLoading ? (
+                      <Loader2 size={14} className="text-accent shrink-0 animate-spin" />
+                    ) : (
+                      <example.icon size={14} className={`${example.color} shrink-0`} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs text-text-primary font-medium">{example.label}</span>
+                      <span className="block text-[10px] text-text-muted">{example.desc}</span>
+                    </div>
+                    <ChevronRight size={12} className="text-text-muted shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
+    </div>
+  );
+}
+
+function endpointToCurl(conn: ApiConnection, ep: ApiEndpoint): string {
+  if (conn.specType === 'grpc') {
+    const resolveString = useEnvironmentStore.getState().resolveString;
+    const serverUrl = resolveString(conn.baseUrl);
+    return `grpcurl -plaintext \\\n  -d '{}' \\\n  ${serverUrl} \\\n  ${ep.path.replace('/', '.')}`;
+  }
+
+  const resolveString = useEnvironmentStore.getState().resolveString;
+  const baseUrl = resolveString(conn.baseUrl).replace(/\/+$/, '');
+  const url = baseUrl + ep.path;
+
+  const parts = [`curl -X ${ep.method}`];
+
+  const queryParams = ep.parameters?.filter(p => p.in === 'query') || [];
+  const headerParams = ep.parameters?.filter(p => p.in === 'header') || [];
+
+  let fullUrl = url;
+  if (queryParams.length > 0) {
+    const qs = queryParams.map(p => `${encodeURIComponent(p.name)}=\${${p.name}}`).join('&');
+    fullUrl = `${url}?${qs}`;
+  }
+  parts.push(`  '${fullUrl}'`);
+
+  if (conn.auth.type === 'bearer') {
+    parts.push(`  -H 'Authorization: Bearer \${TOKEN}'`);
+  } else if (conn.auth.type === 'basic') {
+    parts.push(`  -u '\${USERNAME}:\${PASSWORD}'`);
+  } else if (conn.auth.type === 'api-key' && conn.auth.apiKey) {
+    if (conn.auth.apiKey.addTo === 'header') {
+      parts.push(`  -H '${conn.auth.apiKey.key}: \${API_KEY}'`);
+    }
+  }
+
+  for (const h of headerParams) {
+    parts.push(`  -H '${h.name}: \${${h.name.toUpperCase().replace(/-/g, '_')}}'`);
+  }
+
+  if (ep.requestBody?.type === 'json') {
+    parts.push(`  -H 'Content-Type: application/json'`);
+    if (ep.requestBody.example) {
+      parts.push(`  -d '${ep.requestBody.example}'`);
+    } else {
+      parts.push(`  -d '{}'`);
+    }
+  }
+
+  return parts.join(' \\\n');
+}
+
+function VariableHighlightedUrl({ url }: { url: string }) {
+  const parts = url.split(VARIABLE_REGEX);
+  if (parts.length <= 1) return <span className="font-mono">{url}</span>;
+
+  return (
+    <span className="font-mono">
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <span key={i} className="text-accent bg-accent/10 rounded px-0.5">{`{{${part}}}`}</span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </span>
+  );
+}
+
+function ParamTable({ params, title }: { params: EndpointParam[]; title: string }) {
+  if (params.length === 0) return null;
+  return (
+    <div>
+      <h4 className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">{title}</h4>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-bg-tertiary text-text-muted">
+              <th className="text-left px-3 py-1.5 font-medium">Name</th>
+              <th className="text-left px-3 py-1.5 font-medium">Type</th>
+              <th className="text-left px-3 py-1.5 font-medium hidden sm:table-cell">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {params.map((p, i) => (
+              <tr key={i} className="border-t border-border">
+                <td className="px-3 py-2">
+                  <code className="text-text-primary font-mono text-[11px]">{p.name}</code>
+                  {p.required && <span className="text-error ml-1 text-[9px]">*</span>}
+                </td>
+                <td className="px-3 py-2 text-text-muted font-mono text-[10px]">{p.type}</td>
+                <td className="px-3 py-2 text-text-muted hidden sm:table-cell">{p.description || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SchemaBlock({ schema, label }: { schema: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(schema);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">{label}</h4>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors"
+        >
+          {copied ? <Check size={10} /> : <Copy size={10} />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre className="rounded-lg bg-bg-tertiary border border-border p-3 overflow-x-auto text-[11px] font-mono text-text-secondary leading-relaxed max-h-64 overflow-y-auto">
+        {schema}
+      </pre>
+    </div>
+  );
+}
+
+const GRPC_METHOD_TYPE_META: Record<string, { label: string; color: string }> = {
+  unary: { label: 'UNARY', color: '#22c55e' },
+  server_streaming: { label: 'S.STRM', color: '#3b82f6' },
+  client_streaming: { label: 'C.STRM', color: '#f59e0b' },
+  bidi_streaming: { label: 'BIDI', color: '#a855f7' },
+};
+
+function EndpointRow({ conn, ep, onRun }: { conn: ApiConnection; ep: ApiEndpoint; onRun: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [curlCopied, setCurlCopied] = useState(false);
+
+  const pathParams = ep.parameters?.filter(p => p.in === 'path') || [];
+  const queryParams = ep.parameters?.filter(p => p.in === 'query') || [];
+  const headerParams = ep.parameters?.filter(p => p.in === 'header') || [];
+  const hasDetails = pathParams.length > 0 || queryParams.length > 0 || headerParams.length > 0
+    || ep.description || ep.requestBody;
+
+  const isGrpc = conn.specType === 'grpc';
+  let grpcMethodType: string | null = null;
+  if (isGrpc && ep.requestBody?.schema) {
+    try {
+      const meta = JSON.parse(ep.requestBody.schema);
+      grpcMethodType = meta.methodType || null;
+    } catch {}
+  }
+  const grpcMeta = grpcMethodType ? GRPC_METHOD_TYPE_META[grpcMethodType] : null;
+
+  const copyCurl = () => {
+    navigator.clipboard.writeText(endpointToCurl(conn, ep));
+    setCurlCopied(true);
+    setTimeout(() => setCurlCopied(false), 1500);
+  };
+
+  return (
+    <div className="border-t border-border">
+      <div
+        className="flex items-center gap-3 px-4 py-2.5 hover:bg-bg-hover transition-colors cursor-pointer group"
+        onClick={() => hasDetails ? setExpanded(!expanded) : onRun()}
+      >
+        {isGrpc && grpcMeta ? (
+          <span
+            className="font-mono font-bold text-[9px] w-14 text-left shrink-0 tracking-wider"
+            style={{ color: grpcMeta.color }}
+          >
+            {grpcMeta.label}
+          </span>
+        ) : (
+          <span
+            className="font-mono font-bold text-[10px] w-14 text-left shrink-0"
+            style={{ color: METHOD_COLORS[ep.method] || '#6b7280' }}
+          >
+            {ep.method}
+          </span>
+        )}
+        <span className="text-xs font-mono text-text-secondary flex-1 truncate">{ep.path}</span>
+        <span className="text-[10px] text-text-muted truncate max-w-[200px] hidden sm:block">{ep.summary}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          {hasDetails && (
+            <span className="text-text-muted">
+              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </span>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onRun(); }}
+            className="p-1 rounded text-text-muted opacity-0 group-hover:opacity-100 hover:text-accent transition-all"
+            title="Try it"
+          >
+            <Play size={12} />
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="px-4 pb-4 space-y-4 bg-bg-primary/50 border-t border-border/50">
+          <div className="pt-3 flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-1 min-w-0 bg-bg-tertiary rounded-lg px-3 py-2 border border-border">
+              <span
+                className="font-mono font-bold text-[10px] shrink-0"
+                style={{ color: METHOD_COLORS[ep.method] || '#6b7280' }}
+              >
+                {ep.method}
+              </span>
+              <span className="text-xs text-text-secondary font-mono truncate">
+                <VariableHighlightedUrl url={conn.baseUrl + ep.path} />
+              </span>
+            </div>
+            <button
+              onClick={copyCurl}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-bg-tertiary border border-border text-[10px] text-text-muted hover:text-text-primary hover:border-border-light transition-colors shrink-0"
+              title={isGrpc ? 'Copy as grpcurl' : 'Copy as cURL'}
+            >
+              {curlCopied ? <Check size={11} className="text-green-400" /> : <Terminal size={11} />}
+              <span>{curlCopied ? 'Copied' : isGrpc ? 'grpcurl' : 'cURL'}</span>
+            </button>
+            <button
+              onClick={onRun}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent text-white text-[10px] font-medium hover:bg-accent-hover transition-colors shrink-0"
+            >
+              <Play size={11} />
+              <span>{isGrpc ? 'Invoke' : 'Try it'}</span>
+            </button>
+          </div>
+
+          {ep.description && (
+            <div className="prose-sm text-xs text-text-secondary leading-relaxed [&_a]:text-accent [&_a]:underline [&_code]:bg-bg-tertiary [&_code]:px-1 [&_code]:rounded [&_code]:text-[11px] [&_code]:font-mono [&_p]:my-1">
+              <Markdown>{ep.description}</Markdown>
+            </div>
+          )}
+
+          <ParamTable params={pathParams} title="Path Parameters" />
+          <ParamTable params={queryParams} title="Query Parameters" />
+          <ParamTable params={headerParams} title="Headers" />
+
+          {ep.requestBody?.schema && (
+            <SchemaBlock schema={ep.requestBody.schema} label="Request Body" />
+          )}
+          {ep.requestBody?.example && (
+            <SchemaBlock schema={ep.requestBody.example} label="Example" />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -720,6 +1553,13 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
   onDelete: () => void;
 }) {
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set(['all']));
+  const [showDescription, setShowDescription] = useState(false);
+  const { environments, activeEnvironmentId } = useEnvironmentStore();
+  const resolveString = useEnvironmentStore((s) => s.resolveString);
+
+  const activeEnv = environments.find(e => e.id === activeEnvironmentId);
+  const resolvedBaseUrl = resolveString(conn.baseUrl);
+  const hasVariables = VARIABLE_REGEX.test(conn.baseUrl);
 
   const filtered = searchQuery
     ? conn.endpoints.filter(ep =>
@@ -728,6 +1568,14 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
         ep.method.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : conn.endpoints;
+
+  const methodCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const ep of conn.endpoints) {
+      counts[ep.method] = (counts[ep.method] || 0) + 1;
+    }
+    return counts;
+  }, [conn.endpoints]);
 
   const tags = Array.from(new Set(filtered.flatMap(ep => ep.tags || ['Other']))).sort();
   const byTag = tags.length > 0
@@ -744,44 +1592,113 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-start justify-between mb-6">
+    <div className="p-6 max-w-4xl">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold"
-            style={{ background: conn.iconColor }}
-          >
-            {conn.name.charAt(0).toUpperCase()}
-          </div>
+          <IconCustomizer conn={conn} />
           <div>
             <h2 className="text-lg font-semibold text-text-primary">{conn.name}</h2>
-            <p className="text-xs text-text-muted font-mono">{conn.baseUrl}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-xs text-text-muted font-mono">
+                {hasVariables ? <VariableHighlightedUrl url={conn.baseUrl} /> : conn.baseUrl}
+              </span>
+              {conn.specUrl && (
+                <a
+                  href={conn.specUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-text-muted hover:text-accent transition-colors"
+                  title="View spec"
+                >
+                  <ExternalLink size={10} />
+                </a>
+              )}
+            </div>
           </div>
         </div>
-        <button
-          onClick={onDelete}
-          className="p-2 rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-colors"
-          title="Remove connection"
-        >
-          <Trash2 size={14} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onDelete}
+            className="p-2 rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-colors"
+            title="Remove connection"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
 
+      {/* Badges Row */}
+      <div className="flex items-center gap-2 flex-wrap mb-5">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-bg-tertiary border border-border text-[10px] text-text-muted">
+          {conn.specType === 'openapi' && <><Code2 size={10} /> OpenAPI</>}
+          {conn.specType === 'graphql' && <><Braces size={10} /> GraphQL</>}
+          {conn.specType === 'grpc' && <><Radio size={10} /> gRPC</>}
+          {conn.specType === 'manual' && <><FileJson size={10} /> Manual</>}
+          {conn.specType === 'imported' && <><FileJson size={10} /> Imported</>}
+        </span>
+
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-bg-tertiary border border-border text-[10px] text-text-muted">
+          {conn.endpoints.length} {conn.specType === 'grpc' ? 'method' : conn.specType === 'graphql' ? 'operation' : 'endpoint'}{conn.endpoints.length !== 1 ? 's' : ''}
+        </span>
+
+        {Object.entries(methodCounts).map(([method, count]) => (
+          <span
+            key={method}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold"
+            style={{ color: METHOD_COLORS[method] || '#6b7280', background: `${METHOD_COLORS[method] || '#6b7280'}15` }}
+          >
+            {count} {method}
+          </span>
+        ))}
+
+        {conn.auth.type !== 'none' && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-green-500/10 border border-green-500/20 text-[10px] text-green-400">
+            <Shield size={10} />
+            {conn.auth.type === 'bearer' ? 'Bearer' : conn.auth.type === 'basic' ? 'Basic' : conn.auth.type === 'api-key' ? 'API Key' : conn.auth.type}
+          </span>
+        )}
+
+        {activeEnv && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent/10 border border-accent/20 text-[10px] text-accent">
+            <Globe size={10} />
+            {activeEnv.name}
+          </span>
+        )}
+      </div>
+
+      {/* Description */}
       {conn.description && (
-        <p className="text-xs text-text-secondary mb-6 leading-relaxed">{conn.description}</p>
+        <div className="mb-5">
+          <button
+            onClick={() => setShowDescription(!showDescription)}
+            className="flex items-center gap-1.5 text-[10px] text-text-muted hover:text-text-primary transition-colors mb-2"
+          >
+            <Info size={10} />
+            <span>{showDescription ? 'Hide description' : 'Show description'}</span>
+            {showDescription ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+          </button>
+          {showDescription && (
+            <div className="rounded-xl bg-bg-secondary border border-border p-4 prose-sm text-xs text-text-secondary leading-relaxed [&_a]:text-accent [&_a]:underline [&_code]:bg-bg-tertiary [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_code]:font-mono [&_p]:my-2 [&_h1]:text-text-primary [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-text-primary [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1.5 [&_h3]:text-text-primary [&_h3]:text-xs [&_h3]:font-medium [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:my-2 [&_li]:my-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-accent/30 [&_blockquote]:pl-3 [&_blockquote]:text-text-muted [&_blockquote]:italic [&_pre]:bg-bg-tertiary [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:overflow-x-auto [&_pre]:my-2">
+              <Markdown>{conn.description}</Markdown>
+            </div>
+          )}
+        </div>
       )}
 
+      {/* Search */}
       <div className="relative mb-4">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search endpoints..."
+          placeholder={`Search ${conn.endpoints.length} ${conn.specType === 'grpc' ? 'methods' : conn.specType === 'graphql' ? 'operations' : 'endpoints'}...`}
           className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
         />
       </div>
 
+      {/* Endpoints */}
       <div className="space-y-2">
         {byTag.map(({ tag, endpoints }) => (
           <div key={tag} className="rounded-xl border border-border overflow-hidden">
@@ -798,21 +1715,12 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
             {expandedTags.has(tag) && (
               <div>
                 {endpoints.map((ep) => (
-                  <button
+                  <EndpointRow
                     key={ep.id}
-                    onClick={() => onRunEndpoint(conn, ep)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 border-t border-border hover:bg-bg-hover transition-colors group text-left"
-                  >
-                    <span
-                      className="font-mono font-bold text-[10px] w-14 text-left shrink-0"
-                      style={{ color: METHOD_COLORS[ep.method] || '#6b7280' }}
-                    >
-                      {ep.method}
-                    </span>
-                    <span className="text-xs font-mono text-text-secondary flex-1 truncate">{ep.path}</span>
-                    <span className="text-[10px] text-text-muted truncate max-w-[200px] hidden sm:block">{ep.summary}</span>
-                    <Play size={12} className="text-text-muted opacity-0 group-hover:opacity-100 shrink-0 transition-opacity" />
-                  </button>
+                    conn={conn}
+                    ep={ep}
+                    onRun={() => onRunEndpoint(conn, ep)}
+                  />
                 ))}
               </div>
             )}

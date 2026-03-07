@@ -3,6 +3,7 @@ import { useRequestStore } from '../../stores/requestStore';
 import { useEnvironmentStore } from '../../stores/environmentStore';
 import { useUiStore } from '../../stores/uiStore';
 import { RequestBuilder } from './RequestBuilder';
+import { GrpcRequestView } from './GrpcRequestView';
 import { ResponseViewer } from '../response/ResponseViewer';
 import { RequestAI } from './RequestAI';
 import { ArrowLeft, Sparkles, X } from 'lucide-react';
@@ -10,7 +11,11 @@ import { ArrowLeft, Sparkles, X } from 'lucide-react';
 export function RequestView() {
   const { openTabs, activeTabId, switchTab, closeTab, activeRequest } = useRequestStore();
   const [showAI, setShowAI] = useState(false);
-  const { setActiveView } = useUiStore();
+  const { setActiveView, activeProtocol } = useUiStore();
+
+  if (activeProtocol === 'grpc') {
+    return <GrpcRequestView />;
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden">

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useUiStore } from '../../stores/uiStore';
 import { useConnectionStore } from '../../stores/connectionStore';
-import { Settings, Lock, Unlock, Moon, Sun, Info, RotateCcw, Plug, Eye, EyeOff, Pencil, Trash2, Check } from 'lucide-react';
+import { useRequestStore } from '../../stores/requestStore';
+import { Settings, Lock, Unlock, Moon, Sun, Info, Plug, Eye, EyeOff, Pencil, Trash2, Check, AlertTriangle, History, Unplug } from 'lucide-react';
+import { ConnectionIcon } from '../connections/ConnectionsView';
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
 
@@ -171,12 +173,124 @@ function ApiKeyCard() {
   );
 }
 
+function ClearDataSection() {
+  const { resetOnboarding } = useUiStore();
+  const connections = useConnectionStore((s) => s.connections);
+  const deleteConnection = useConnectionStore((s) => s.deleteConnection);
+  const clearHistory = useRequestStore((s) => s.clearHistory);
+  const [confirmingAll, setConfirmingAll] = useState(false);
+  const [cleared, setCleared] = useState<string | null>(null);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  function flash(label: string) {
+    setCleared(label);
+    clearTimeout(confirmTimer.current);
+    confirmTimer.current = setTimeout(() => setCleared(null), 2000);
+  }
+
+  async function handleClearHistory() {
+    await clearHistory();
+    flash('history');
+  }
+
+  function handleClearConnections() {
+    const ids = connections.map(c => c.id);
+    ids.forEach(id => deleteConnection(id));
+    flash('connections');
+  }
+
+  function handleClearApiKey() {
+    localStorage.removeItem('ruke:ai_key');
+    window.ruke.ai.setKey('');
+    flash('apikey');
+  }
+
+  function handleClearAll() {
+    if (!confirmingAll) {
+      setConfirmingAll(true);
+      clearTimeout(confirmTimer.current);
+      confirmTimer.current = setTimeout(() => setConfirmingAll(false), 4000);
+      return;
+    }
+    const ids = connections.map(c => c.id);
+    ids.forEach(id => deleteConnection(id));
+    clearHistory();
+    localStorage.removeItem('ruke:ai_key');
+    window.ruke.ai.setKey('');
+    resetOnboarding();
+    window.location.reload();
+  }
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Data</h3>
+      <div className="p-4 rounded-2xl bg-bg-secondary border border-border space-y-2">
+        <button
+          onClick={handleClearHistory}
+          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs rounded-xl hover:bg-bg-hover text-text-secondary transition-colors text-left"
+        >
+          <History size={13} className="text-text-muted shrink-0" />
+          <div className="flex-1">
+            <span className="text-text-primary">Clear request history</span>
+            <span className="block text-[10px] text-text-muted">Removes all saved request/response history</span>
+          </div>
+          {cleared === 'history' && <Check size={13} className="text-success shrink-0" />}
+        </button>
+
+        <button
+          onClick={handleClearConnections}
+          disabled={connections.length === 0}
+          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs rounded-xl hover:bg-bg-hover text-text-secondary transition-colors text-left disabled:opacity-40 disabled:cursor-default"
+        >
+          <Unplug size={13} className="text-text-muted shrink-0" />
+          <div className="flex-1">
+            <span className="text-text-primary">Clear all connections</span>
+            <span className="block text-[10px] text-text-muted">{connections.length} connection{connections.length !== 1 ? 's' : ''} stored</span>
+          </div>
+          {cleared === 'connections' && <Check size={13} className="text-success shrink-0" />}
+        </button>
+
+        <button
+          onClick={handleClearApiKey}
+          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs rounded-xl hover:bg-bg-hover text-text-secondary transition-colors text-left"
+        >
+          <Lock size={13} className="text-text-muted shrink-0" />
+          <div className="flex-1">
+            <span className="text-text-primary">Remove API key</span>
+            <span className="block text-[10px] text-text-muted">Deletes the stored OpenAI key</span>
+          </div>
+          {cleared === 'apikey' && <Check size={13} className="text-success shrink-0" />}
+        </button>
+
+        <div className="border-t border-border pt-2 mt-1">
+          <button
+            onClick={handleClearAll}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs rounded-xl transition-colors text-left ${
+              confirmingAll
+                ? 'bg-error/10 border border-error/20 text-error'
+                : 'hover:bg-error/5 text-text-muted hover:text-error'
+            }`}
+          >
+            <AlertTriangle size={13} className="shrink-0" />
+            <div className="flex-1">
+              <span>{confirmingAll ? 'Click again to confirm' : 'Clear all data and reset'}</span>
+              {!confirmingAll && (
+                <span className="block text-[10px] opacity-70">Removes everything and restarts onboarding</span>
+              )}
+            </div>
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function SettingsView() {
-  const { theme, toggleTheme, resetOnboarding } = useUiStore();
+  const { theme, toggleTheme } = useUiStore();
   const connections = useConnectionStore((s) => s.connections);
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="h-full overflow-y-auto">
       <div className="max-w-lg mx-auto p-8 space-y-8">
         <div className="flex items-center gap-3">
           <Settings size={18} className="text-accent" />
@@ -218,7 +332,7 @@ export function SettingsView() {
               <div className="mt-2 space-y-1">
                 {connections.map(c => (
                   <div key={c.id} className="flex items-center gap-2 text-xs text-text-muted">
-                    <div className="w-2 h-2 rounded-full" style={{ background: c.iconColor }} />
+                    <ConnectionIcon conn={c} size="xs" />
                     <span>{c.name}</span>
                     <span className="text-text-muted">({c.endpoints.length} endpoints)</span>
                   </div>
@@ -229,19 +343,7 @@ export function SettingsView() {
         </section>
 
         {/* Data */}
-        <section className="space-y-3">
-          <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Data</h3>
-          <button
-            onClick={() => {
-              resetOnboarding();
-              window.location.reload();
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 text-xs rounded-2xl bg-bg-secondary border border-border hover:bg-bg-hover text-text-secondary transition-colors"
-          >
-            <RotateCcw size={13} />
-            <span>Reset onboarding</span>
-          </button>
-        </section>
+        <ClearDataSection />
 
         {/* About */}
         <section className="space-y-3">

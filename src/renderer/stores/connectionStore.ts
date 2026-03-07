@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 import yaml from 'js-yaml';
-import type { ApiConnection, ApiEndpoint, HttpMethod } from '@shared/types';
+import type { ApiConnection, ApiEndpoint, HttpMethod, ProtoDefinition } from '@shared/types';
 
 function parseSpec(text: string): any {
   const trimmed = text.trim();
@@ -35,6 +35,8 @@ interface ConnectionState {
   addEndpoints: (connectionId: string, endpoints: ApiEndpoint[]) => void;
   importOpenApiSpec: (specText: string, sourceUrl?: string) => ApiConnection | null;
   importGraphQLEndpoint: (url: string, name?: string) => Promise<ApiConnection | null>;
+  importGrpcProto: (serverUrl: string, filePath: string, name?: string) => Promise<ApiConnection | null>;
+  importGrpcReflection: (serverUrl: string, tlsEnabled: boolean, name?: string) => Promise<ApiConnection | null>;
   getConnection: (id: string) => ApiConnection | undefined;
 }
 
@@ -233,6 +235,102 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       return conn;
     } catch (e) {
       console.error('GraphQL introspection failed:', e);
+      return null;
+    }
+  },
+
+  importGrpcProto: async (serverUrl, filePath, name) => {
+    try {
+      const protoDef: ProtoDefinition = await window.ruke.grpc.loadProto(filePath);
+      if (!protoDef || protoDef.services.length === 0) return null;
+
+      const endpoints: ApiEndpoint[] = [];
+      for (const service of protoDef.services) {
+        for (const method of service.methods) {
+          endpoints.push({
+            id: nanoid(),
+            connectionId: '',
+            method: 'POST' as HttpMethod,
+            path: `${service.name}/${method.name}`,
+            summary: `${method.methodType === 'unary' ? '' : `[${method.methodType}] `}${service.name}.${method.name}`,
+            description: method.comment,
+            tags: [service.name],
+            parameters: (method.inputFields || []).map(f => ({
+              name: f.name,
+              in: 'query' as const,
+              required: false,
+              type: f.repeated ? `repeated ${f.type}` : f.type,
+              description: f.comment,
+            })),
+            requestBody: {
+              type: 'json',
+              schema: JSON.stringify({ inputType: method.inputType, outputType: method.outputType, methodType: method.methodType }, null, 2),
+            },
+          });
+        }
+      }
+
+      const conn = get().addConnection({
+        name: name || protoDef.packageName || filePath.split('/').pop()?.replace('.proto', '') || 'gRPC Service',
+        baseUrl: serverUrl,
+        specType: 'grpc',
+        description: `gRPC — ${protoDef.services.length} service(s), ${endpoints.length} method(s)`,
+        endpoints,
+        protoDefinition: protoDef,
+      });
+
+      const withIds = get().connections.map(c =>
+        c.id === conn.id
+          ? { ...c, endpoints: c.endpoints.map(e => ({ ...e, connectionId: conn.id })) }
+          : c
+      );
+      set({ connections: withIds });
+      saveConnections(withIds);
+      return conn;
+    } catch (e) {
+      console.error('Failed to import gRPC proto:', e);
+      return null;
+    }
+  },
+
+  importGrpcReflection: async (serverUrl, tlsEnabled, name) => {
+    try {
+      const protoDef: ProtoDefinition = await window.ruke.grpc.serverReflection(serverUrl, tlsEnabled);
+      if (!protoDef || protoDef.services.length === 0) return null;
+
+      const endpoints: ApiEndpoint[] = [];
+      for (const service of protoDef.services) {
+        for (const method of service.methods) {
+          endpoints.push({
+            id: nanoid(),
+            connectionId: '',
+            method: 'POST' as HttpMethod,
+            path: `${service.name}/${method.name}`,
+            summary: `${method.methodType ? `[${method.methodType}] ` : ''}${service.fullName}.${method.name}`,
+            tags: [service.name],
+          });
+        }
+      }
+
+      const conn = get().addConnection({
+        name: name || new URL(`http://${serverUrl}`).hostname,
+        baseUrl: serverUrl,
+        specType: 'grpc',
+        description: `gRPC (reflection) — ${protoDef.services.length} service(s)`,
+        endpoints,
+        protoDefinition: protoDef,
+      });
+
+      const withIds = get().connections.map(c =>
+        c.id === conn.id
+          ? { ...c, endpoints: c.endpoints.map(e => ({ ...e, connectionId: conn.id })) }
+          : c
+      );
+      set({ connections: withIds });
+      saveConnections(withIds);
+      return conn;
+    } catch (e) {
+      console.error('gRPC reflection failed:', e);
       return null;
     }
   },

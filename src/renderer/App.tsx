@@ -74,7 +74,7 @@ function AppInner() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg-primary">
       <NavRail />
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 min-h-0 overflow-hidden">
         {activeView === 'home' && <HomeView />}
         {activeView === 'request' && <RequestView />}
         {activeView === 'connections' && <ConnectionsView />}

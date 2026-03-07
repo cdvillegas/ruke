@@ -22,6 +22,17 @@ const api = {
       ipcRenderer.invoke(IPC_CHANNELS.AGENT_DISCOVER, query),
   },
 
+  grpc: {
+    loadProto: (filePath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GRPC_LOAD_PROTO, filePath),
+    sendRequest: (request: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GRPC_SEND_REQUEST, request),
+    serverReflection: (serverUrl: string, tlsEnabled: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GRPC_SERVER_REFLECTION, { serverUrl, tlsEnabled }),
+    cancelStream: (streamId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.GRPC_CANCEL_STREAM, streamId),
+  },
+
   file: {
     export: (data: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EXPORT_FILE, data),

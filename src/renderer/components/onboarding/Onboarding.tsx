@@ -1,66 +1,51 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useUiStore } from '../../stores/uiStore';
-import { useConnectionStore } from '../../stores/connectionStore';
 import {
-  ArrowRight, Sparkles, Globe, Upload, Link,
-  Check, ChevronRight, Loader2, Zap, Send,
+  ArrowRight, Sparkles, Globe, ChevronRight, Zap, Send, Braces,
 } from 'lucide-react';
+import { SmartAddPanel, type QuickExample } from '../connections/ConnectionsView';
+
+const QUICK_EXAMPLES: QuickExample[] = [
+  {
+    label: 'Swagger Petstore',
+    desc: 'Classic REST API — OpenAPI 3.0',
+    type: 'openapi',
+    url: 'https://petstore3.swagger.io/api/v3/openapi.json',
+    icon: Globe,
+    color: 'text-success',
+  },
+  {
+    label: 'GitHub API',
+    desc: 'REST API — OpenAPI 3.0',
+    type: 'openapi',
+    url: 'https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json',
+    icon: Globe,
+    color: 'text-accent',
+  },
+  {
+    label: 'Star Wars API',
+    desc: 'GraphQL — introspection',
+    type: 'graphql',
+    url: 'https://swapi-graphql.netlify.app/graphql',
+    icon: Braces,
+    color: 'text-warning',
+  },
+];
 
 type Step = 'welcome' | 'connect' | 'ready';
 
 export function Onboarding() {
   const [step, setStep] = useState<Step>('welcome');
-  const [specInput, setSpecInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [connected, setConnected] = useState(false);
   const [connectedName, setConnectedName] = useState('');
   const [endpointCount, setEndpointCount] = useState(0);
+  const [connectedType, setConnectedType] = useState<'openapi' | 'graphql' | 'grpc'>('openapi');
   const { completeOnboarding } = useUiStore();
-  const { importOpenApiSpec, addConnection } = useConnectionStore();
 
-  const handleSpecImport = async () => {
-    if (!specInput.trim()) return;
-    setLoading(true);
-
-    let text = specInput.trim();
-    let sourceUrl: string | undefined;
-
-    if (text.startsWith('http')) {
-      sourceUrl = text;
-      try {
-        const res = await fetch(text);
-        text = await res.text();
-      } catch {
-        setLoading(false);
-        return;
-      }
-    }
-
-    const conn = importOpenApiSpec(text, sourceUrl);
-    if (conn) {
-      setConnected(true);
-      setConnectedName(conn.name);
-      setEndpointCount(conn.endpoints.length);
-      setTimeout(() => setStep('ready'), 1200);
-    }
-    setLoading(false);
-  };
-
-  const handleFileImport = async () => {
-    const result = await window.ruke.file.import([
-      { name: 'API Specs', extensions: ['json', 'yaml', 'yml'] },
-    ]);
-    if (result.success && result.content) {
-      setLoading(true);
-      const conn = importOpenApiSpec(result.content, result.path);
-      if (conn) {
-        setConnected(true);
-        setConnectedName(conn.name);
-        setEndpointCount(conn.endpoints.length);
-        setTimeout(() => setStep('ready'), 1200);
-      }
-      setLoading(false);
-    }
+  const handleConnected = (name: string, count: number, type: 'openapi' | 'graphql' | 'grpc') => {
+    setConnectedName(name);
+    setEndpointCount(count);
+    setConnectedType(type);
+    setTimeout(() => setStep('ready'), 1200);
   };
 
   const handleSkipToApp = () => {
@@ -75,7 +60,7 @@ export function Onboarding() {
         <div className="absolute bottom-[20%] right-[20%] w-[400px] h-[400px] bg-accent/[0.03] rounded-full blur-[100px]" />
       </div>
 
-      <div className="relative w-full max-w-md px-8">
+      <div className="relative w-full max-w-lg px-8">
         {/* Progress */}
         <div className="flex items-center gap-2 mb-10 justify-center">
           {['welcome', 'connect', 'ready'].map((s, i) => (
@@ -90,7 +75,7 @@ export function Onboarding() {
 
         {/* Welcome */}
         {step === 'welcome' && (
-          <div className="text-center space-y-8 animate-fade-in">
+          <div className="text-center space-y-8 animate-fade-in max-w-md mx-auto">
             <div>
               <div className="w-16 h-16 rounded-2xl bg-accent flex items-center justify-center mx-auto mb-5">
                 <span className="text-white text-2xl font-bold">R</span>
@@ -104,7 +89,7 @@ export function Onboarding() {
             <div className="space-y-3 text-left">
               {[
                 { icon: Sparkles, color: 'text-accent', title: 'AI-first', desc: 'Describe requests in plain English. AI does the rest.' },
-                { icon: Globe, color: 'text-success', title: 'Spec-native', desc: 'Drop an OpenAPI spec and every endpoint is ready to use.' },
+                { icon: Globe, color: 'text-success', title: 'Spec-native', desc: 'Import OpenAPI or GraphQL specs — every endpoint is ready to use.' },
                 { icon: Zap, color: 'text-warning', title: 'Works offline', desc: 'Everything runs locally. No cloud required. Ever.' },
               ].map((f) => (
                 <div key={f.title} className="flex items-start gap-3 p-3 rounded-xl bg-bg-secondary/60 border border-border/50">
@@ -134,97 +119,37 @@ export function Onboarding() {
           </div>
         )}
 
-        {/* Connect */}
+        {/* Connect — uses the same SmartAddPanel as the main app */}
         {step === 'connect' && (
-          <div className="text-center space-y-6 animate-fade-in">
-            <div>
-              <div className="w-14 h-14 rounded-xl bg-success/10 flex items-center justify-center mx-auto mb-4">
-                <Globe size={24} className="text-success" />
-              </div>
-              <h2 className="text-xl font-bold text-text-primary mb-2">Connect an API</h2>
-              <p className="text-sm text-text-secondary">
-                Paste an OpenAPI spec URL, drop a file, or paste the spec JSON directly.
-              </p>
+          <div className="animate-fade-in space-y-6">
+            <h2 className="text-xl font-bold text-text-primary text-center">Connect your first API</h2>
+
+            <SmartAddPanel
+              onConnected={handleConnected}
+              quickExamples={QUICK_EXAMPLES}
+            />
+
+            <div className="text-center">
+              <button
+                onClick={handleSkipToApp}
+                className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+              >
+                Skip for now
+              </button>
             </div>
-
-            {connected ? (
-              <div className="p-5 rounded-2xl bg-success/10 border border-success/30 animate-fade-in">
-                <Check size={24} className="mx-auto text-success mb-2" />
-                <p className="text-sm font-medium text-success">{connectedName}</p>
-                <p className="text-xs text-success/70">{endpointCount} endpoints imported</p>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-3">
-                  <textarea
-                    value={specInput}
-                    onChange={(e) => setSpecInput(e.target.value)}
-                    placeholder={"Paste a URL like:\nhttps://petstore3.swagger.io/api/v3/openapi.json\n\nOr paste the spec JSON directly..."}
-                    rows={4}
-                    className="w-full px-4 py-3 text-xs font-mono rounded-2xl bg-bg-secondary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent resize-none transition-colors"
-                  />
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleSpecImport}
-                      disabled={loading || !specInput.trim()}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-accent hover:bg-accent-hover text-white text-sm font-medium disabled:opacity-50 transition-colors"
-                    >
-                      {loading ? <Loader2 size={16} className="animate-spin" /> : <Link size={16} />}
-                      <span>Import</span>
-                    </button>
-                    <button
-                      onClick={handleFileImport}
-                      className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-bg-secondary border border-border hover:bg-bg-tertiary text-text-primary text-sm transition-colors"
-                    >
-                      <Upload size={16} />
-                      <span>File</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <p className="text-[10px] text-text-muted mb-2">Try one of these:</p>
-                  <div className="flex flex-col gap-1">
-                    {[
-                      { label: 'Swagger Petstore', url: 'https://petstore3.swagger.io/api/v3/openapi.json' },
-                    ].map((example) => (
-                      <button
-                        key={example.url}
-                        onClick={() => setSpecInput(example.url)}
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-bg-secondary/60 border border-border/50 hover:border-accent/30 text-left transition-colors"
-                      >
-                        <Globe size={12} className="text-accent shrink-0" />
-                        <div>
-                          <span className="text-xs text-text-primary">{example.label}</span>
-                          <span className="block text-[9px] text-text-muted font-mono truncate">{example.url}</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            <button
-              onClick={handleSkipToApp}
-              className="text-xs text-text-muted hover:text-text-secondary transition-colors"
-            >
-              Skip for now
-            </button>
           </div>
         )}
 
         {/* Ready */}
         {step === 'ready' && (
-          <div className="text-center space-y-8 animate-fade-in">
+          <div className="text-center space-y-8 animate-fade-in max-w-md mx-auto">
             <div>
               <div className="w-14 h-14 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-4">
                 <Sparkles size={24} className="text-accent" />
               </div>
               <h2 className="text-xl font-bold text-text-primary mb-2">You're all set</h2>
               <p className="text-sm text-text-secondary max-w-sm mx-auto">
-                {connectedName} is connected with {endpointCount} endpoints.
+                {connectedName} is connected with {endpointCount} {connectedType === 'graphql' ? 'operations' : connectedType === 'grpc' ? 'methods' : 'endpoints'}.
                 Just type what you want to do and Rüke handles the rest.
               </p>
             </div>
@@ -232,11 +157,15 @@ export function Onboarding() {
             <div className="p-4 rounded-2xl bg-bg-secondary border border-border text-left">
               <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">Try typing:</p>
               <div className="space-y-2">
-                {[
+                {(connectedType === 'graphql' ? [
+                  'List all films',
+                  'Get details for Luke Skywalker',
+                  'Show me all starships',
+                ] : [
                   'GET all pets',
                   'Create a new pet named "Max"',
                   'Find pets by status: available',
-                ].map((hint) => (
+                ]).map((hint) => (
                   <div key={hint} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-bg-tertiary border border-border">
                     <Send size={10} className="text-accent shrink-0" />
                     <span className="text-xs text-text-secondary italic">{hint}</span>

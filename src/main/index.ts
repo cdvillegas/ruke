@@ -3,6 +3,7 @@ import path from 'path';
 import { initDatabase } from './db/schema';
 import { createRepository } from './db/repository';
 import { HttpEngine } from './http/engine';
+import { GrpcEngine } from './grpc/engine';
 import { AiService } from './ai/service';
 import { DiscoveryAgent } from './agent/discovery';
 import { IPC_CHANNELS } from '../shared/constants';
@@ -45,6 +46,7 @@ app.whenReady().then(() => {
   const db = initDatabase(dbPath);
   const repo = createRepository(db);
   const httpEngine = new HttpEngine();
+  const grpcEngine = new GrpcEngine();
   const aiService = new AiService();
   const discoveryAgent = new DiscoveryAgent();
 
@@ -102,6 +104,23 @@ app.whenReady().then(() => {
 
   ipcMain.handle(IPC_CHANNELS.GET_APP_PATH, async () => {
     return app.getPath('userData');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GRPC_LOAD_PROTO, async (_event, filePath: string) => {
+    return grpcEngine.loadProto(filePath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GRPC_SEND_REQUEST, async (_event, request) => {
+    return grpcEngine.sendRequest(request);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GRPC_SERVER_REFLECTION, async (_event, { serverUrl, tlsEnabled }) => {
+    return grpcEngine.serverReflection(serverUrl, tlsEnabled);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GRPC_CANCEL_STREAM, async (_event, streamId: string) => {
+    grpcEngine.cancelStream(streamId);
+    return { success: true };
   });
 
   createWindow();
