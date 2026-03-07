@@ -6,7 +6,7 @@ files:
   - dist/**/*
 publish:
   provider: github
-  owner: chrisvillegas
+  owner: cdvillegas
   repo: ruke
 mac:
   target:

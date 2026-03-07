@@ -4,9 +4,9 @@
     <strong>Talk to your APIs. Share with your team. Works offline. Always.</strong>
   </p>
   <p align="center">
-    <a href="https://github.com/chrisvillegas/ruke/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/chrisvillegas/ruke?style=flat-square"></a>
+    <a href="https://github.com/cdvillegas/ruke/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/cdvillegas/ruke?style=flat-square"></a>
     <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"></a>
-    <a href="https://github.com/chrisvillegas/ruke/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/chrisvillegas/ruke/ci.yml?style=flat-square&label=CI"></a>
+    <a href="https://github.com/cdvillegas/ruke/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/cdvillegas/ruke/ci.yml?style=flat-square&label=CI"></a>
   </p>
 </p>
 
@@ -21,7 +21,7 @@ Rüke is an open-source, AI-native API client built to replace Postman. No force
 
 ### Download
 
-Grab the latest release for your platform from [GitHub Releases](https://github.com/chrisvillegas/ruke/releases):
+Grab the latest release for your platform from [GitHub Releases](https://github.com/cdvillegas/ruke/releases):
 
 | Platform | Format |
 |----------|--------|
@@ -32,7 +32,7 @@ Grab the latest release for your platform from [GitHub Releases](https://github.
 ### Build from Source
 
 ```bash
-git clone https://github.com/chrisvillegas/ruke.git
+git clone https://github.com/cdvillegas/ruke.git
 cd ruke
 npm install
 npm run dist
