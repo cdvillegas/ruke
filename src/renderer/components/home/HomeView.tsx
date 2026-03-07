@@ -172,11 +172,12 @@ function isDiscoveryQuery(input: string): boolean {
   return hasKeyword && hasServiceName;
 }
 
-function DiscoveryResults({ results, query, loading, onConnect, onDismiss }: {
+function DiscoveryResults({ results, query, loading, onConnect, onConnectAndExplore, onDismiss }: {
   results: DiscoveryResult[];
   query: string;
   loading: boolean;
   onConnect: (results: DiscoveryResult[]) => void;
+  onConnectAndExplore: (results: DiscoveryResult[]) => void;
   onDismiss: () => void;
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set(results.map((_, i) => i)));
@@ -261,13 +262,22 @@ function DiscoveryResults({ results, query, loading, onConnect, onDismiss }: {
       )}
 
       {!loading && connectable.length > 0 && (
-        <button
-          onClick={() => onConnect(connectable)}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white transition-colors shadow-[0_0_12px_rgba(59,130,246,0.3)]"
-        >
-          <Plug size={14} />
-          Connect {connectable.length === 1 ? connectable[0].name : `${connectable.length} APIs`}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onConnectAndExplore(connectable)}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white transition-colors shadow-[0_0_12px_rgba(59,130,246,0.3)]"
+          >
+            <Plug size={14} />
+            Connect {connectable.length === 1 ? connectable[0].name : `${connectable.length} APIs`}
+          </button>
+          <button
+            onClick={() => onConnect(connectable)}
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs rounded-xl bg-bg-tertiary border border-border hover:bg-bg-hover text-text-primary transition-colors"
+            title="Connect and view in API manager"
+          >
+            <ArrowRight size={13} />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -652,7 +662,7 @@ export function HomeView() {
     setAiStage('');
   };
 
-  const handleConnectDiscovered = (results: DiscoveryResult[]) => {
+  const connectResults = (results: DiscoveryResult[]) => {
     const store = useConnectionStore.getState();
     for (const result of results) {
       if (result.endpoints.length > 0) {
@@ -675,7 +685,17 @@ export function HomeView() {
     }
     setDiscoveryResults(null);
     setDiscoveryQuery('');
+  };
+
+  const handleConnectDiscovered = (results: DiscoveryResult[]) => {
+    connectResults(results);
     setActiveView('connections');
+  };
+
+  const handleConnectAndExplore = (results: DiscoveryResult[]) => {
+    connectResults(results);
+    localStorage.setItem('ruke:explorer_open', 'true');
+    setActiveView('request');
   };
 
   const handleAiInput = async (prompt: string) => {
@@ -781,11 +801,11 @@ export function HomeView() {
 
   return (
     <div
-      className="h-full flex flex-col items-center overflow-y-auto"
+      className="h-full flex flex-col items-center justify-center overflow-y-auto"
       onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
       onDrop={handleFileDrop}
     >
-      <div className="w-full max-w-2xl px-6 pt-16 pb-8 flex flex-col items-center">
+      <div className="w-full max-w-2xl px-6 py-8 flex flex-col items-center">
 
         {/* Mode Toggle + Stats Bar */}
         <div className="w-full flex items-center justify-between mb-3 px-1">
@@ -824,7 +844,7 @@ export function HomeView() {
         </div>
 
         {/* Command Bar */}
-        <div className="w-full relative mb-4">
+        <div className="w-full relative mb-8">
           <div className={`relative flex items-center rounded-2xl ${aiModeEnabled ? 'command-bar-glow' : 'command-bar-search'}`}>
             {aiModeEnabled ? (
               <Sparkles size={16} className="absolute left-4 text-accent z-10" />
@@ -901,6 +921,7 @@ export function HomeView() {
               query={discoveryQuery}
               loading={discoveryLoading}
               onConnect={handleConnectDiscovered}
+              onConnectAndExplore={handleConnectAndExplore}
               onDismiss={() => {
                 setDiscoveryResults(null);
                 setDiscoveryQuery('');
@@ -911,7 +932,7 @@ export function HomeView() {
         )}
 
         {/* Main content when not searching */}
-        {!showDiscovery && !showSearchResults && !showAiThinking && (
+        {!showDiscovery && !showSearchResults && !showAiThinking && !input.trim() && (
           <>
             {/* AI CTA when AI is off */}
             {!aiModeEnabled && connections.length > 0 && (
@@ -956,7 +977,7 @@ export function HomeView() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-2">
-                  {connections.map((conn) => (
+                  {connections.slice(0, 3).map((conn) => (
                     <button
                       key={conn.id}
                       onClick={() => {
@@ -984,6 +1005,14 @@ export function HomeView() {
                       </div>
                     </button>
                   ))}
+                  {connections.length > 3 && (
+                    <button
+                      onClick={() => setActiveView('connections')}
+                      className="flex items-center justify-center py-2 text-[11px] text-text-muted hover:text-accent transition-colors"
+                    >
+                      +{connections.length - 3} more
+                    </button>
+                  )}
                 </div>
               )}
             </div>
