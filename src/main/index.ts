@@ -4,6 +4,7 @@ import { initDatabase } from './db/schema';
 import { createRepository } from './db/repository';
 import { HttpEngine } from './http/engine';
 import { AiService } from './ai/service';
+import { DiscoveryAgent } from './agent/discovery';
 import { IPC_CHANNELS } from '../shared/constants';
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
@@ -45,6 +46,7 @@ app.whenReady().then(() => {
   const repo = createRepository(db);
   const httpEngine = new HttpEngine();
   const aiService = new AiService();
+  const discoveryAgent = new DiscoveryAgent();
 
   ipcMain.handle(IPC_CHANNELS.SEND_REQUEST, async (_event, request) => {
     return httpEngine.send(request);
@@ -64,7 +66,12 @@ app.whenReady().then(() => {
 
   ipcMain.handle(IPC_CHANNELS.AI_SET_KEY, async (_event, key: string) => {
     aiService.setApiKey(key);
+    discoveryAgent.setClient(aiService.getClient());
     return { success: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_DISCOVER, async (_event, query: string) => {
+    return discoveryAgent.discover(query);
   });
 
   ipcMain.handle(IPC_CHANNELS.EXPORT_FILE, async (_event, data: string) => {

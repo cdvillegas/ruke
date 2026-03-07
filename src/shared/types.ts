@@ -1,6 +1,6 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
-export type BodyType = 'none' | 'json' | 'form-data' | 'x-www-form-urlencoded' | 'raw' | 'binary';
+export type BodyType = 'none' | 'json' | 'form-data' | 'x-www-form-urlencoded' | 'raw' | 'binary' | 'graphql';
 
 export type AuthType = 'none' | 'bearer' | 'basic' | 'api-key';
 
@@ -25,6 +25,7 @@ export interface RequestBody {
   formData?: KeyValue[];
   urlEncoded?: KeyValue[];
   binary?: string;
+  graphql?: { query: string; variables: string; operationName?: string };
 }
 
 export interface ApiRequest {
@@ -154,7 +155,7 @@ export interface ApiConnection {
   name: string;
   baseUrl: string;
   specUrl?: string;
-  specType: 'openapi' | 'manual' | 'imported';
+  specType: 'openapi' | 'graphql' | 'manual' | 'imported';
   auth: AuthConfig;
   endpoints: ApiEndpoint[];
   description?: string;
@@ -199,4 +200,15 @@ export interface ThreadEntry {
   request?: ApiRequest;
   response?: ApiResponse;
   timestamp: string;
+}
+
+export interface DiscoveryResult {
+  name: string;
+  description: string;
+  baseUrl: string;
+  specUrl?: string;
+  specType: 'openapi' | 'graphql';
+  endpointCount: number;
+  endpoints: ApiEndpoint[];
+  error?: string;
 }

@@ -38,7 +38,7 @@ export class HttpEngine {
 
       if (!['GET', 'HEAD'].includes(request.method) && request.body.type !== 'none') {
         fetchOptions.body = this.buildBody(request, vars);
-        if (request.body.type === 'json' && !headers['Content-Type']) {
+        if ((request.body.type === 'json' || request.body.type === 'graphql') && !headers['Content-Type']) {
           headers['Content-Type'] = 'application/json';
         }
         if (request.body.type === 'x-www-form-urlencoded' && !headers['Content-Type']) {
@@ -110,6 +110,18 @@ export class HttpEngine {
 
   private buildBody(request: ApiRequest, vars: Record<string, string>): string | undefined {
     switch (request.body.type) {
+      case 'graphql': {
+        const gql = request.body.graphql;
+        if (!gql?.query) return undefined;
+        const payload: Record<string, any> = { query: this.resolveVariables(gql.query, vars) };
+        if (gql.variables) {
+          try { payload.variables = JSON.parse(this.resolveVariables(gql.variables, vars)); } catch {
+            payload.variables = {};
+          }
+        }
+        if (gql.operationName) payload.operationName = gql.operationName;
+        return JSON.stringify(payload);
+      }
       case 'json':
       case 'raw':
         return request.body.raw ? this.resolveVariables(request.body.raw, vars) : undefined;

@@ -8,6 +8,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 const BODY_TYPES: { id: BodyType; label: string }[] = [
   { id: 'none', label: 'None' },
   { id: 'json', label: 'JSON' },
+  { id: 'graphql', label: 'GraphQL' },
   { id: 'form-data', label: 'Form Data' },
   { id: 'x-www-form-urlencoded', label: 'URL Encoded' },
   { id: 'raw', label: 'Raw' },
@@ -16,10 +17,11 @@ const BODY_TYPES: { id: BodyType; label: string }[] = [
 export function BodyEditor() {
   const { activeRequest, setBody } = useRequestStore();
   const body = activeRequest.body;
+  const gql = body.graphql || { query: '', variables: '{}' };
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-1">
+      <div className="flex gap-1 flex-wrap">
         {BODY_TYPES.map((t) => (
           <button
             key={t.id}
@@ -56,6 +58,57 @@ export function BodyEditor() {
               closeBrackets: true,
             }}
           />
+        </div>
+      )}
+
+      {body.type === 'graphql' && (
+        <div className="space-y-3">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs text-text-secondary font-medium">Query</label>
+            </div>
+            <div className="rounded-lg border border-border overflow-hidden">
+              <CodeMirror
+                value={gql.query}
+                onChange={(val) => setBody({ ...body, graphql: { ...gql, query: val } })}
+                theme={oneDark}
+                height="180px"
+                basicSetup={{
+                  lineNumbers: true,
+                  foldGutter: true,
+                  bracketMatching: true,
+                  closeBrackets: true,
+                }}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-text-secondary font-medium block mb-1.5">Variables</label>
+            <div className="rounded-lg border border-border overflow-hidden">
+              <CodeMirror
+                value={gql.variables}
+                onChange={(val) => setBody({ ...body, graphql: { ...gql, variables: val } })}
+                extensions={[json()]}
+                theme={oneDark}
+                height="80px"
+                basicSetup={{
+                  lineNumbers: true,
+                  bracketMatching: true,
+                  closeBrackets: true,
+                }}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-text-secondary font-medium block mb-1.5">Operation Name (optional)</label>
+            <input
+              type="text"
+              value={gql.operationName || ''}
+              onChange={(e) => setBody({ ...body, graphql: { ...gql, operationName: e.target.value || undefined } })}
+              placeholder="e.g. GetUsers"
+              className="w-full px-3 py-2 text-xs rounded-lg bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+            />
+          </div>
         </div>
       )}
 

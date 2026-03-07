@@ -268,6 +268,44 @@ export function initBridge() {
         return { success: true };
       },
     },
+    agent: {
+      discover: async (query: string) => {
+        if (!aiKeyStore) {
+          return [{ name: 'Error', description: 'No API key configured. Add your OpenAI API key in Settings.', baseUrl: '', specType: 'openapi', endpointCount: 0, endpoints: [], error: 'No API key' }];
+        }
+        try {
+          const res = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aiKeyStore}` },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: `You are an API discovery assistant. Given a user query about APIs they want to connect to, return a JSON array of API suggestions.\n\nFor each API, include:\n- name: The official API name\n- description: One-line description\n- specUrl: Direct URL to the OpenAPI/Swagger spec JSON or YAML file (if you know it)\n- docsUrl: URL to the API documentation page\n- baseUrl: The API base URL\n- type: "openapi" or "graphql"\n\nReturn ONLY a JSON array, no other text.\n\nImportant:\n- Only suggest real, existing APIs with correct URLs\n- Prefer official spec URLs from GitHub repos or official documentation\n- If you're unsure of the exact spec URL, provide the docsUrl and baseUrl so the system can probe for common spec paths\n- Include both REST and GraphQL APIs when relevant\n- Return up to 5 results` },
+                { role: 'user', content: query },
+              ],
+              temperature: 0.2,
+              max_tokens: 2000,
+            }),
+          });
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content || '';
+          const jsonMatch = content.match(/\[[\s\S]*\]/);
+          if (!jsonMatch) return [];
+          const suggestions = JSON.parse(jsonMatch[0]);
+          return suggestions.map((s: any) => ({
+            name: s.name,
+            description: s.description,
+            baseUrl: s.baseUrl || '',
+            specUrl: s.specUrl,
+            specType: s.type || 'openapi',
+            endpointCount: 0,
+            endpoints: [],
+          }));
+        } catch (e: any) {
+          return [{ name: 'Error', description: e.message || 'Discovery failed', baseUrl: '', specType: 'openapi', endpointCount: 0, endpoints: [], error: e.message }];
+        }
+      },
+    },
     file: {
       export: async (data: string) => {
         const blob = new Blob([data], { type: 'application/json' });

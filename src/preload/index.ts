@@ -17,6 +17,11 @@ const api = {
       ipcRenderer.invoke(IPC_CHANNELS.AI_SET_KEY, key),
   },
 
+  agent: {
+    discover: (query: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AGENT_DISCOVER, query),
+  },
+
   file: {
     export: (data: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EXPORT_FILE, data),

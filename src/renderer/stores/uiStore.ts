@@ -45,7 +45,7 @@ export const useUiStore = create<UiState>((set) => ({
   activeRequestTab: 'params',
   activeResponseTab: 'body',
   commandPaletteOpen: false,
-  theme: 'dark',
+  theme: (localStorage.getItem('ruke:theme') === 'light' ? 'light' : 'dark') as 'dark' | 'light',
   onboarding: loadOnboarding(),
 
   setActiveView: (view) => set({ activeView: view }),

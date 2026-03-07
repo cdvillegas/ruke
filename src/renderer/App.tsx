@@ -34,10 +34,15 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 }
 
 function AppInner() {
-  const { onboarding, commandPaletteOpen, setCommandPaletteOpen, activeView } = useUiStore();
+  const { onboarding, commandPaletteOpen, setCommandPaletteOpen, activeView, theme } = useUiStore();
   const loadWorkspaces = useCollectionStore((s) => s.loadWorkspaces);
   const loadHistory = useRequestStore((s) => s.loadHistory);
   const loadConnections = useConnectionStore((s) => s.loadConnections);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('ruke:theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     loadWorkspaces();

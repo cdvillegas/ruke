@@ -25,6 +25,7 @@ export const IPC_CHANNELS = {
   DB_RUN: 'db:run',
   AI_CHAT: 'ai:chat',
   AI_SET_KEY: 'ai:set-key',
+  AGENT_DISCOVER: 'agent:discover',
   KEYCHAIN_GET: 'keychain:get',
   KEYCHAIN_SET: 'keychain:set',
   IMPORT_FILE: 'file:import',

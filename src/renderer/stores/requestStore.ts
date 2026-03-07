@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
-import type { ApiRequest, ApiResponse, HttpMethod, KeyValue, RequestBody, AuthConfig, HistoryEntry } from '@shared/types';
+import type { ApiRequest, ApiResponse, HttpMethod, KeyValue, RequestBody, AuthConfig, HistoryEntry, DiscoveryResult } from '@shared/types';
 
 declare global {
   interface Window {
@@ -8,6 +8,7 @@ declare global {
       sendRequest: (req: any) => Promise<ApiResponse>;
       db: { query: (method: string, ...args: any[]) => Promise<any> };
       ai: { chat: (messages: any[], context?: any) => Promise<any>; setKey: (key: string) => Promise<any> };
+      agent: { discover: (query: string) => Promise<DiscoveryResult[]> };
       file: { export: (data: string) => Promise<any>; import: (filters?: any) => Promise<any> };
       getAppPath: () => Promise<string>;
     };

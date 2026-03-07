@@ -9,6 +9,10 @@ export class AiService {
     this.client = new OpenAI({ apiKey: key });
   }
 
+  getClient(): OpenAI | null {
+    return this.client;
+  }
+
   async chat(messages: AiMessage[], context?: string): Promise<{ content: string; error?: string }> {
     if (!this.client) {
       return {

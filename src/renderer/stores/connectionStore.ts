@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
+import yaml from 'js-yaml';
 import type { ApiConnection, ApiEndpoint, HttpMethod } from '@shared/types';
+
+function parseSpec(text: string): any {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return JSON.parse(trimmed);
+  }
+  return yaml.load(trimmed);
+}
 
 const ICON_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#06b6d4', '#f97316'];
 
@@ -25,6 +34,7 @@ interface ConnectionState {
   setActiveConnection: (id: string | null) => void;
   addEndpoints: (connectionId: string, endpoints: ApiEndpoint[]) => void;
   importOpenApiSpec: (specText: string, sourceUrl?: string) => ApiConnection | null;
+  importGraphQLEndpoint: (url: string, name?: string) => Promise<ApiConnection | null>;
   getConnection: (id: string) => ApiConnection | undefined;
 }
 
@@ -87,7 +97,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
 
   importOpenApiSpec: (specText, sourceUrl) => {
     try {
-      const spec = JSON.parse(specText);
+      const spec = parseSpec(specText);
       const title = spec.info?.title || 'Imported API';
       const description = spec.info?.description;
       const version = spec.info?.version;
@@ -161,6 +171,68 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       return conn;
     } catch (e) {
       console.error('Failed to parse OpenAPI spec:', e);
+      return null;
+    }
+  },
+
+  importGraphQLEndpoint: async (url, name) => {
+    const introspectionQuery = `{ __schema { queryType { name } mutationType { name } types { name kind fields { name args { name type { name kind ofType { name } } } } } } }`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: introspectionQuery }),
+      });
+      const json = await res.json();
+      const schema = json.data?.__schema;
+      if (!schema) return null;
+
+      const endpoints: ApiEndpoint[] = [];
+      const queryTypeName = schema.queryType?.name || 'Query';
+      const mutationTypeName = schema.mutationType?.name || 'Mutation';
+
+      for (const type of schema.types || []) {
+        if (type.name.startsWith('__') || !type.fields) continue;
+        const isQuery = type.name === queryTypeName;
+        const isMutation = type.name === mutationTypeName;
+        if (!isQuery && !isMutation) continue;
+
+        for (const field of type.fields) {
+          endpoints.push({
+            id: nanoid(),
+            connectionId: '',
+            method: isMutation ? 'POST' : 'POST',
+            path: field.name,
+            summary: `${isQuery ? 'Query' : 'Mutation'}: ${field.name}`,
+            tags: [isQuery ? 'Queries' : 'Mutations'],
+            parameters: (field.args || []).map((a: any) => ({
+              name: a.name,
+              in: 'query' as const,
+              required: false,
+              type: a.type?.name || a.type?.ofType?.name || 'unknown',
+            })),
+          });
+        }
+      }
+
+      const conn = get().addConnection({
+        name: name || new URL(url).hostname,
+        baseUrl: url,
+        specType: 'graphql',
+        description: `GraphQL API — ${endpoints.length} operations`,
+        endpoints,
+      });
+
+      const withIds = get().connections.map(c =>
+        c.id === conn.id
+          ? { ...c, endpoints: c.endpoints.map(e => ({ ...e, connectionId: conn.id })) }
+          : c
+      );
+      set({ connections: withIds });
+      saveConnections(withIds);
+      return conn;
+    } catch (e) {
+      console.error('GraphQL introspection failed:', e);
       return null;
     }
   },
