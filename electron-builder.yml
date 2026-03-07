@@ -1,0 +1,26 @@
+appId: com.ruke.app
+productName: Rüke
+directories:
+  output: release
+files:
+  - dist/**/*
+publish:
+  provider: github
+  owner: chrisvillegas
+  repo: ruke
+mac:
+  target:
+    - dmg
+    - zip
+  icon: assets/icon.icns
+  category: public.app-category.developer-tools
+win:
+  target: nsis
+  icon: assets/icon.ico
+linux:
+  target: AppImage
+  icon: assets/icon.png
+  category: Development
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
