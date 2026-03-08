@@ -925,68 +925,68 @@ export function AgentPanel() {
 
       {/* Content */}
       {!hasActiveTab ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-4">
-          <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
-            <Sparkles size={18} className="text-text-muted" />
+        <div className="flex-1 flex flex-col items-center justify-center px-6">
+          <div className="w-12 h-12 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-4">
+            <Sparkles size={22} className="text-text-muted" />
           </div>
-          <h2 className="text-sm font-semibold text-text-primary mb-1">Ruke</h2>
-          <p className="text-[11px] text-text-muted/70 text-center max-w-xs mb-4">
+          <h2 className="text-base font-semibold text-text-primary mb-1.5">Ruke</h2>
+          <p className="text-xs text-text-muted/70 text-center max-w-xs mb-5">
             Start a new chat or open one from history
           </p>
           <button
             onClick={newChat}
-            className="flex items-center gap-2 px-3.5 py-2 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white transition-colors font-medium"
+            className="flex items-center gap-2 px-4 py-2.5 text-sm rounded-xl bg-accent hover:bg-accent-hover text-white transition-colors font-medium"
           >
-            <Plus size={13} /> New Chat
+            <Plus size={15} /> New Chat
           </button>
         </div>
       ) : isEmpty && !hasKey ? (
         <div className="flex-1 flex flex-col items-center justify-center px-6">
-          <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center mb-3">
-            <Key size={20} className="text-accent" />
+          <div className="w-12 h-12 rounded-xl bg-accent/15 flex items-center justify-center mb-4">
+            <Key size={22} className="text-accent" />
           </div>
-          <h2 className="text-sm font-semibold text-text-primary mb-1">Connect a provider</h2>
-          <p className="text-xs text-text-muted text-center max-w-xs mb-3">
+          <h2 className="text-base font-semibold text-text-primary mb-1.5">Connect a provider</h2>
+          <p className="text-sm text-text-muted text-center max-w-xs mb-4">
             Add an API key for OpenAI, Anthropic, or Google in Settings to start using the AI assistant.
           </p>
           <button
             onClick={() => useUiStore.getState().setActiveView('settings')}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors"
           >
-            <ArrowRight size={12} /> Settings
+            <ArrowRight size={14} /> Settings
           </button>
         </div>
       ) : isEmpty ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-4">
-          <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
-            <Sparkles size={18} className="text-text-muted" />
+        <div className="flex-1 flex flex-col items-center justify-center px-6">
+          <div className="w-12 h-12 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-4">
+            <Sparkles size={22} className="text-text-muted" />
           </div>
-          <h2 className="text-sm font-semibold text-text-primary mb-1">Ruke</h2>
-          <p className="text-[11px] text-text-muted/70 text-center max-w-[220px] mb-4">
+          <h2 className="text-base font-semibold text-text-primary mb-1.5">Ruke</h2>
+          <p className="text-xs text-text-muted/70 text-center max-w-[240px] mb-5">
             Your API assistant for requests, connections, collections, and more
           </p>
           {connections.length > 0 && (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-bg-secondary/60 border border-border/40 mb-4">
-              <Plug size={10} className="text-text-muted/50" />
-              <span className="text-[10px] text-text-muted/60">
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-secondary/60 border border-border/40 mb-5">
+              <Plug size={12} className="text-text-muted/50" />
+              <span className="text-[11px] text-text-muted/60">
                 {connections.length} API{connections.length !== 1 ? 's' : ''} &middot;{' '}
                 {connections.reduce((sum, c) => sum + c.endpoints.length, 0)} endpoints
               </span>
             </div>
           )}
-          <div className="w-full max-w-xs space-y-1.5">
+          <div className="w-full max-w-sm space-y-2">
             {SUGGESTIONS.map(s => (
               <button
                 key={s.label}
                 onClick={() => handleSuggestion(s.prompt)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-bg-secondary border border-border hover:border-accent/30 hover:bg-bg-hover transition-all text-left group"
+                className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl bg-bg-secondary border border-border hover:border-accent/30 hover:bg-bg-hover transition-all text-left group"
               >
-                <div className="w-7 h-7 rounded-lg bg-bg-tertiary/60 group-hover:bg-accent/10 flex items-center justify-center shrink-0 transition-colors">
-                  <s.icon size={13} className="text-text-muted/50 group-hover:text-accent/70 transition-colors" />
+                <div className="w-8 h-8 rounded-lg bg-bg-tertiary/60 group-hover:bg-accent/10 flex items-center justify-center shrink-0 transition-colors">
+                  <s.icon size={15} className="text-text-muted/50 group-hover:text-accent/70 transition-colors" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-medium text-text-primary">{s.label}</p>
-                  <p className="text-[10px] text-text-muted/50 mt-0.5">{s.desc}</p>
+                  <p className="text-xs font-medium text-text-primary">{s.label}</p>
+                  <p className="text-[11px] text-text-muted/50 mt-0.5">{s.desc}</p>
                 </div>
               </button>
             ))}
@@ -1149,12 +1149,12 @@ export function AgentPanel() {
                 onKeyDown={handleKeyDown}
                 placeholder={
                   isRunning
-                    ? 'Add a follow-up...'
+                    ? 'Add a follow-up'
                     : agentMode === 'ask'
-                      ? 'Ask a question... (@ to add context)'
+                      ? 'What would you like to know?'
                       : agentMode === 'plan'
-                        ? 'Describe what you want to plan... (@ to add context)'
-                        : 'Ask anything... (@ to add context)'
+                        ? 'Describe what you want to plan'
+                        : 'What can I help you build?'
                 }
                 rows={1}
                 className="w-full bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-28"
@@ -1204,40 +1204,55 @@ export function AgentPanel() {
               {/* Left: mode picker + model picker */}
               <div className="flex items-center gap-1">
                 <div ref={modePickerRef} className="relative">
-                  <button
-                    onClick={() => { setShowModePicker(!showModePicker); setShowModelPicker(false); }}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-bg-tertiary text-xs font-medium transition-all text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-                    title={agentMode === 'agent' ? 'Agent mode — can read and modify' : agentMode === 'plan' ? 'Plan mode — creates plans' : 'Ask mode — read-only'}
-                  >
-                    <Infinity size={12} className="shrink-0" />
-                    <span>{agentMode === 'agent' ? 'Agent' : agentMode === 'plan' ? 'Plan' : 'Ask'}</span>
-                    <ChevronDown size={10} className="shrink-0" />
-                  </button>
+                  {(() => {
+                    const modeStyles = {
+                      agent: { bg: 'bg-accent/8', border: 'border-accent/15', text: 'text-accent/80', hover: 'hover:bg-accent/12' },
+                      ask: { bg: 'bg-emerald-500/8', border: 'border-emerald-500/15', text: 'text-emerald-400/80', hover: 'hover:bg-emerald-500/12' },
+                      plan: { bg: 'bg-amber-500/8', border: 'border-amber-500/15', text: 'text-amber-400/80', hover: 'hover:bg-amber-500/12' },
+                    };
+                    const s = modeStyles[agentMode];
+                    return (
+                      <button
+                        onClick={() => { setShowModePicker(!showModePicker); setShowModelPicker(false); }}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all ${s.bg} ${s.border} ${s.text} ${s.hover}`}
+                        title={agentMode === 'agent' ? 'Agent mode — can read and modify' : agentMode === 'plan' ? 'Plan mode — creates plans' : 'Ask mode — read-only'}
+                      >
+                        {agentMode === 'agent' && <Infinity size={12} className="shrink-0" />}
+                        {agentMode === 'ask' && <Eye size={12} className="shrink-0" />}
+                        {agentMode === 'plan' && <ListChecks size={12} className="shrink-0" />}
+                        <span>{agentMode === 'agent' ? 'Agent' : agentMode === 'plan' ? 'Plan' : 'Ask'}</span>
+                        <ChevronDown size={10} className="shrink-0 opacity-60" />
+                      </button>
+                    );
+                  })()}
 
                   {showModePicker && (
-                    <div className="absolute bottom-full left-0 mb-1.5 w-48 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in">
+                    <div className="absolute bottom-full left-0 mb-1.5 w-52 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in">
                       {([
-                        { mode: 'agent' as const, icon: Bot, label: 'Agent', desc: 'Can modify your workspace' },
-                        { mode: 'ask' as const, icon: Eye, label: 'Ask', desc: 'Read-only, answers questions' },
-                        { mode: 'plan' as const, icon: ListChecks, label: 'Plan', desc: 'Creates plans, no execution' },
-                      ]).map(opt => (
-                        <button
-                          key={opt.mode}
-                          onClick={() => { setAgentMode(opt.mode); setShowModePicker(false); }}
-                          className={`w-full flex items-center justify-between px-3 py-1.5 text-xs transition-colors ${
-                            agentMode === opt.mode ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <opt.icon size={12} />
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">{opt.label}</span>
-                              <span className="text-[10px] text-text-muted">{opt.desc}</span>
+                        { mode: 'agent' as const, icon: Bot, label: 'Agent', desc: 'Can modify your workspace', color: 'text-accent/80', activeBg: 'bg-accent/8' },
+                        { mode: 'ask' as const, icon: Eye, label: 'Ask', desc: 'Read-only, answers questions', color: 'text-emerald-400/80', activeBg: 'bg-emerald-500/8' },
+                        { mode: 'plan' as const, icon: ListChecks, label: 'Plan', desc: 'Creates plans, no execution', color: 'text-amber-400/80', activeBg: 'bg-amber-500/8' },
+                      ]).map(opt => {
+                        const isActive = agentMode === opt.mode;
+                        return (
+                          <button
+                            key={opt.mode}
+                            onClick={() => { setAgentMode(opt.mode); setShowModePicker(false); }}
+                            className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors ${
+                              isActive ? `${opt.activeBg} ${opt.color}` : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <opt.icon size={13} className={isActive ? opt.color : 'text-text-muted'} />
+                              <div className="flex flex-col items-start">
+                                <span className="font-medium">{opt.label}</span>
+                                <span className="text-[10px] text-text-muted">{opt.desc}</span>
+                              </div>
                             </div>
-                          </div>
-                          {agentMode === opt.mode && <Check size={11} className="shrink-0" />}
-                        </button>
-                      ))}
+                            {isActive && <Check size={11} className="shrink-0" />}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1321,13 +1336,13 @@ export function AgentPanel() {
                   <button
                     onClick={handleSend}
                     disabled={!canSend}
-                    className={`shrink-0 p-1 rounded-lg transition-all ${
+                    className={`shrink-0 p-2 rounded-lg transition-all ${
                       canSend
                         ? 'bg-accent hover:bg-accent-hover text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]'
                         : 'bg-accent/20 text-white/30 cursor-not-allowed'
                     }`}
                   >
-                    <Send size={12} />
+                    <Send size={14} />
                   </button>
                 )}
               </div>
