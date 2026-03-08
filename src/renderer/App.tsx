@@ -1,4 +1,4 @@
-import { useEffect, useCallback, Component, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, Component, type ReactNode } from 'react';
 import { useUiStore } from './stores/uiStore';
 import { useCollectionStore } from './stores/collectionStore';
 import { useRequestStore } from './stores/requestStore';
@@ -11,7 +11,14 @@ import { SettingsView } from './components/settings/SettingsView';
 import { NavRail } from './components/layout/NavRail';
 import { Onboarding } from './components/onboarding/Onboarding';
 import { CommandPalette } from './components/layout/CommandPalette';
+import { AgentPanel } from './components/requests/AgentPanel';
 import { useEnvironmentStore } from './stores/environmentStore';
+import { Sparkles } from 'lucide-react';
+
+const AGENT_WIDTH_KEY = 'ruke:agent_panel_width';
+const DEFAULT_AGENT_WIDTH = 380;
+const MIN_AGENT_WIDTH = 280;
+const MAX_AGENT_WIDTH = 700;
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -95,6 +102,13 @@ function AppInner() {
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const saveSidebarWidth = useUiStore((s) => s.saveSidebarWidth);
+  const showAgent = useUiStore((s) => s.aiPanelOpen);
+  const toggleAgent = useUiStore((s) => s.toggleAiPanel);
+
+  const [agentWidth, setAgentWidth] = useState(() => {
+    const stored = localStorage.getItem(AGENT_WIDTH_KEY);
+    return stored ? Math.max(MIN_AGENT_WIDTH, Math.min(MAX_AGENT_WIDTH, Number(stored))) : DEFAULT_AGENT_WIDTH;
+  });
 
   const handleSidebarResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -117,6 +131,30 @@ function AppInner() {
     document.addEventListener('mouseup', onUp);
   }, [setSidebarWidth, saveSidebarWidth]);
 
+  const handleAgentResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    let lastX = e.clientX;
+    const onMove = (ev: MouseEvent) => {
+      const delta = lastX - ev.clientX;
+      lastX = ev.clientX;
+      setAgentWidth(prev => Math.max(MIN_AGENT_WIDTH, Math.min(MAX_AGENT_WIDTH, prev + delta)));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setAgentWidth(prev => {
+        localStorage.setItem(AGENT_WIDTH_KEY, String(prev));
+        return prev;
+      });
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
+
   if (!onboarding.completed) {
     return <Onboarding />;
   }
@@ -126,27 +164,57 @@ function AppInner() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg-primary">
       <NavRail />
-      <main className="flex-1 min-h-0 overflow-hidden flex">
-        {hasSidebar && (
-          <div className="flex shrink-0" style={{ width: sidebarWidth }}>
-            <div className="flex-1 min-w-0 h-full flex flex-col bg-bg-secondary">
-              {(activeView === 'chats' || activeView === 'requests') && <RequestSidebar />}
-              {activeView === 'connections' && <ConnectionsSidebar />}
-              {activeView === 'environments' && <EnvironmentsSidebar />}
+      <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
+        <div className="flex items-center justify-end px-4 py-2 border-b border-border shrink-0 bg-bg-secondary/40">
+          <button
+            onClick={toggleAgent}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+              showAgent
+                ? 'bg-accent/10 border-accent/30 text-accent'
+                : 'bg-bg-tertiary border-border text-text-muted hover:bg-bg-hover hover:text-text-primary'
+            }`}
+          >
+            <Sparkles size={12} />
+            AI Assist
+          </button>
+        </div>
+
+        <div className="flex-1 flex overflow-hidden min-h-0">
+          {hasSidebar && (
+            <div className="flex shrink-0" style={{ width: sidebarWidth }}>
+              <div className="flex-1 min-w-0 h-full flex flex-col bg-bg-secondary">
+                {(activeView === 'chats' || activeView === 'requests') && <RequestSidebar />}
+                {activeView === 'connections' && <ConnectionsSidebar />}
+                {activeView === 'environments' && <EnvironmentsSidebar />}
+              </div>
+              <div
+                onMouseDown={handleSidebarResize}
+                className="w-1 bg-border hover:bg-accent/40 cursor-col-resize shrink-0 group flex items-center justify-center transition-colors"
+              >
+                <div className="h-8 w-0.5 rounded-full bg-text-muted/20 group-hover:bg-accent/60 transition-colors" />
+              </div>
             </div>
-            <div
-              onMouseDown={handleSidebarResize}
-              className="w-1 bg-border hover:bg-accent/40 cursor-col-resize shrink-0 group flex items-center justify-center transition-colors"
-            >
-              <div className="h-8 w-0.5 rounded-full bg-text-muted/20 group-hover:bg-accent/60 transition-colors" />
-            </div>
+          )}
+          <div className="flex-1 min-w-0 overflow-hidden">
+            {(activeView === 'chats' || activeView === 'requests') && <RequestsView />}
+            {activeView === 'connections' && <ConnectionsMain />}
+            {activeView === 'environments' && <EnvironmentsMain />}
+            {activeView === 'settings' && <SettingsView />}
           </div>
-        )}
-        <div className="flex-1 min-w-0 overflow-hidden">
-          {(activeView === 'chats' || activeView === 'requests') && <RequestsView />}
-          {activeView === 'connections' && <ConnectionsMain />}
-          {activeView === 'environments' && <EnvironmentsMain />}
-          {activeView === 'settings' && <SettingsView />}
+
+          {showAgent && (
+            <div className="flex shrink-0" style={{ width: agentWidth }}>
+              <div
+                onMouseDown={handleAgentResize}
+                className="w-1 bg-border hover:bg-accent/40 cursor-col-resize shrink-0 group flex items-center justify-center transition-colors"
+              >
+                <div className="h-8 w-0.5 rounded-full bg-text-muted/20 group-hover:bg-accent/60 transition-colors" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <AgentPanel />
+              </div>
+            </div>
+          )}
         </div>
       </main>
       {commandPaletteOpen && <CommandPalette />}

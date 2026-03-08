@@ -14,6 +14,20 @@ function saveOnboarding(state: OnboardingState) {
   localStorage.setItem('ruke:onboarding', JSON.stringify(state));
 }
 
+const AI_CREATED_KEY = 'ruke:ai_created';
+
+function loadAiCreated(): string[] {
+  try {
+    const saved = localStorage.getItem(AI_CREATED_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return [];
+}
+
+function saveAiCreated(items: string[]) {
+  localStorage.setItem(AI_CREATED_KEY, JSON.stringify(items));
+}
+
 const SIDEBAR_WIDTH_KEY = 'ruke:sidebar_width';
 const DEFAULT_SIDEBAR_WIDTH = 256;
 const MIN_SIDEBAR_WIDTH = 180;
@@ -40,6 +54,7 @@ interface UiState {
   onboarding: OnboardingState;
   aiModeEnabled: boolean;
   viewBadges: Partial<Record<AppView, number>>;
+  aiCreatedItems: string[];
 
   setActiveView: (view: AppView) => void;
   setActiveProtocol: (protocol: ProtocolType) => void;
@@ -58,6 +73,8 @@ interface UiState {
   toggleAiMode: () => void;
   incrementBadge: (view: AppView) => void;
   clearBadge: (view: AppView) => void;
+  markAiCreated: (id: string) => void;
+  clearAiCreated: (id: string) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -73,6 +90,7 @@ export const useUiStore = create<UiState>((set) => ({
   onboarding: loadOnboarding(),
   aiModeEnabled: localStorage.getItem('ruke:ai_mode') !== 'false',
   viewBadges: {},
+  aiCreatedItems: loadAiCreated(),
 
   setActiveView: (view) => set((s) => ({
     activeView: view,
@@ -133,4 +151,15 @@ export const useUiStore = create<UiState>((set) => ({
   clearBadge: (view) => set((s) => ({
     viewBadges: { ...s.viewBadges, [view]: 0 },
   })),
+  markAiCreated: (id) => set((s) => {
+    if (s.aiCreatedItems.includes(id)) return {};
+    const next = [...s.aiCreatedItems, id];
+    saveAiCreated(next);
+    return { aiCreatedItems: next };
+  }),
+  clearAiCreated: (id) => set((s) => {
+    const next = s.aiCreatedItems.filter(i => i !== id);
+    saveAiCreated(next);
+    return { aiCreatedItems: next };
+  }),
 }));

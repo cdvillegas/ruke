@@ -98,9 +98,16 @@ function RequestItem({
   collections: { id: string; name: string }[];
 }) {
   const selectRequest = useRequestStore(s => s.selectRequest);
+  const isAiCreated = useUiStore(s => s.aiCreatedItems.includes(req.id));
+  const clearAiCreated = useUiStore(s => s.clearAiCreated);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(req.name);
+
+  const handleSelect = () => {
+    if (isAiCreated) clearAiCreated(req.id);
+    selectRequest(req);
+  };
 
   const handleRename = async () => {
     const trimmed = renameValue.trim();
@@ -123,7 +130,7 @@ function RequestItem({
   return (
     <div className="relative group" draggable={!isRenaming} onDragStart={handleDragStart}>
       <button
-        onClick={() => selectRequest(req)}
+        onClick={handleSelect}
         className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
           isActive
             ? 'bg-accent/10 text-text-primary'
@@ -131,6 +138,9 @@ function RequestItem({
         }`}
       >
         <div className="flex items-center gap-2">
+          {isAiCreated && (
+            <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
+          )}
           <span
             className="font-mono font-bold text-[9px] w-7 shrink-0"
             style={{ color: METHOD_COLORS[req.method] || '#6b7280' }}
@@ -308,6 +318,8 @@ function CollectionNode({
   const renameCollection = useCollectionStore((s) => s.renameCollection);
   const deleteRequest = useRequestStore((s) => s.deleteRequest);
   const moveToCollection = useRequestStore((s) => s.moveToCollection);
+  const isAiCreated = useUiStore(s => s.aiCreatedItems.includes(node.collection.id));
+  const clearAiCreated = useUiStore(s => s.clearAiCreated);
   const isExpanded = expandedIds.includes(node.collection.id);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(node.collection.name);
@@ -363,11 +375,14 @@ function CollectionNode({
             : 'hover:bg-bg-hover'
         }`}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
-        onClick={() => toggleExpanded(node.collection.id)}
+        onClick={() => { if (isAiCreated) clearAiCreated(node.collection.id); toggleExpanded(node.collection.id); }}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {isAiCreated && (
+          <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
+        )}
         <span className="text-text-muted shrink-0">
           {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>

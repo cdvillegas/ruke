@@ -5,13 +5,7 @@ import { useCollectionStore } from '../../stores/collectionStore';
 import { RequestBuilder } from '../request/RequestBuilder';
 import { GrpcRequestView } from '../request/GrpcRequestView';
 import { ResponseViewer } from '../response/ResponseViewer';
-import { AgentPanel } from './AgentPanel';
-import { Send, FolderPlus, Plus, Sparkles } from 'lucide-react';
-
-const AGENT_WIDTH_KEY = 'ruke:agent_panel_width';
-const DEFAULT_AGENT_WIDTH = 380;
-const MIN_AGENT_WIDTH = 280;
-const MAX_AGENT_WIDTH = 700;
+import { Send, FolderPlus, Plus } from 'lucide-react';
 
 function EmptyState() {
   const newRequest = useRequestStore((s) => s.newRequest);
@@ -120,84 +114,17 @@ function ResizableSplit() {
 
 export function RequestsView() {
   const activeProtocol = useUiStore((s) => s.activeProtocol);
-  const showAgent = useUiStore((s) => s.aiPanelOpen);
-  const toggleAgent = useUiStore((s) => s.toggleAiPanel);
   const hasActiveRequest = useRequestStore((s) => s.hasSelection);
-
-  const [agentWidth, setAgentWidth] = useState(() => {
-    const stored = localStorage.getItem(AGENT_WIDTH_KEY);
-    return stored ? Math.max(MIN_AGENT_WIDTH, Math.min(MAX_AGENT_WIDTH, Number(stored))) : DEFAULT_AGENT_WIDTH;
-  });
-
-  const handleAgentResize = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    let lastX = e.clientX;
-    const onMove = (ev: MouseEvent) => {
-      const delta = lastX - ev.clientX;
-      lastX = ev.clientX;
-      setAgentWidth(prev => {
-        const next = Math.max(MIN_AGENT_WIDTH, Math.min(MAX_AGENT_WIDTH, prev + delta));
-        return next;
-      });
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      setAgentWidth(prev => {
-        localStorage.setItem(AGENT_WIDTH_KEY, String(prev));
-        return prev;
-      });
-    };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, []);
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Persistent heading bar */}
-      <div className="flex items-center justify-end px-4 py-2 border-b border-border shrink-0 bg-bg-secondary/40">
-        <button
-          onClick={toggleAgent}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-            showAgent
-              ? 'bg-accent/10 border-accent/30 text-accent'
-              : 'bg-bg-tertiary border-border text-text-muted hover:bg-bg-hover hover:text-text-primary'
-          }`}
-        >
-          <Sparkles size={12} />
-          AI Assist
-        </button>
-      </div>
-
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          {!hasActiveRequest ? (
-            <EmptyState />
-          ) : activeProtocol === 'grpc' ? (
-            <GrpcRequestView />
-          ) : (
-            <ResizableSplit />
-          )}
-        </div>
-
-        {showAgent && (
-          <div className="flex shrink-0" style={{ width: agentWidth }}>
-            <div
-              onMouseDown={handleAgentResize}
-              className="w-1 bg-border hover:bg-accent/40 cursor-col-resize shrink-0 group flex items-center justify-center transition-colors"
-            >
-              <div className="h-8 w-0.5 rounded-full bg-text-muted/20 group-hover:bg-accent/60 transition-colors" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <AgentPanel />
-            </div>
-          </div>
-        )}
-      </div>
+      {!hasActiveRequest ? (
+        <EmptyState />
+      ) : activeProtocol === 'grpc' ? (
+        <GrpcRequestView />
+      ) : (
+        <ResizableSplit />
+      )}
     </div>
   );
 }

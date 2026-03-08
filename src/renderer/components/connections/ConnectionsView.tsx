@@ -444,6 +444,8 @@ interface ResolveResult {
 
 export function ConnectionsSidebar() {
   const { connections, activeConnectionId, setActiveConnection, searchQuery, setSearchQuery } = useConnectionStore();
+  const aiCreatedItems = useUiStore(s => s.aiCreatedItems);
+  const clearAiCreated = useUiStore(s => s.clearAiCreated);
 
   return (
     <>
@@ -477,13 +479,16 @@ export function ConnectionsSidebar() {
         ).map((conn) => (
           <button
             key={conn.id}
-            onClick={() => setActiveConnection(conn.id)}
+            onClick={() => { if (aiCreatedItems.includes(conn.id)) clearAiCreated(conn.id); setActiveConnection(conn.id); }}
             className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left group ${
               conn.id === activeConnectionId
                 ? 'bg-accent/10 text-text-primary'
                 : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
             }`}
           >
+            {aiCreatedItems.includes(conn.id) && (
+              <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
+            )}
             <ConnectionIcon conn={conn} size="sm" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium truncate">{conn.name}</p>

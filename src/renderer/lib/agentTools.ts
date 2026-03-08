@@ -193,6 +193,7 @@ const createRequestTool = tool({
     await store.loadUncollectedRequests();
     await store.loadArchivedRequests();
     notifyView('requests');
+    useUiStore.getState().markAiCreated(req.id);
 
     return JSON.stringify({ success: true, requestId: req.id, name: req.name, method, url });
   },
@@ -255,6 +256,7 @@ const createRequestsTool = tool({
       try { await window.ruke.db.query('createRequest', req); } catch {}
       if (args.collection_id) collectionIds.add(args.collection_id);
       results.push({ requestId: req.id, name: req.name, method, url });
+      useUiStore.getState().markAiCreated(req.id);
     }
 
     for (const colId of collectionIds) {
@@ -278,6 +280,7 @@ const createCollectionTool = tool({
     const collection = await store.createCollection(name);
     store.toggleExpanded(collection.id);
     notifyView('requests');
+    useUiStore.getState().markAiCreated(collection.id);
     return JSON.stringify({ success: true, collectionId: collection.id, name: collection.name });
   },
 });
@@ -400,6 +403,7 @@ const createEnvironmentTool = tool({
     }
 
     notifyView('environments');
+    useUiStore.getState().markAiCreated(env.id);
     return JSON.stringify({
       success: true,
       environmentId: env.id,
@@ -788,6 +792,59 @@ const selectRequestTool = tool({
   },
 });
 
+const AI_KEY_STORAGE = 'ruke:ai_key';
+
+const setApiKeyTool = tool({
+  description: 'Save an OpenAI API key to enable AI features. The key is stored securely. Only call this when the user explicitly provides a key.',
+  inputSchema: z.object({
+    key: z.string().describe('The OpenAI API key (must start with "sk-" and be at least 10 characters)'),
+  }),
+  execute: async ({ key }) => {
+    const trimmed = key.trim();
+    if (!trimmed.startsWith('sk-') || trimmed.length < 10) {
+      return JSON.stringify({ success: false, error: 'Invalid API key. Must start with "sk-" and be at least 10 characters.' });
+    }
+    try {
+      await window.ruke.ai.setKey(trimmed);
+      localStorage.setItem(AI_KEY_STORAGE, trimmed);
+    } catch {
+      localStorage.setItem(AI_KEY_STORAGE, trimmed);
+    }
+    const masked = trimmed.slice(0, 3) + '\u2022'.repeat(Math.min(trimmed.length - 7, 20)) + trimmed.slice(-4);
+    return JSON.stringify({ success: true, maskedKey: masked });
+  },
+});
+
+const toggleThemeTool = tool({
+  description: 'Switch between dark and light mode.',
+  inputSchema: z.object({}),
+  execute: async () => {
+    useUiStore.getState().toggleTheme();
+    const newTheme = useUiStore.getState().theme;
+    return JSON.stringify({ success: true, theme: newTheme });
+  },
+});
+
+const getAppInfoTool = tool({
+  description: 'Get information about the current app state: theme, connections, requests, environments, and whether an AI key is configured.',
+  inputSchema: z.object({}),
+  execute: async () => {
+    const uiState = useUiStore.getState();
+    const connStore = useConnectionStore.getState();
+    const reqStore = useRequestStore.getState();
+    const envStore = useEnvironmentStore.getState();
+    const hasKey = (localStorage.getItem(AI_KEY_STORAGE) || '').length >= 10;
+    return JSON.stringify({
+      theme: uiState.theme,
+      activeView: uiState.activeView,
+      aiKeyConfigured: hasKey,
+      connectionCount: connStore.connections.length,
+      requestCount: reqStore.uncollectedRequests.length,
+      environmentCount: envStore.environments.length,
+    });
+  },
+});
+
 // ── Exported tools object (keyed by name for streamText) ──
 
 export const AGENT_TOOLS = {
@@ -811,6 +868,9 @@ export const AGENT_TOOLS = {
   set_connection_auth: setConnectionAuthTool,
   edit_current_request: editCurrentRequestTool,
   select_request: selectRequestTool,
+  set_api_key: setApiKeyTool,
+  toggle_theme: toggleThemeTool,
+  get_app_info: getAppInfoTool,
 };
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -834,4 +894,7 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   set_connection_auth: 'Configuring auth',
   edit_current_request: 'Editing request',
   select_request: 'Selecting request',
+  set_api_key: 'Saving API key',
+  toggle_theme: 'Switching theme',
+  get_app_info: 'Getting app info',
 };

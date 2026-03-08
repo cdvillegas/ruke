@@ -6,6 +6,7 @@ import type { ChatMessage, ChatSession, ChatToolCall, ChatAttachment } from '@sh
 import { runAgent } from '../lib/agentRunner';
 import { useRequestStore } from './requestStore';
 import { useConnectionStore } from './connectionStore';
+import { useUiStore } from './uiStore';
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
 
@@ -130,9 +131,9 @@ function createSession(): ChatSession {
   };
 }
 
-const AGENT_SYSTEM_PROMPT = `You are Rüke, an expert API development assistant embedded inside a request builder. You help users create, organize, and manage API requests through natural conversation.
+const AGENT_SYSTEM_PROMPT = `You are Rüke, an expert API development assistant. You help users create, organize, and manage API requests, configure settings, and navigate the app through natural conversation.
 
-You have direct access to the currently active request and can edit it in real-time using edit_current_request. You can also switch to other requests using select_request.
+You have direct access to the currently active request and can edit it in real-time using edit_current_request. You can also switch to other requests using select_request. You can manage app settings with set_api_key, toggle_theme, and get_app_info.
 
 CRITICAL RULE: ALWAYS ACT. When the user asks you to do something, DO IT immediately by calling tools. NEVER just describe what you would do — actually call the tools.
 
@@ -145,13 +146,17 @@ Key behaviors:
 - Before creating requests, use search_endpoints to find the right endpoint data.
 - When creating requests for a connected API, always include connection_id and endpoint_id.
 - Use realistic sample data in request bodies.
-- Don't add Authorization headers if the connection already handles auth.`;
+- Don't add Authorization headers if the connection already handles auth.
+- Use set_api_key when a user provides their OpenAI API key.
+- Use toggle_theme to switch between dark and light mode.
+- Use get_app_info to answer questions about the app state.`;
 
 function buildRequestContext(): string {
+  const activeView = useUiStore.getState().activeView;
   const store = useRequestStore.getState();
   const req = store.activeRequest;
   const resp = store.response;
-  const parts: string[] = ['Active request:'];
+  const parts: string[] = [`Current view: ${activeView}`, '', 'Active request:'];
 
   parts.push(`  Name: ${req.name}`);
   parts.push(`  Method: ${req.method}`);

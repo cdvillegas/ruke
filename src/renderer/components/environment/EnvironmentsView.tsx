@@ -401,9 +401,17 @@ function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSe
   onCancelRename: () => void;
   onDelete: () => void;
 }) {
+  const isAiCreated = useUiStore(s => s.aiCreatedItems.includes(env.id));
+  const clearAiCreated = useUiStore(s => s.clearAiCreated);
+
+  const handleSelect = () => {
+    if (isAiCreated) clearAiCreated(env.id);
+    onSelect();
+  };
+
   return (
     <div
-      onClick={onSelect}
+      onClick={handleSelect}
       className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-colors ${
         isSelected
           ? 'bg-accent/10 text-text-primary'
@@ -411,11 +419,15 @@ function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSe
       }`}
     >
       <div className="flex items-center gap-2 flex-1 min-w-0">
-        <div
-          className={`w-2 h-2 rounded-full shrink-0 ${
-            isActive ? 'bg-success' : 'bg-text-muted/30'
-          }`}
-        />
+        {isAiCreated ? (
+          <span className="w-2 h-2 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
+        ) : (
+          <div
+            className={`w-2 h-2 rounded-full shrink-0 ${
+              isActive ? 'bg-success' : 'bg-text-muted/30'
+            }`}
+          />
+        )}
         {isEditing ? (
           <input
             autoFocus
