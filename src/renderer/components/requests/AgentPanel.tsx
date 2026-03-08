@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
 import {
-  Send, Plus, Loader2, AlertCircle,
+  Send, Plus, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, X,
-  Archive, Trash2, ArchiveRestore, PanelRightClose,
-  MessageSquare, Square,
+  Clock, Trash2, PanelRightClose, Square,
 } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useUiStore } from '../../stores/uiStore';
 import { MessageBubble } from '../shared/MessageBubble';
+import { ThinkingIndicator } from '../shared/ThinkingIndicator';
 import { AttachmentChip } from '../shared/AttachmentChip';
 import type { ChatAttachment } from '@shared/types';
 
@@ -57,44 +57,57 @@ function SessionTab({ id, title, isActive, onClick, onClose }: {
 export function AgentPanel() {
   const sessions = useChatStore(s => s.sessions);
   const activeSessionId = useChatStore(s => s.activeSessionId);
+  const openTabIds = useChatStore(s => s.openTabIds);
   const isRunning = useChatStore(s => s.isRunning);
   const error = useChatStore(s => s.error);
   const setActiveSession = useChatStore(s => s.setActiveSession);
   const newChat = useChatStore(s => s.newChat);
-  const archiveSession = useChatStore(s => s.archiveSession);
-  const unarchiveSession = useChatStore(s => s.unarchiveSession);
+  const closeTab = useChatStore(s => s.closeTab);
   const deleteSession = useChatStore(s => s.deleteSession);
+  const loadFromHistory = useChatStore(s => s.loadFromHistory);
   const sendMessage = useChatStore(s => s.sendMessage);
   const stopGeneration = useChatStore(s => s.stopGeneration);
   const setError = useChatStore(s => s.setError);
-  const closePanel = useUiStore(s => s.toggleAiPanel);
+  const setAiPanelOpen = useUiStore(s => s.setAiPanelOpen);
 
   const [input, setInput] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const dragCounter = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRafRef = useRef<number | null>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
 
   const streamingMessageId = useChatStore(s => s.streamingMessageId);
   const streamTick = useChatStore(s => s.streamTick);
   const connections = useConnectionStore(s => s.connections);
 
+  const openTabs = useMemo(
+    () => openTabIds.map(id => sessions.find(s => s.id === id)).filter(Boolean) as typeof sessions,
+    [openTabIds, sessions]
+  );
+
   const activeSession = useMemo(
-    () => sessions.find(s => s.id === activeSessionId) || sessions[0],
+    () => sessions.find(s => s.id === activeSessionId),
     [sessions, activeSessionId]
   );
 
-  const activeTabs = useMemo(() => sessions.filter(s => !s.archived), [sessions]);
-  const archivedTabs = useMemo(() => sessions.filter(s => s.archived), [sessions]);
-  const visibleMessages = useMemo(
-    () => activeSession.messages.filter(m => m.role !== 'tool'),
-    [activeSession.messages]
+  const historySessions = useMemo(
+    () => sessions
+      .filter(s => s.messages.length > 0 && !openTabIds.includes(s.id))
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [sessions, openTabIds]
   );
+
+  const visibleMessages = useMemo(
+    () => activeSession ? activeSession.messages.filter(m => m.role !== 'tool') : [],
+    [activeSession]
+  );
+  const hasActiveTab = !!activeSession && openTabIds.includes(activeSessionId);
   const isEmpty = visibleMessages.length === 0 && !isRunning;
-  const canSend = !isRunning && (input.trim() || attachedFiles.length > 0);
+  const canSend = hasActiveTab && !isRunning && (input.trim() || attachedFiles.length > 0);
 
   const hasToolsRunning = useMemo(() => {
     const last = visibleMessages[visibleMessages.length - 1];
@@ -105,6 +118,12 @@ export function AgentPanel() {
   const showThinking = isRunning && !streamingMessageId && !hasToolsRunning &&
     visibleMessages[visibleMessages.length - 1]?.role !== 'assistant';
 
+  useEffect(() => {
+    if (openTabIds.length === 0) {
+      setAiPanelOpen(false);
+    }
+  }, [openTabIds.length, setAiPanelOpen]);
+
   useLayoutEffect(() => {
     if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
     scrollRafRef.current = requestAnimationFrame(() => {
@@ -113,13 +132,19 @@ export function AgentPanel() {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       }
     });
-  }, [activeSession.messages, isRunning, streamTick]);
+  }, [activeSession?.messages, isRunning, streamTick]);
 
   useEffect(() => {
     return () => {
       if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (tabsRef.current) {
+      tabsRef.current.scrollLeft = tabsRef.current.scrollWidth;
+    }
+  }, [openTabIds.length]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -203,13 +228,8 @@ export function AgentPanel() {
 
   const handleCloseTab = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    const active = sessions.filter(s => !s.archived);
-    if (active.length <= 1) {
-      deleteSession(id);
-    } else {
-      archiveSession(id);
-    }
-  }, [sessions, deleteSession, archiveSession]);
+    closeTab(id);
+  }, [closeTab]);
 
   const hasKey = hasAiKey();
 
@@ -237,7 +257,7 @@ export function AgentPanel() {
           <span className="text-xs font-semibold text-text-primary">AI Chat</span>
         </div>
         <button
-          onClick={closePanel}
+          onClick={() => setAiPanelOpen(false)}
           className="p-1 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
           title={`Close (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+'}I)`}
         >
@@ -246,9 +266,9 @@ export function AgentPanel() {
       </div>
 
       {/* Session tabs */}
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border shrink-0 bg-bg-secondary/30 overflow-x-auto scrollbar-none">
-        <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none">
-          {activeTabs.map(s => (
+      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border shrink-0 bg-bg-secondary/30">
+        <div ref={tabsRef} className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none">
+          {openTabs.map(s => (
             <SessionTab
               key={s.id}
               id={s.id}
@@ -260,19 +280,6 @@ export function AgentPanel() {
           ))}
         </div>
         <div className="flex items-center shrink-0 gap-0.5 ml-1">
-          {archivedTabs.length > 0 && (
-            <button
-              onClick={() => setShowArchived(!showArchived)}
-              className={`p-1 rounded-md transition-colors ${
-                showArchived
-                  ? 'text-accent bg-accent/10'
-                  : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
-              }`}
-              title={`${archivedTabs.length} archived chat${archivedTabs.length !== 1 ? 's' : ''}`}
-            >
-              <Archive size={13} />
-            </button>
-          )}
           <button
             onClick={newChat}
             className="p-1 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
@@ -280,40 +287,45 @@ export function AgentPanel() {
           >
             <Plus size={13} />
           </button>
+          {historySessions.length > 0 && (
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className={`p-1 rounded-md transition-colors ${
+                showHistory
+                  ? 'text-accent bg-accent/10'
+                  : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
+              }`}
+              title="Chat history"
+            >
+              <Clock size={13} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Archived dropdown */}
-      {showArchived && archivedTabs.length > 0 && (
-        <div className="border-b border-border bg-bg-secondary/30 px-2 py-1.5 max-h-40 overflow-y-auto">
+      {/* History dropdown */}
+      {showHistory && historySessions.length > 0 && (
+        <div className="border-b border-border bg-bg-secondary/30 px-2 py-1.5 max-h-48 overflow-y-auto">
           <p className="text-[10px] text-text-muted font-medium uppercase tracking-wider px-1 mb-1">
-            Archived ({archivedTabs.length})
+            History ({historySessions.length})
           </p>
-          {archivedTabs.map(s => (
+          {historySessions.map(s => (
             <div
               key={s.id}
-              className="flex items-center justify-between px-2 py-1 rounded-md hover:bg-bg-hover transition-colors group"
+              onClick={() => { loadFromHistory(s.id); setShowHistory(false); }}
+              className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-bg-hover transition-colors group cursor-pointer"
             >
-              <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                <MessageSquare size={11} className="text-text-muted shrink-0" />
-                <span className="text-xs text-text-secondary truncate">{s.title}</span>
+              <div className="flex-1 min-w-0">
+                <span className="text-xs text-text-secondary truncate block">{s.title}</span>
+                <span className="text-[10px] text-text-muted">{s.messages.length} messages</span>
               </div>
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                <button
-                  onClick={() => { unarchiveSession(s.id); setShowArchived(false); }}
-                  className="p-1 rounded text-text-muted hover:text-accent hover:bg-accent/10 transition-colors"
-                  title="Restore"
-                >
-                  <ArchiveRestore size={12} />
-                </button>
-                <button
-                  onClick={() => deleteSession(s.id)}
-                  className="p-1 rounded text-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors"
-                  title="Delete permanently"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
+                className="p-1 rounded text-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                title="Delete"
+              >
+                <Trash2 size={12} />
+              </button>
             </div>
           ))}
         </div>
@@ -334,6 +346,22 @@ export function AgentPanel() {
             className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors"
           >
             <ArrowRight size={12} /> Settings
+          </button>
+        </div>
+      ) : !hasActiveTab ? (
+        <div className="flex-1 flex flex-col items-center justify-center px-4">
+          <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center mb-3">
+            <Sparkles size={20} className="text-accent" />
+          </div>
+          <h2 className="text-sm font-semibold text-text-primary mb-0.5">Ruke</h2>
+          <p className="text-xs text-text-muted text-center max-w-xs mb-4">
+            Start a new chat or open one from history.
+          </p>
+          <button
+            onClick={newChat}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors"
+          >
+            <Plus size={12} /> New Chat
           </button>
         </div>
       ) : isEmpty ? (
@@ -402,7 +430,7 @@ export function AgentPanel() {
       )}
 
       {/* Input */}
-      {hasKey && (
+      {hasKey && hasActiveTab && (
         <div className="shrink-0 border-t border-border p-2.5">
           <div className={`bg-bg-secondary rounded-xl border transition-colors px-3 py-1.5 ${
             isRunning
@@ -416,11 +444,10 @@ export function AgentPanel() {
                 ))}
               </div>
             )}
-            <div className="flex items-end gap-2">
+            <div className={`flex gap-2 ${isRunning ? 'items-center' : 'items-end'}`}>
               {isRunning ? (
-                <div className="flex items-center gap-2 flex-1 py-1">
-                  <Loader2 size={14} className="text-accent animate-spin shrink-0" />
-                  <span className="text-sm text-text-muted">Thinking...</span>
+                <div className="flex-1">
+                  <ThinkingIndicator />
                 </div>
               ) : (
                 <textarea

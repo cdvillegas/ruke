@@ -3,12 +3,13 @@ import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useUiStore } from '../../stores/uiStore';
 import {
-  Send, Plus, Loader2, AlertCircle,
+  Send, Plus, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, PanelLeftClose, PanelLeft,
   Square,
 } from 'lucide-react';
 import { ChatSidebar } from './ChatSidebar';
 import { MessageBubble } from '../shared/MessageBubble';
+import { ThinkingIndicator } from '../shared/ThinkingIndicator';
 import { AttachmentChip } from '../shared/AttachmentChip';
 import type { ChatAttachment } from '@shared/types';
 
@@ -93,6 +94,7 @@ function ChatPanel() {
   const stopGeneration = useChatStore(s => s.stopGeneration);
   const newChat = useChatStore(s => s.newChat);
   const activeSessionId = useChatStore(s => s.activeSessionId);
+  const openTabIds = useChatStore(s => s.openTabIds);
   const streamingMessageId = useChatStore(s => s.streamingMessageId);
   const streamTick = useChatStore(s => s.streamTick);
   const connections = useConnectionStore(s => s.connections);
@@ -104,12 +106,14 @@ function ChatPanel() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRafRef = useRef<number | null>(null);
 
+  const hasActiveTab = !!activeSessionId && openTabIds.includes(activeSessionId);
+
   const visibleMessages = useMemo(
     () => session.messages.filter(m => m.role !== 'tool'),
     [session.messages]
   );
   const isEmpty = visibleMessages.length === 0 && !isRunning;
-  const canSend = (!isRunning) && (input.trim() || attachedFiles.length > 0);
+  const canSend = hasActiveTab && !isRunning && (input.trim() || attachedFiles.length > 0);
 
   const hasToolsRunning = useMemo(() => {
     const last = visibleMessages[visibleMessages.length - 1];
@@ -333,9 +337,8 @@ function ChatPanel() {
             )}
             <div className="flex items-end gap-2">
               {isRunning ? (
-                <div className="flex items-center gap-2 flex-1 py-1">
-                  <Loader2 size={14} className="text-accent animate-spin shrink-0" />
-                  <span className="text-sm text-text-muted">Thinking...</span>
+                <div className="flex-1 py-1">
+                  <ThinkingIndicator />
                 </div>
               ) : (
                 <textarea

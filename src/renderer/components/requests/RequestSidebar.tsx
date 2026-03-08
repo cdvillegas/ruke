@@ -586,7 +586,7 @@ export function RequestSidebar() {
   }, [requests]);
 
   return (
-    <div className="flex-1 min-w-0 h-full flex flex-col bg-bg-secondary">
+    <>
       {/* Header */}
       <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
         <div className="flex items-center justify-between">
@@ -748,6 +748,6 @@ export function RequestSidebar() {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

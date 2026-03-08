@@ -12,7 +12,7 @@ const AUTH_TYPES: { id: AuthType; label: string; icon: typeof Shield }[] = [
 ];
 
 const INPUT_CLASS =
-  'w-full px-3 py-2 text-xs rounded-lg bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 transition-all';
+  'w-full px-3 py-2 text-[11px] rounded-lg bg-bg-secondary border border-border/60 font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-border-light transition-colors';
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -22,12 +22,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-interface AuthEditorProps {
-  connectionAuth?: AuthConfig;
-  connectionName?: string;
-}
-
-export function AuthEditor({ connectionAuth, connectionName }: AuthEditorProps) {
+export function AuthEditor() {
   const activeRequest = useRequestStore((s) => s.activeRequest);
   const setAuth = useRequestStore((s) => s.setAuth);
   const requestAuth = activeRequest.auth;
@@ -35,43 +30,32 @@ export function AuthEditor({ connectionAuth, connectionName }: AuthEditorProps) 
   const [showToken, setShowToken] = useState(false);
   const [showApiValue, setShowApiValue] = useState(false);
 
-  const isInheriting = requestAuth.type === 'none' && connectionAuth && connectionAuth.type !== 'none';
-  const displayAuth = isInheriting ? connectionAuth! : requestAuth;
-  const displayType = displayAuth.type;
+  const displayType = requestAuth.type;
 
   const setType = (type: AuthType) => {
-    if (isInheriting && type === connectionAuth!.type) return;
-    if (type === 'none' && connectionAuth?.type !== 'none') {
-      setAuth({ type: 'none' });
-      return;
-    }
     setAuth({ ...requestAuth, type });
   };
 
   const updateAuth = (updates: Partial<AuthConfig>) => {
-    if (isInheriting) {
-      setAuth({ ...displayAuth, ...updates });
-    } else {
-      setAuth({ ...requestAuth, ...updates });
-    }
+    setAuth({ ...requestAuth, ...updates });
   };
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1.5 flex-wrap">
+      <div className="flex gap-0.5 p-0.5 rounded-lg bg-bg-secondary/60 w-fit">
         {AUTH_TYPES.map((t) => {
           const isActive = displayType === t.id;
           return (
             <button
               key={t.id}
               onClick={() => setType(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 ${
                 isActive
-                  ? 'bg-accent text-white shadow-sm shadow-accent/25'
-                  : 'bg-bg-tertiary text-text-secondary hover:bg-bg-hover hover:text-text-primary border border-transparent hover:border-border'
+                  ? 'bg-bg-tertiary text-text-primary shadow-sm'
+                  : 'text-text-muted hover:text-text-secondary'
               }`}
             >
-              <t.icon size={13} />
+              <t.icon size={12} />
               <span>{t.label}</span>
             </button>
           );
@@ -92,7 +76,7 @@ export function AuthEditor({ connectionAuth, connectionName }: AuthEditorProps) 
           <FieldLabel>Token</FieldLabel>
           <div className="relative">
             <VariableInput
-              value={displayAuth.bearer?.token || ''}
+              value={requestAuth.bearer?.token || ''}
               onChange={(v) => updateAuth({ type: 'bearer', bearer: { token: v } })}
               placeholder="Enter bearer token or {{variable}}"
               type={showToken ? 'text' : 'password'}
@@ -118,11 +102,11 @@ export function AuthEditor({ connectionAuth, connectionName }: AuthEditorProps) 
           <div>
             <FieldLabel>Username</FieldLabel>
             <VariableInput
-              value={displayAuth.basic?.username || ''}
+              value={requestAuth.basic?.username || ''}
               onChange={(v) =>
                 updateAuth({
                   type: 'basic',
-                  basic: { username: v, password: displayAuth.basic?.password || '' },
+                  basic: { username: v, password: requestAuth.basic?.password || '' },
                 })
               }
               placeholder="Username or {{variable}}"
@@ -133,11 +117,11 @@ export function AuthEditor({ connectionAuth, connectionName }: AuthEditorProps) 
             <FieldLabel>Password</FieldLabel>
             <div className="relative">
               <VariableInput
-                value={displayAuth.basic?.password || ''}
+                value={requestAuth.basic?.password || ''}
                 onChange={(v) =>
                   updateAuth({
                     type: 'basic',
-                    basic: { username: displayAuth.basic?.username || '', password: v },
+                    basic: { username: requestAuth.basic?.username || '', password: v },
                   })
                 }
                 placeholder="Password or {{variable}}"
@@ -165,11 +149,11 @@ export function AuthEditor({ connectionAuth, connectionName }: AuthEditorProps) 
           <div>
             <FieldLabel>Key Name</FieldLabel>
             <VariableInput
-              value={displayAuth.apiKey?.key || ''}
+              value={requestAuth.apiKey?.key || ''}
               onChange={(v) =>
                 updateAuth({
                   type: 'api-key',
-                  apiKey: { key: v, value: displayAuth.apiKey?.value || '', addTo: displayAuth.apiKey?.addTo || 'header' },
+                  apiKey: { key: v, value: requestAuth.apiKey?.value || '', addTo: requestAuth.apiKey?.addTo || 'header' },
                 })
               }
               placeholder="e.g. X-API-Key"
@@ -180,11 +164,11 @@ export function AuthEditor({ connectionAuth, connectionName }: AuthEditorProps) 
             <FieldLabel>Value</FieldLabel>
             <div className="relative">
               <VariableInput
-                value={displayAuth.apiKey?.value || ''}
+                value={requestAuth.apiKey?.value || ''}
                 onChange={(v) =>
                   updateAuth({
                     type: 'api-key',
-                    apiKey: { key: displayAuth.apiKey?.key || '', value: v, addTo: displayAuth.apiKey?.addTo || 'header' },
+                    apiKey: { key: requestAuth.apiKey?.key || '', value: v, addTo: requestAuth.apiKey?.addTo || 'header' },
                   })
                 }
                 placeholder="API key value or {{variable}}"
@@ -204,19 +188,19 @@ export function AuthEditor({ connectionAuth, connectionName }: AuthEditorProps) 
 
           <div>
             <FieldLabel>Add to</FieldLabel>
-            <div className="inline-flex rounded-lg bg-bg-tertiary border border-border p-0.5">
+            <div className="inline-flex gap-0.5 p-0.5 rounded-md bg-bg-secondary/60">
               {(['header', 'query'] as const).map((loc) => (
                 <button
                   key={loc}
                   onClick={() =>
                     updateAuth({
                       type: 'api-key',
-                      apiKey: { ...displayAuth.apiKey!, addTo: loc },
+                      apiKey: { ...requestAuth.apiKey!, addTo: loc },
                     })
                   }
-                  className={`px-3.5 py-1.5 text-xs font-medium rounded-md capitalize transition-all ${
-                    displayAuth.apiKey?.addTo === loc
-                      ? 'bg-bg-primary text-text-primary shadow-sm'
+                  className={`px-2 py-0.5 text-[10px] font-medium rounded capitalize transition-all duration-150 ${
+                    requestAuth.apiKey?.addTo === loc
+                      ? 'bg-bg-tertiary text-text-primary shadow-sm'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
                 >

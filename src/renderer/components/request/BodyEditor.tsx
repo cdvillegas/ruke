@@ -73,13 +73,13 @@ function isJsonLike(value: string): boolean {
 
 function typeColor(type: string): string {
   switch (type) {
-    case 'string': return 'text-emerald-400/70';
-    case 'integer': case 'number': return 'text-orange-400/70';
-    case 'boolean': return 'text-purple-400/70';
-    case 'object': return 'text-blue-400/70';
-    case 'array': return 'text-cyan-400/70';
+    case 'string': return 'text-text-muted/70';
+    case 'integer': case 'number': return 'text-text-muted/70';
+    case 'boolean': return 'text-text-muted/70';
+    case 'object': return 'text-text-muted/70';
+    case 'array': return 'text-text-muted/70';
     default:
-      if (type.endsWith('[]')) return 'text-cyan-400/70';
+      if (type.endsWith('[]')) return 'text-text-muted/70';
       return 'text-text-muted/50';
   }
 }
@@ -126,7 +126,7 @@ function BodyFieldInput({ row, onUpdate }: { row: BodyFieldRow; onUpdate: (value
       <select
         value={row.value}
         onChange={(e) => onUpdate(e.target.value)}
-        className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-bg-secondary border border-border font-mono text-text-primary focus:outline-none focus:border-accent/40 transition-colors cursor-pointer"
+        className="w-full px-2.5 py-1.5 text-[11px] rounded-lg bg-bg-secondary border border-border/60 font-mono text-text-primary focus:outline-none focus:border-border-light transition-colors cursor-pointer"
       >
         <option value="">Select...</option>
         {row.enumValues!.map((v) => (
@@ -141,7 +141,7 @@ function BodyFieldInput({ row, onUpdate }: { row: BodyFieldRow; onUpdate: (value
       <select
         value={row.value}
         onChange={(e) => onUpdate(e.target.value)}
-        className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-bg-secondary border border-border font-mono text-text-primary focus:outline-none focus:border-accent/40 transition-colors cursor-pointer"
+        className="w-full px-2.5 py-1.5 text-[11px] rounded-lg bg-bg-secondary border border-border/60 font-mono text-text-primary focus:outline-none focus:border-border-light transition-colors cursor-pointer"
       >
         <option value="">—</option>
         <option value="true">true</option>
@@ -175,10 +175,9 @@ function BodyFieldRowView({
 }) {
   return (
     <div className="group param-field-row">
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-xs font-mono font-medium text-text-primary truncate">{row.key}</span>
-          {row.required && <span className="text-[9px] font-bold text-error shrink-0">*</span>}
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[11px] font-mono font-medium text-text-primary truncate">{row.key}</span>
           <span className={`text-[10px] font-mono leading-none ${typeColor(row.type)}`}>{row.type}</span>
           {row.description && (
             <Tooltip.Provider delayDuration={150}>
@@ -241,14 +240,14 @@ function AddOptionalFieldPicker({
     <div ref={ref} className="relative inline-block">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-dashed border-border/60 text-text-muted hover:text-text-primary hover:border-border-light hover:bg-bg-hover transition-colors"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-md text-text-muted/60 hover:text-text-secondary hover:bg-bg-secondary transition-colors"
       >
-        <Plus size={12} />
+        <Plus size={11} />
         Add optional field
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-64 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in max-h-56 overflow-y-auto">
+        <div className="absolute top-full left-0 mt-1 w-60 bg-bg-secondary border border-border/60 rounded-lg shadow-2xl z-50 py-1 animate-fade-in max-h-56 overflow-y-auto">
           {fields.map((f) => (
             <button
               key={f.key}
@@ -269,11 +268,11 @@ function Toggle({ enabled, onChange, label }: { enabled: boolean; onChange: (v: 
   return (
     <button
       onClick={() => onChange(!enabled)}
-      className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+      className="flex items-center gap-1.5 text-[10px] text-text-muted/60 hover:text-text-secondary transition-colors"
     >
       <span>{label}</span>
-      <div className={`relative w-6 h-3.5 rounded-full transition-colors ${enabled ? 'bg-accent' : 'bg-text-muted/20'}`}>
-        <div className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow-sm transition-transform ${enabled ? 'translate-x-2.5' : 'translate-x-0.5'}`} />
+      <div className={`relative w-5 h-3 rounded-full transition-colors ${enabled ? 'bg-text-secondary' : 'bg-text-muted/15'}`}>
+        <div className={`absolute top-[2px] w-2 h-2 rounded-full bg-white/80 shadow-sm transition-transform ${enabled ? 'translate-x-[10px]' : 'translate-x-[2px]'}`} />
       </div>
     </button>
   );
@@ -401,20 +400,48 @@ export function BodyEditor() {
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-1 flex-wrap">
-        {BODY_TYPES.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setBody({ ...body, type: t.id })}
-            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-              body.type === t.id
-                ? 'bg-accent text-white'
-                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-0.5 p-0.5 rounded-lg bg-bg-secondary/60 w-fit">
+          {BODY_TYPES.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setBody({ ...body, type: t.id })}
+              className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 ${
+                body.type === t.id
+                  ? 'bg-bg-tertiary text-text-primary shadow-sm'
+                  : 'text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {(body.type === 'json' || body.type === 'raw') && (
+          <div className="flex items-center gap-3">
+            {hasBodyFields && body.type === 'json' && (
+              <div className="flex gap-0.5 p-0.5 rounded-md bg-bg-secondary/60">
+                <button
+                  onClick={() => handleToggleRaw(false)}
+                  className={`px-2 py-0.5 text-[10px] font-medium rounded transition-all duration-150 ${
+                    !showRaw ? 'bg-bg-tertiary text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                >
+                  Fields
+                </button>
+                <button
+                  onClick={() => handleToggleRaw(true)}
+                  className={`px-2 py-0.5 text-[10px] font-medium rounded transition-all duration-150 ${
+                    showRaw ? 'bg-bg-tertiary text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                >
+                  Raw
+                </button>
+              </div>
+            )}
+            <Toggle enabled={autoPrettify} onChange={handleTogglePrettify} label="Prettify" />
+          </div>
+        )}
       </div>
 
       {body.type === 'none' && (
@@ -426,41 +453,47 @@ export function BodyEditor() {
       {(body.type === 'json' || body.type === 'raw') && (
         <div className="space-y-3">
           {/* Structured fields for required + added optional params */}
-          {hasBodyFields && body.type === 'json' && (
-            <div className="space-y-1.5">
-              {requiredRows.map((r) => (
-                <BodyFieldRowView
-                  key={r.key}
-                  row={r}
-                  onUpdate={(v) => updateBodyField(r.key, v)}
-                />
-              ))}
-              {visibleOptionalRows.map((r) => (
-                <BodyFieldRowView
-                  key={r.key}
-                  row={r}
-                  onUpdate={(v) => updateBodyField(r.key, v)}
-                  onRemove={() => removeOptionalField(r.key)}
-                />
-              ))}
-              <AddOptionalFieldPicker
-                fields={hiddenOptionalRows}
-                onAdd={(key) => setAddedOptionalKeys(prev => new Set(prev).add(key))}
-              />
+          {hasBodyFields && body.type === 'json' && !showRaw && (
+            <div className="space-y-4">
+              {requiredRows.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-text-muted/40 font-medium mb-2">Required</div>
+                  <div>
+                    {requiredRows.map((r) => (
+                      <BodyFieldRowView
+                        key={r.key}
+                        row={r}
+                        onUpdate={(v) => updateBodyField(r.key, v)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(visibleOptionalRows.length > 0 || hiddenOptionalRows.length > 0) && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-text-muted/40 font-medium mb-2">Optional</div>
+                  <div>
+                    {visibleOptionalRows.map((r) => (
+                      <BodyFieldRowView
+                        key={r.key}
+                        row={r}
+                        onUpdate={(v) => updateBodyField(r.key, v)}
+                        onRemove={() => removeOptionalField(r.key)}
+                      />
+                    ))}
+                  </div>
+                  <AddOptionalFieldPicker
+                    fields={hiddenOptionalRows}
+                    onAdd={(key) => setAddedOptionalKeys(prev => new Set(prev).add(key))}
+                  />
+                </div>
+              )}
             </div>
           )}
 
-          {/* Raw / Prettify toggles */}
-          <div className="flex items-center gap-4">
-            {hasBodyFields && body.type === 'json' && (
-              <Toggle enabled={showRaw} onChange={handleToggleRaw} label="Raw" />
-            )}
-            <Toggle enabled={autoPrettify} onChange={handleTogglePrettify} label="Prettify" />
-          </div>
-
           {/* Raw editor — toggled when fields exist, always shown for freeform */}
           {(!hasBodyFields || body.type !== 'json' || showRaw) && (
-            <div className="rounded-xl bg-bg-secondary border border-border overflow-hidden focus-within:border-accent/40 transition-colors">
+            <div className="rounded-lg bg-bg-secondary border border-border/60 overflow-hidden focus-within:border-border-light transition-colors">
               <CodeMirror
                 key={activeRequest.id}
                 value={body.raw || ''}
@@ -492,7 +525,7 @@ export function BodyEditor() {
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs text-text-secondary font-medium">Query</label>
             </div>
-            <div className="rounded-xl bg-bg-secondary border border-border overflow-hidden focus-within:border-accent/40 transition-colors">
+            <div className="rounded-lg bg-bg-secondary border border-border/60 overflow-hidden focus-within:border-border-light transition-colors">
               <CodeMirror
                 value={gql.query}
                 onChange={(val) => setBody({ ...body, graphql: { ...gql, query: val } })}
@@ -513,7 +546,7 @@ export function BodyEditor() {
               <label className="text-xs text-text-secondary font-medium">Variables</label>
               <Toggle enabled={autoPrettify} onChange={handleTogglePrettify} label="Prettify" />
             </div>
-            <div className="rounded-xl bg-bg-secondary border border-border overflow-hidden focus-within:border-accent/40 transition-colors">
+            <div className="rounded-lg bg-bg-secondary border border-border/60 overflow-hidden focus-within:border-border-light transition-colors">
               <CodeMirror
                 value={gql.variables}
                 onChange={(val) => setBody({ ...body, graphql: { ...gql, variables: val } })}
@@ -535,7 +568,7 @@ export function BodyEditor() {
               value={gql.operationName || ''}
               onChange={(e) => setBody({ ...body, graphql: { ...gql, operationName: e.target.value || undefined } })}
               placeholder="e.g. GetUsers"
-              className="w-full px-3 py-2 text-xs rounded-xl bg-bg-secondary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/40 transition-colors"
+              className="w-full px-3 py-2 text-[11px] rounded-lg bg-bg-secondary border border-border/60 font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-border-light transition-colors"
             />
           </div>
         </div>

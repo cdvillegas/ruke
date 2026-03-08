@@ -405,8 +405,7 @@ export function RequestBuilder() {
     + (endpointDef?.parameters?.filter((p: { in: string }) => p.in !== 'body').length || 0);
   const headerCount = activeRequest.headers.filter((h) => h.enabled && h.key).length;
   const hasBody = activeRequest.body.type !== 'none';
-  const effectiveAuth = useRequestStore.getState().getEffectiveAuth();
-  const hasAuth = effectiveAuth.type !== 'none';
+  const hasAuth = activeRequest.auth.type !== 'none';
 
   return (
     <div className="relative">
@@ -552,7 +551,7 @@ export function RequestBuilder() {
           {advancedTab === 'headers' && <HeadersEditor />}
           {advancedTab === 'body' && <BodyEditor />}
           {advancedTab === 'auth' && (
-            <AuthEditor connectionAuth={linkedConnection?.auth} connectionName={linkedConnection?.name} />
+            <AuthEditor />
           )}
         </div>
       </div>

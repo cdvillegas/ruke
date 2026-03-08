@@ -43,7 +43,7 @@ export function InlineEditor({
   }, [jsonMode, multiline]);
 
   return (
-    <div className={`rounded-xl overflow-hidden bg-bg-secondary border border-border focus-within:border-accent/40 transition-colors ${disabled ? 'opacity-40' : ''} ${className}`}>
+    <div className={`rounded-lg overflow-hidden bg-bg-secondary border border-border/60 focus-within:border-border-light transition-colors ${disabled ? 'opacity-40' : ''} ${className}`}>
       <CodeMirror
         value={value}
         onChange={onChange}

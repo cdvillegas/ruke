@@ -36,7 +36,9 @@ function connectionNeedsMigration(conn: ApiConnection): boolean {
 interface ConnectionState {
   connections: ApiConnection[];
   activeConnectionId: string | null;
+  searchQuery: string;
 
+  setSearchQuery: (q: string) => void;
   loadConnections: () => void;
   addConnection: (conn: Partial<ApiConnection> & { name: string; baseUrl: string }) => ApiConnection;
   updateConnection: (id: string, updates: Partial<ApiConnection>) => void;
@@ -54,7 +56,9 @@ interface ConnectionState {
 export const useConnectionStore = create<ConnectionState>((set, get) => ({
   connections: loadConnections(),
   activeConnectionId: null,
+  searchQuery: '',
 
+  setSearchQuery: (q) => set({ searchQuery: q }),
   loadConnections: () => {
     const conns = loadConnections();
     set({ connections: conns });

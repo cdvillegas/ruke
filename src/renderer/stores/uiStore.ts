@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { AppView, OnboardingState, ProtocolType } from '@shared/types';
+import { useChatStore } from './chatStore';
 
 function loadOnboarding(): OnboardingState {
   try {
@@ -11,6 +12,19 @@ function loadOnboarding(): OnboardingState {
 
 function saveOnboarding(state: OnboardingState) {
   localStorage.setItem('ruke:onboarding', JSON.stringify(state));
+}
+
+const SIDEBAR_WIDTH_KEY = 'ruke:sidebar_width';
+const DEFAULT_SIDEBAR_WIDTH = 256;
+const MIN_SIDEBAR_WIDTH = 180;
+const MAX_SIDEBAR_WIDTH = 480;
+
+function loadSidebarWidth(): number {
+  try {
+    const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (stored) return Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, Number(stored)));
+  } catch {}
+  return DEFAULT_SIDEBAR_WIDTH;
 }
 
 interface UiState {
@@ -30,6 +44,7 @@ interface UiState {
   setActiveView: (view: AppView) => void;
   setActiveProtocol: (protocol: ProtocolType) => void;
   setSidebarWidth: (w: number) => void;
+  saveSidebarWidth: () => void;
   toggleAiPanel: () => void;
   setAiPanelOpen: (open: boolean) => void;
   setActiveRequestTab: (tab: string) => void;
@@ -48,7 +63,7 @@ interface UiState {
 export const useUiStore = create<UiState>((set) => ({
   activeView: 'requests',
   activeProtocol: 'rest' as ProtocolType,
-  sidebarWidth: 260,
+  sidebarWidth: loadSidebarWidth(),
   aiPanelOpen: false,
   aiPanelWidth: 360,
   activeRequestTab: 'params',
@@ -64,9 +79,24 @@ export const useUiStore = create<UiState>((set) => ({
     viewBadges: { ...s.viewBadges, [view]: 0 },
   })),
   setActiveProtocol: (protocol) => set({ activeProtocol: protocol }),
-  setSidebarWidth: (w) => set({ sidebarWidth: w }),
-  toggleAiPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
-  setAiPanelOpen: (open) => set({ aiPanelOpen: open }),
+  setSidebarWidth: (w) => set({ sidebarWidth: Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, w)) }),
+  saveSidebarWidth: () => {
+    const { sidebarWidth } = useUiStore.getState();
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+  },
+  toggleAiPanel: () => {
+    const opening = !useUiStore.getState().aiPanelOpen;
+    if (opening && useChatStore.getState().openTabIds.length === 0) {
+      useChatStore.getState().newChat();
+    }
+    set({ aiPanelOpen: opening });
+  },
+  setAiPanelOpen: (open) => {
+    if (open && useChatStore.getState().openTabIds.length === 0) {
+      useChatStore.getState().newChat();
+    }
+    set({ aiPanelOpen: open });
+  },
   setActiveRequestTab: (tab) => set({ activeRequestTab: tab }),
   setActiveResponseTab: (tab) => set({ activeResponseTab: tab }),
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),

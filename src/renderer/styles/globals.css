@@ -236,6 +236,18 @@ body {
   opacity: 1;
 }
 
+/* Thinking indicator – looping per-character wave */
+@keyframes thinking-wave {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  10% { transform: translateY(-1.5px); opacity: 0.85; }
+  20% { transform: translateY(0); opacity: 0.5; }
+}
+
+.thinking-char-wave {
+  display: inline-block;
+  animation: thinking-wave infinite ease-in-out;
+}
+
 /* AI thinking pulse */
 @keyframes ai-pulse {
   0%, 100% { transform: scale(1); opacity: 0.4; }
@@ -363,15 +375,15 @@ body {
 /* ─── Parameter Editor ─── */
 
 .param-field-row {
-  padding: 2px 0;
+  padding: 6px 0;
   border-radius: 6px;
   transition: background-color 0.1s ease;
 }
 
-.param-field-row:hover {
-  background: rgba(255, 255, 255, 0.015);
+.param-field-row + .param-field-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
 }
 
-[data-theme="light"] .param-field-row:hover {
-  background: rgba(0, 0, 0, 0.02);
+[data-theme="light"] .param-field-row + .param-field-row {
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
 }

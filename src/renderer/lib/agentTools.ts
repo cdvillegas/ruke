@@ -547,14 +547,22 @@ const deleteRequestTool = tool({
 });
 
 const archiveRequestTool = tool({
-  description: 'Archive a request by name or ID. Archived requests are hidden from the main list but can be restored.',
+  description: 'Archive a request by name or ID. Searches across uncollected, collection, and archived requests. Archived requests are hidden from the main list but can be restored.',
   inputSchema: z.object({
-    match: z.string().describe('Request name or ID'),
+    match: z.string().describe('Request name or ID (case-insensitive partial match)'),
   }),
   execute: async ({ match }) => {
     const matchStr = match.toLowerCase();
     const reqStore = useRequestStore.getState();
-    const found = reqStore.uncollectedRequests.find(r =>
+    const colStore = useCollectionStore.getState();
+
+    const all: Array<{ id: string; name: string }> = [];
+    for (const r of reqStore.uncollectedRequests) all.push({ id: r.id, name: r.name });
+    for (const [, reqs] of Object.entries(colStore.requests)) {
+      for (const r of reqs) all.push({ id: r.id, name: r.name });
+    }
+
+    const found = all.find(r =>
       r.id === match ||
       (r.name || '').toLowerCase() === matchStr ||
       (r.name || '').toLowerCase().includes(matchStr)

@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import {
-  Plus, Search, Archive, ChevronDown, ChevronRight,
-  MoreHorizontal, Trash2, ArchiveRestore, MessageSquare,
+  Plus, Search,
+  MoreHorizontal, Trash2, MessageSquare,
 } from 'lucide-react';
 import { groupByTime } from '../../lib/timeGroups';
 import type { ChatSession } from '@shared/types';
@@ -13,7 +13,7 @@ function ChatItemMenu({ session, onClose }: {
   session: ChatSession;
   onClose: () => void;
 }) {
-  const { archiveSession, unarchiveSession, deleteSession } = useChatStore();
+  const deleteSession = useChatStore(s => s.deleteSession);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,21 +29,6 @@ function ChatItemMenu({ session, onClose }: {
       ref={menuRef}
       className="absolute right-0 top-full mt-1 z-50 w-36 py-1 rounded-lg bg-bg-secondary border border-border shadow-xl"
     >
-      {session.archived ? (
-        <button
-          onClick={() => { unarchiveSession(session.id); onClose(); }}
-          className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
-        >
-          <ArchiveRestore size={12} /> Unarchive
-        </button>
-      ) : (
-        <button
-          onClick={() => { archiveSession(session.id); onClose(); }}
-          className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
-        >
-          <Archive size={12} /> Archive
-        </button>
-      )}
       <button
         onClick={() => { deleteSession(session.id); onClose(); }}
         className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
@@ -56,6 +41,7 @@ function ChatItemMenu({ session, onClose }: {
 
 function ChatItem({ session, isActive }: { session: ChatSession; isActive: boolean }) {
   const setActiveSession = useChatStore(s => s.setActiveSession);
+  const loadFromHistory = useChatStore(s => s.loadFromHistory);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const preview = useMemo(() => {
@@ -69,7 +55,7 @@ function ChatItem({ session, isActive }: { session: ChatSession; isActive: boole
   return (
     <div className="relative group">
       <button
-        onClick={() => setActiveSession(session.id)}
+        onClick={() => loadFromHistory(session.id)}
         className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
           isActive
             ? 'bg-accent/10 text-text-primary'
@@ -99,42 +85,27 @@ function ChatItem({ session, isActive }: { session: ChatSession; isActive: boole
 }
 
 export function ChatSidebar() {
-  const { sessions, activeSessionId, newChat } = useChatStore();
+  const sessions = useChatStore(s => s.sessions);
+  const activeSessionId = useChatStore(s => s.activeSessionId);
+  const newChat = useChatStore(s => s.newChat);
   const [search, setSearch] = useState('');
   const [showAllRecent, setShowAllRecent] = useState(false);
-  const [archiveExpanded, setArchiveExpanded] = useState(false);
 
-  const activeSessions = useMemo(() =>
+  const allSessions = useMemo(() =>
     sessions
-      .filter(s => !s.archived)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [sessions]
-  );
-
-  const archivedSessions = useMemo(() =>
-    sessions
-      .filter(s => s.archived)
+      .filter(s => s.messages.length > 0)
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     [sessions]
   );
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return activeSessions;
+    if (!search.trim()) return allSessions;
     const q = search.toLowerCase();
-    return activeSessions.filter(s =>
+    return allSessions.filter(s =>
       s.title.toLowerCase().includes(q) ||
       s.messages.some(m => m.content?.toLowerCase().includes(q))
     );
-  }, [activeSessions, search]);
-
-  const filteredArchived = useMemo(() => {
-    if (!search.trim()) return archivedSessions;
-    const q = search.toLowerCase();
-    return archivedSessions.filter(s =>
-      s.title.toLowerCase().includes(q) ||
-      s.messages.some(m => m.content?.toLowerCase().includes(q))
-    );
-  }, [archivedSessions, search]);
+  }, [allSessions, search]);
 
   const groups = useMemo(() => groupByTime(filtered, s => s.updatedAt), [filtered]);
 
@@ -227,27 +198,6 @@ export function ChatSidebar() {
           >
             Show less
           </button>
-        )}
-
-        {/* Archive section */}
-        {archivedSessions.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-border/60">
-            <button
-              onClick={() => setArchiveExpanded(!archiveExpanded)}
-              className="flex items-center gap-1.5 w-full px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider hover:text-text-secondary transition-colors"
-            >
-              {archiveExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-              <Archive size={10} />
-              Archive ({filteredArchived.length})
-            </button>
-            {archiveExpanded && (
-              <div className="space-y-0.5 mt-1">
-                {filteredArchived.map(s => (
-                  <ChatItem key={s.id} session={s} isActive={s.id === activeSessionId} />
-                ))}
-              </div>
-            )}
-          </div>
         )}
       </div>
     </div>

@@ -1,9 +1,41 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
+import { createOpenAI } from '@ai-sdk/openai';
+import { generateText } from 'ai';
 import type { ChatMessage, ChatSession, ChatToolCall, ChatAttachment } from '@shared/types';
 import { runAgent } from '../lib/agentRunner';
 import { useRequestStore } from './requestStore';
 import { useConnectionStore } from './connectionStore';
+
+const AI_KEY_STORAGE = 'ruke:ai_key';
+
+async function generateChatTitle(userMessage: string): Promise<string | null> {
+  const apiKey = localStorage.getItem(AI_KEY_STORAGE);
+  if (!apiKey) return null;
+
+  try {
+    const provider = createOpenAI({ apiKey });
+    const cleanedMessage = userMessage.replace(/<file[\s\S]*?<\/file>/g, '').trim();
+    if (!cleanedMessage) return null;
+
+    const { text } = await generateText({
+      model: provider('gpt-4o-mini'),
+      maxOutputTokens: 30,
+      messages: [
+        {
+          role: 'system',
+          content: 'Generate a short, descriptive title (3-6 words) for a chat that starts with the following message. Return ONLY the title, no quotes, no punctuation at the end.',
+        },
+        { role: 'user', content: cleanedMessage.slice(0, 500) },
+      ],
+    });
+
+    const title = text.trim().replace(/^["']|["']$/g, '').replace(/\.+$/, '');
+    return title || null;
+  } catch {
+    return null;
+  }
+}
 
 const STORAGE_KEY = 'ruke:chat_sessions';
 
@@ -138,7 +170,7 @@ function buildRequestContext(): string {
   return parts.join('\n');
 }
 
-function initSessions(): { sessions: ChatSession[]; activeId: string } {
+function initSessions(): { sessions: ChatSession[]; activeId: string; openTabIds: string[] } {
   let sessions = loadSessions();
 
   const legacy = migrateLegacy();
@@ -155,16 +187,19 @@ function initSessions(): { sessions: ChatSession[]; activeId: string } {
     const fresh = createSession();
     sessions = [fresh];
     saveSessions(sessions);
-    return { sessions, activeId: fresh.id };
+    return { sessions, activeId: fresh.id, openTabIds: [fresh.id] };
   }
 
-  const active = sessions.find(s => !s.archived) || sessions[0];
-  return { sessions, activeId: active.id };
+  const nonArchived = sessions.filter(s => !s.archived);
+  const openTabIds = nonArchived.map(s => s.id);
+  const active = nonArchived[0] || sessions[0];
+  return { sessions, activeId: active.id, openTabIds };
 }
 
 interface ChatState {
   sessions: ChatSession[];
   activeSessionId: string;
+  openTabIds: string[];
   isRunning: boolean;
   error: string | null;
   streamingMessageId: string | null;
@@ -174,9 +209,9 @@ interface ChatState {
   getActiveSession: () => ChatSession;
   setActiveSession: (id: string) => void;
   newChat: () => void;
+  closeTab: (id: string) => void;
   deleteSession: (id: string) => void;
-  archiveSession: (id: string) => void;
-  unarchiveSession: (id: string) => void;
+  loadFromHistory: (id: string) => void;
   sendMessage: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
   stopGeneration: () => void;
   appendMessage: (msg: ChatMessage) => void;
@@ -187,11 +222,12 @@ interface ChatState {
   setError: (error: string | null) => void;
 }
 
-const { sessions: initialSessions, activeId: initialActiveId } = initSessions();
+const { sessions: initialSessions, activeId: initialActiveId, openTabIds: initialOpenTabIds } = initSessions();
 
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: initialSessions,
   activeSessionId: initialActiveId,
+  openTabIds: initialOpenTabIds,
   isRunning: false,
   error: null,
   streamingMessageId: null,
@@ -199,7 +235,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   abortController: null,
 
   getActiveSession: () => {
-    const { sessions, activeSessionId } = get();
+    const { sessions, activeSessionId, openTabIds } = get();
+    if (!activeSessionId || !openTabIds.includes(activeSessionId)) {
+      return { id: '', title: 'New Chat', messages: [], archived: false, createdAt: '', updatedAt: '' } as ChatSession;
+    }
     return sessions.find(s => s.id === activeSessionId) || sessions[0];
   },
 
@@ -208,62 +247,61 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   newChat: () => {
-    const { sessions } = get();
-    const emptyUnarchived = sessions.find(s => !s.archived && s.messages.length === 0);
-    if (emptyUnarchived) {
-      set({ activeSessionId: emptyUnarchived.id, error: null, isRunning: false });
+    const { sessions, openTabIds } = get();
+    const emptyOpen = openTabIds
+      .map(tid => sessions.find(s => s.id === tid))
+      .find(s => s && s.messages.length === 0);
+    if (emptyOpen) {
+      set({ activeSessionId: emptyOpen.id, error: null, isRunning: false });
       return;
     }
     const session = createSession();
-    const updated = [session, ...sessions];
-    set({ sessions: updated, activeSessionId: session.id, error: null, isRunning: false });
+    const updated = [...sessions, session];
+    const newTabs = [...openTabIds, session.id];
+    set({ sessions: updated, openTabIds: newTabs, activeSessionId: session.id, error: null, isRunning: false });
     saveSessions(updated);
+  },
+
+  closeTab: (id) => {
+    const { openTabIds, activeSessionId } = get();
+    const newTabs = openTabIds.filter(tid => tid !== id);
+    let newActive = activeSessionId;
+    if (id === activeSessionId) {
+      const closedIdx = openTabIds.indexOf(id);
+      newActive = newTabs[Math.min(closedIdx, newTabs.length - 1)] || '';
+    }
+    set({ openTabIds: newTabs, activeSessionId: newActive, error: null });
   },
 
   deleteSession: (id) => {
-    const { sessions, activeSessionId } = get();
+    const { sessions, openTabIds, activeSessionId } = get();
     const remaining = sessions.filter(s => s.id !== id);
-    if (remaining.length === 0) {
-      const fresh = createSession();
-      set({ sessions: [fresh], activeSessionId: fresh.id, error: null });
-      saveSessions([fresh]);
-      return;
+    const newTabs = openTabIds.filter(tid => tid !== id);
+    let newActive = activeSessionId;
+    if (id === activeSessionId) {
+      const closedIdx = openTabIds.indexOf(id);
+      newActive = newTabs[Math.min(closedIdx, newTabs.length - 1)] || '';
     }
-    const newActive = id === activeSessionId
-      ? (remaining.find(s => !s.archived) || remaining[0]).id
-      : activeSessionId;
-    set({ sessions: remaining, activeSessionId: newActive });
+    set({ sessions: remaining, openTabIds: newTabs, activeSessionId: newActive, error: null });
     saveSessions(remaining);
   },
 
-  archiveSession: (id) => {
-    const { sessions, activeSessionId } = get();
-    const updated = sessions.map(s => s.id === id ? { ...s, archived: true } : s);
-    let newActive = activeSessionId;
-    if (id === activeSessionId) {
-      const next = updated.find(s => !s.archived && s.id !== id);
-      if (next) {
-        newActive = next.id;
-      } else {
-        const fresh = createSession();
-        updated.unshift(fresh);
-        newActive = fresh.id;
-      }
+  loadFromHistory: (id) => {
+    const { openTabIds, sessions } = get();
+    const session = sessions.find(s => s.id === id);
+    if (!session) return;
+    if (openTabIds.includes(id)) {
+      set({ activeSessionId: id, error: null });
+      return;
     }
-    set({ sessions: updated, activeSessionId: newActive });
-    saveSessions(updated);
-  },
-
-  unarchiveSession: (id) => {
-    const { sessions } = get();
-    const updated = sessions.map(s => s.id === id ? { ...s, archived: false } : s);
-    set({ sessions: updated, activeSessionId: id });
-    saveSessions(updated);
+    const newTabs = [...openTabIds, id];
+    set({ openTabIds: newTabs, activeSessionId: id, error: null });
   },
 
   sendMessage: async (content: string, attachments?: ChatAttachment[]) => {
-    const { isRunning, activeSessionId, sessions } = get();
+    const { isRunning, activeSessionId, sessions, openTabIds } = get();
     if (isRunning) return;
+    if (!activeSessionId || !openTabIds.includes(activeSessionId)) return;
 
     const session = sessions.find(s => s.id === activeSessionId);
     if (!session) return;
@@ -282,11 +320,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
 
-    if (session.messages.length === 0) {
+    const isFirstMessage = session.messages.length === 0;
+    if (isFirstMessage) {
       const titleSource = content.replace(/<file[\s\S]*?<\/file>/g, '').trim();
       const fileNames = attachments?.map(a => a.name).join(', ');
       updatedSession.title = titleSource
-        ? titleSource.slice(0, 60) + (titleSource.length > 60 ? '...' : '')
+        ? titleSource.slice(0, 40) + (titleSource.length > 40 ? '...' : '')
         : fileNames
           ? `Files: ${fileNames.slice(0, 50)}`
           : 'New Chat';
@@ -296,6 +335,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const controller = new AbortController();
     set({ sessions: updatedSessions, isRunning: true, error: null, abortController: controller });
     saveSessions(updatedSessions);
+
+    if (isFirstMessage) {
+      generateChatTitle(content).then(title => {
+        if (!title) return;
+        set(s => {
+          const sessions = s.sessions.map(sess =>
+            sess.id === activeSessionId ? { ...sess, title } : sess
+          );
+          saveSessions(sessions);
+          return { sessions };
+        });
+      });
+    }
 
     await runAgent(
       updatedSession.messages,

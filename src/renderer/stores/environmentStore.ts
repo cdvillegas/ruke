@@ -6,9 +6,11 @@ import { VARIABLE_REGEX } from '@shared/constants';
 interface EnvironmentState {
   environments: Environment[];
   activeEnvironmentId: string | null;
+  selectedEnvironmentId: string | null;
   variables: Map<string, EnvVariable[]>;
   globalVariables: EnvVariable[];
 
+  setSelectedEnvironmentId: (id: string | null) => void;
   loadEnvironments: (workspaceId: string) => Promise<void>;
   createEnvironment: (workspaceId: string, name: string, connectionId?: string, baseUrl?: string) => Promise<Environment>;
   setActiveEnvironment: (workspaceId: string, envId: string) => Promise<void>;
@@ -32,9 +34,11 @@ interface EnvironmentState {
 export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
   environments: [],
   activeEnvironmentId: null,
+  selectedEnvironmentId: null,
   variables: new Map(),
   globalVariables: [],
 
+  setSelectedEnvironmentId: (id) => set({ selectedEnvironmentId: id }),
   loadEnvironments: async (workspaceId) => {
     try {
       const environments = await window.ruke.db.query('getEnvironments', workspaceId);
