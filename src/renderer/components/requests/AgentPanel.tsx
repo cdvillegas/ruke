@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } fr
 import {
   Send, Plus, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, X,
-  Clock, Trash2, PanelRightClose, Square,
+  Clock, Trash2, Square,
 } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
@@ -32,23 +32,48 @@ function SessionTab({ id, title, isActive, onClick, onClose }: {
   onClick: () => void;
   onClose: (e: React.MouseEvent) => void;
 }) {
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (el) setIsOverflowing(el.scrollWidth > el.clientWidth);
+  }, [title]);
+
+  const bg = isActive ? 'var(--color-bg-hover)' : 'var(--color-bg-primary)';
+  const fadeMask = isOverflowing
+    ? { maskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent)', WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent)' }
+    : undefined;
+
   return (
     <button
       onClick={onClick}
-      className={`group relative flex items-center gap-1 pl-3 pr-1 py-1.5 text-xs shrink-0 rounded-md transition-colors ${
+      title={title}
+      className={`group relative flex items-center shrink-0 rounded-md transition-colors pl-3 pr-2 py-1.5 text-xs max-w-[180px] ${
         isActive
-          ? 'bg-bg-primary text-text-primary shadow-sm border border-border'
-          : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover/50'
+          ? 'bg-bg-hover/70 text-text-primary'
+          : 'text-text-muted hover:text-text-secondary'
       }`}
     >
-      <span className="truncate max-w-[100px]">{title}</span>
       <span
-        onClick={onClose}
-        className={`p-0.5 rounded hover:bg-bg-hover transition-colors shrink-0 ${
-          isActive ? 'text-text-muted hover:text-text-primary' : 'opacity-0 group-hover:opacity-100 text-text-muted hover:text-text-primary'
-        }`}
+        ref={textRef}
+        className="min-w-0 overflow-hidden whitespace-nowrap"
+        style={fadeMask}
       >
-        <X size={11} />
+        {title}
+      </span>
+      <span
+        className="absolute right-0 top-0 bottom-0 flex items-center pr-1 pl-3 rounded-r-md opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{
+          background: `linear-gradient(to right, transparent, ${bg} 60%)`,
+        }}
+      >
+        <span
+          onClick={onClose}
+          className="p-0.5 rounded hover:bg-bg-active transition-colors text-text-muted hover:text-text-primary"
+        >
+          <X size={11} />
+        </span>
       </span>
     </button>
   );
@@ -243,23 +268,8 @@ export function AgentPanel() {
         </div>
       )}
 
-      {/* Panel header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
-        <div className="flex items-center gap-2">
-          <Sparkles size={14} className="text-accent" />
-          <span className="text-xs font-semibold text-text-primary">AI Chat</span>
-        </div>
-        <button
-          onClick={() => setAiPanelOpen(false)}
-          className="p-1 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-          title={`Close (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+'}I)`}
-        >
-          <PanelRightClose size={15} />
-        </button>
-      </div>
-
       {/* Session tabs */}
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border shrink-0 bg-bg-secondary/30">
+      <div className="flex items-center gap-1 px-1.5 py-1 border-b border-border shrink-0">
         <div ref={tabsRef} className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none">
           {openTabs.map(s => (
             <SessionTab

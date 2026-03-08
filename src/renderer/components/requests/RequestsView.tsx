@@ -6,7 +6,7 @@ import { RequestBuilder } from '../request/RequestBuilder';
 import { GrpcRequestView } from '../request/GrpcRequestView';
 import { ResponseViewer } from '../response/ResponseViewer';
 import { AgentPanel } from './AgentPanel';
-import { Sparkles, Send, FolderPlus, Plus } from 'lucide-react';
+import { Send, FolderPlus, Plus, Sparkles } from 'lucide-react';
 
 const AGENT_WIDTH_KEY = 'ruke:agent_panel_width';
 const DEFAULT_AGENT_WIDTH = 380;
@@ -157,40 +157,47 @@ export function RequestsView() {
   }, []);
 
   return (
-    <div className="h-full flex overflow-hidden relative">
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {!hasActiveRequest ? (
-          <EmptyState />
-        ) : activeProtocol === 'grpc' ? (
-          <GrpcRequestView />
-        ) : (
-          <ResizableSplit />
-        )}
-      </div>
-
-      {showAgent && (
-        <div className="flex shrink-0" style={{ width: agentWidth }}>
-          <div
-            onMouseDown={handleAgentResize}
-            className="w-1 bg-border hover:bg-accent/40 cursor-col-resize shrink-0 group flex items-center justify-center transition-colors"
-          >
-            <div className="h-8 w-0.5 rounded-full bg-text-muted/20 group-hover:bg-accent/60 transition-colors" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <AgentPanel />
-          </div>
-        </div>
-      )}
-
-      {!showAgent && (
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Persistent heading bar */}
+      <div className="flex items-center justify-end px-4 py-2 border-b border-border shrink-0 bg-bg-secondary/40">
         <button
           onClick={toggleAgent}
-          className="ai-assist-fab absolute bottom-5 right-5 z-10 flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-xs font-semibold tracking-wide transition-all duration-300 hover:scale-105 active:scale-95"
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+            showAgent
+              ? 'bg-accent/10 border-accent/30 text-accent'
+              : 'bg-bg-tertiary border-border text-text-muted hover:bg-bg-hover hover:text-text-primary'
+          }`}
         >
-          <Sparkles size={14} className="ai-assist-icon" />
+          <Sparkles size={12} />
           AI Assist
         </button>
-      )}
+      </div>
+
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {!hasActiveRequest ? (
+            <EmptyState />
+          ) : activeProtocol === 'grpc' ? (
+            <GrpcRequestView />
+          ) : (
+            <ResizableSplit />
+          )}
+        </div>
+
+        {showAgent && (
+          <div className="flex shrink-0" style={{ width: agentWidth }}>
+            <div
+              onMouseDown={handleAgentResize}
+              className="w-1 bg-border hover:bg-accent/40 cursor-col-resize shrink-0 group flex items-center justify-center transition-colors"
+            >
+              <div className="h-8 w-0.5 rounded-full bg-text-muted/20 group-hover:bg-accent/60 transition-colors" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <AgentPanel />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

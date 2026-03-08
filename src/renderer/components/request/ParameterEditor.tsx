@@ -3,7 +3,7 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 import { useRequestStore } from '../../stores/requestStore';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useEnvironmentStore } from '../../stores/environmentStore';
-import { Plus, Trash2, Info } from 'lucide-react';
+import { Plus, Trash2, Info, Lock } from 'lucide-react';
 import type { KeyValue, EndpointParam } from '@shared/types';
 
 interface ParamRow {
@@ -43,7 +43,7 @@ function buildParamRows(
   }
 
   for (const p of params) {
-    if (!usedKeys.has(p.key) && p.key.trim()) {
+    if (!usedKeys.has(p.key)) {
       rows.push({
         key: p.key,
         value: p.value,
@@ -87,7 +87,7 @@ function ParamRow({
   const resolveString = useEnvironmentStore((s) => s.resolveString);
   const keyRef = useRef<HTMLInputElement>(null);
   const valueRef = useRef<HTMLInputElement>(null);
-  const isCustom = row.source === 'custom';
+  const isEditable = row.source === 'custom';
   const isDisabled = !row.enabled;
   const resolvedValue = row.value.includes('{{') ? resolveString(row.value) : null;
   const isEnum = row.enumValues && row.enumValues.length > 0;
@@ -101,7 +101,9 @@ function ParamRow({
       isDisabled ? 'opacity-40' : 'hover:bg-bg-hover/30'
     }`}>
       <div className="flex items-center justify-center border-r border-border/50">
-        {isCustom ? (
+        {row.source === 'path' ? (
+          <Lock size={10} className="text-text-muted/30" />
+        ) : isEditable ? (
           <input
             type="checkbox"
             checked={row.enabled}
@@ -109,13 +111,18 @@ function ParamRow({
             className="w-3.5 h-3.5 rounded border-border accent-accent cursor-pointer"
           />
         ) : (
-          <div className="w-3.5 h-3.5" />
+          <input
+            type="checkbox"
+            checked={row.enabled}
+            onChange={(e) => onUpdate(row.value, e.target.checked)}
+            className="w-3.5 h-3.5 rounded border-border accent-accent cursor-pointer"
+          />
         )}
       </div>
 
       <div className="relative border-r border-border/50">
         <div className="flex items-center">
-          {isCustom ? (
+          {isEditable ? (
             <input
               ref={keyRef}
               type="text"
@@ -131,6 +138,9 @@ function ParamRow({
             <div className="flex items-center gap-1.5 px-3 py-2 min-w-0 flex-1">
               <span className="text-xs font-mono font-medium text-text-primary truncate">{row.key}</span>
               <span className={`text-[10px] font-mono leading-none shrink-0 ${typeColor(row.type)}`}>{row.type}</span>
+              {row.required && (
+                <span className="text-[9px] text-error/60 font-medium shrink-0">*</span>
+              )}
               {row.description && (
                 <Tooltip.Provider delayDuration={150}>
                   <Tooltip.Root>
@@ -215,6 +225,20 @@ function ParamRow({
   );
 }
 
+function SectionHeader({ label, count, badge }: { label: string; count?: number; badge?: string }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-tertiary/50 border-b border-border/50">
+      <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">{label}</span>
+      {badge && (
+        <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-accent/10 text-accent/70 font-medium">{badge}</span>
+      )}
+      {count !== undefined && count > 0 && (
+        <span className="text-[9px] text-text-muted/50 font-mono">{count}</span>
+      )}
+    </div>
+  );
+}
+
 interface ParameterEditorProps {
   paramRefs?: React.MutableRefObject<Record<string, HTMLElement | null>>;
   simpleMode?: boolean;
@@ -239,7 +263,7 @@ export function ParameterEditor({ paramRefs, simpleMode }: ParameterEditorProps)
     [activeRequest.params, linkedEndpoint]
   );
 
-  const updateParam = useCallback((key: string, value: string, enabled: boolean, source: string) => {
+  const updateParam = useCallback((key: string, value: string, enabled: boolean, source: string, customIdx?: number) => {
     if (source === 'header') {
       const updated = activeRequest.headers.map((h) =>
         h.key === key ? { ...h, value, enabled } : h
@@ -248,6 +272,17 @@ export function ParameterEditor({ paramRefs, simpleMode }: ParameterEditorProps)
         updated.push({ key, value, enabled });
       }
       setHeaders(updated);
+    } else if (source === 'custom' && customIdx !== undefined) {
+      const specKeys = new Set(linkedEndpoint?.parameters?.map((ep) => ep.name) || []);
+      let ci = -1;
+      const updated = activeRequest.params.map((p) => {
+        if (!specKeys.has(p.key)) {
+          ci++;
+          if (ci === customIdx) return { ...p, value, enabled };
+        }
+        return p;
+      });
+      setParams(updated);
     } else {
       const updated = activeRequest.params.map((p) =>
         p.key === key ? { ...p, value, enabled } : p
@@ -257,17 +292,27 @@ export function ParameterEditor({ paramRefs, simpleMode }: ParameterEditorProps)
       }
       setParams(updated);
     }
-  }, [activeRequest.headers, activeRequest.params, setHeaders, setParams]);
+  }, [activeRequest.headers, activeRequest.params, setHeaders, setParams, linkedEndpoint]);
 
   const addCustomParam = useCallback(() => {
     const newParams = [...activeRequest.params, { key: '', value: '', enabled: true }];
     setParams(newParams);
-    setLastAddedIdx(rows.length);
-  }, [activeRequest.params, setParams, rows.length]);
+    const queryRows = rows.filter(r => r.source === 'query' || r.source === 'custom');
+    setLastAddedIdx(queryRows.length);
+  }, [activeRequest.params, setParams, rows]);
 
-  const removeParam = useCallback((key: string) => {
-    setParams(activeRequest.params.filter((p) => p.key !== key));
-  }, [activeRequest.params, setParams]);
+  const removeParam = useCallback((customIdx: number) => {
+    const specKeys = new Set(linkedEndpoint?.parameters?.map((ep) => ep.name) || []);
+    let ci = -1;
+    const updated = activeRequest.params.filter((p) => {
+      if (!specKeys.has(p.key)) {
+        ci++;
+        if (ci === customIdx) return false;
+      }
+      return true;
+    });
+    setParams(updated);
+  }, [activeRequest.params, linkedEndpoint, setParams]);
 
   const updateCustomKey = useCallback((index: number, newKey: string) => {
     const customParams = activeRequest.params.filter(
@@ -282,47 +327,71 @@ export function ParameterEditor({ paramRefs, simpleMode }: ParameterEditorProps)
   }, [activeRequest.params, linkedEndpoint, setParams]);
 
   const pathRows = rows.filter(r => r.source === 'path');
-  const allQueryRows = rows.filter(r => r.source === 'query');
+  const specQueryRows = rows.filter(r => r.source === 'query');
   const customRows = rows.filter(r => r.source === 'custom');
 
-  const visibleQueryRows = simpleMode
-    ? allQueryRows.filter(r => r.required)
-    : allQueryRows;
+  const visibleSpecQueryRows = simpleMode
+    ? specQueryRows.filter(r => r.required)
+    : specQueryRows;
 
-  const allVisibleRows = [...pathRows, ...visibleQueryRows, ...customRows];
+  const hasPathSection = pathRows.length > 0;
+  const queryAndCustomRows = [...visibleSpecQueryRows, ...customRows];
 
   let customIndex = -1;
 
   return (
     <div className="space-y-2">
+      {hasPathSection && (
+        <div className="rounded-lg border border-border overflow-hidden bg-bg-secondary">
+          <SectionHeader label="Path Parameters" badge="required" />
+          <div className="grid grid-cols-[28px_1fr_1fr_28px] gap-0 border-b border-border/50 bg-bg-tertiary/30">
+            <div className="py-1" />
+            <div className="px-3 py-1 text-[10px] text-text-muted/60 uppercase tracking-wider font-semibold border-l border-r border-border/50">Key</div>
+            <div className="px-3 py-1 text-[10px] text-text-muted/60 uppercase tracking-wider font-semibold">Value</div>
+            <div />
+          </div>
+          {pathRows.map((row, idx) => (
+            <ParamRow
+              key={`path-${row.key}-${idx}`}
+              row={row}
+              onUpdate={(value, enabled) => updateParam(row.key, value, enabled, row.source)}
+              autoFocusKey={false}
+            />
+          ))}
+        </div>
+      )}
+
       <div className="rounded-lg border border-border overflow-hidden bg-bg-secondary">
-        <div className="grid grid-cols-[28px_1fr_1fr_28px] gap-0 border-b border-border bg-bg-tertiary/50">
-          <div className="py-1.5" />
-          <div className="px-3 py-1.5 text-[10px] text-text-muted uppercase tracking-wider font-semibold border-l border-r border-border/50">
-            Key
-          </div>
-          <div className="px-3 py-1.5 text-[10px] text-text-muted uppercase tracking-wider font-semibold">
-            Value
-          </div>
+        <SectionHeader label="Query Parameters" count={queryAndCustomRows.filter(r => r.enabled).length} />
+        <div className="grid grid-cols-[28px_1fr_1fr_28px] gap-0 border-b border-border/50 bg-bg-tertiary/30">
+          <div className="py-1" />
+          <div className="px-3 py-1 text-[10px] text-text-muted/60 uppercase tracking-wider font-semibold border-l border-r border-border/50">Key</div>
+          <div className="px-3 py-1 text-[10px] text-text-muted/60 uppercase tracking-wider font-semibold">Value</div>
           <div />
         </div>
 
-        {allVisibleRows.map((row, idx) => {
+        {queryAndCustomRows.map((row, idx) => {
           const isCustom = row.source === 'custom';
           if (isCustom) customIndex++;
           const cidx = customIndex;
 
           return (
             <ParamRow
-              key={`${row.source}-${row.key}-${idx}`}
+              key={`query-${row.key}-${idx}`}
               row={row}
-              onUpdate={(value, enabled) => updateParam(row.key, value, enabled, row.source)}
-              onRemove={isCustom ? () => removeParam(row.key) : undefined}
+              onUpdate={(value, enabled) => updateParam(row.key, value, enabled, row.source, isCustom ? cidx : undefined)}
+              onRemove={isCustom ? () => removeParam(cidx) : undefined}
               onKeyChange={isCustom ? (k) => updateCustomKey(cidx, k) : undefined}
               autoFocusKey={idx === lastAddedIdx}
             />
           );
         })}
+
+        {queryAndCustomRows.length === 0 && (
+          <div className="px-3 py-4 text-center">
+            <p className="text-[11px] text-text-muted/50">No query parameters</p>
+          </div>
+        )}
 
         <div className="border-t border-border/50">
           <button
@@ -330,7 +399,7 @@ export function ParameterEditor({ paramRefs, simpleMode }: ParameterEditorProps)
             className="flex items-center gap-1.5 w-full px-3 py-2 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-hover/50 transition-colors"
           >
             <Plus size={12} />
-            <span>Add parameter</span>
+            <span>Add query parameter</span>
           </button>
         </div>
       </div>

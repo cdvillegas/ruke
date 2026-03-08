@@ -71,7 +71,7 @@ export function RequestView() {
             <div
               key={tab.id}
               onClick={() => switchTab(tab.id)}
-              className={`group flex items-center gap-2 px-3 py-2.5 text-xs cursor-pointer border-r border-border shrink-0 transition-colors ${
+              className={`group relative flex items-center gap-2 px-3 py-2.5 text-xs cursor-pointer border-r border-border shrink-0 transition-colors ${
                 tab.id === activeTabId
                   ? 'bg-bg-primary text-text-primary'
                   : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
@@ -88,12 +88,21 @@ export function RequestView() {
               </span>
               <span className="max-w-40 truncate">{tab.name || tab.url || 'New Request'}</span>
               {openTabs.length > 1 && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-bg-active transition-all"
+                <span
+                  className="absolute right-0 top-0 bottom-0 flex items-center pr-1.5 pl-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{
+                    background: tab.id === activeTabId
+                      ? 'linear-gradient(to right, transparent, var(--color-bg-primary) 40%)'
+                      : 'linear-gradient(to right, transparent, var(--color-bg-secondary) 40%)',
+                  }}
                 >
-                  <X size={11} />
-                </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
+                    className="p-0.5 rounded hover:bg-bg-active transition-colors text-text-muted hover:text-text-primary"
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
               )}
             </div>
           ))}

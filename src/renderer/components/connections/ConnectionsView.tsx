@@ -878,6 +878,15 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
   };
 
   const handleFileContent = async (file: File) => {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext === 'proto') {
+      reset();
+      setShowGrpcSetup(true);
+      setGrpcProtoPath(file.name);
+      setGrpcName(file.name.replace(/\.proto$/, ''));
+      return;
+    }
+
     reset();
     setStatus('resolving');
     addStep(`Reading ${file.name}...`);
@@ -915,33 +924,28 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
     }
   };
 
-  const handleBrowse = async () => {
+  const handleBrowseFile = async () => {
     const result = await window.ruke.file.import([
-      { name: 'API Specs', extensions: ['json', 'yaml', 'yml', 'graphql', 'gql'] },
+      { name: 'API Specs', extensions: ['json', 'yaml', 'yml', 'graphql', 'gql', 'proto'] },
     ]);
-    if (result.success && result.content) {
+    if (!result?.success) return;
+
+    const ext = (result.path || '').split('.').pop()?.toLowerCase();
+    if (ext === 'proto' && result.path) {
+      reset();
+      setShowGrpcSetup(true);
+      setGrpcProtoPath(result.path);
+      setGrpcName(result.path.split('/').pop()?.replace('.proto', '') || '');
+      return;
+    }
+
+    if (result.content) {
       reset();
       setStatus('resolving');
       addStep('Parsing spec...');
       if (resolveSpecText(result.content, result.path)) { completeActiveStep(); return; }
       setStatus('error');
       setError('Could not parse the file. Make sure it\'s a valid OpenAPI/Swagger spec.');
-    }
-  };
-
-  const handleBrowseProto = async () => {
-    const result = await window.ruke.file.import([
-      { name: 'Protocol Buffer', extensions: ['proto'] },
-    ]);
-    if (result?.success && result.path) {
-      reset();
-      setStatus('resolving');
-      addStep('Loading .proto file...');
-      setShowGrpcSetup(true);
-      setGrpcProtoPath(result.path);
-      setGrpcName(result.path.split('/').pop()?.replace('.proto', '') || '');
-      completeActiveStep();
-      setStatus('idle');
     }
   };
 
@@ -1084,58 +1088,65 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
           </div>
         )}
 
-        {/* Header — only in idle, subtle */}
-        {status === 'idle' && !showManual && !showGrpcSetup && (
-          <div className="text-center mb-6">
-            <h2 className="text-base font-semibold text-text-primary mb-1">Connect an API</h2>
-            <p className="text-xs text-text-muted">Search by name, paste a URL, or drop a spec file</p>
+        {/* Header — always visible, decoupled */}
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
+            {showManual ? <Plus size={18} className="text-text-muted" /> : showGrpcSetup ? <Radio size={18} className="text-text-muted" /> : <Plug size={18} className="text-text-muted" />}
+          </div>
+          <h2 className="text-base font-semibold text-text-primary mb-1">
+            {showManual ? 'Add Connection' : showGrpcSetup ? 'Connect gRPC' : 'Connect an API'}
+          </h2>
+          <p className="text-[11px] text-text-muted/70">
+            {showManual ? 'Enter a name and base URL for your API' : showGrpcSetup ? 'Configure your gRPC service connection' : 'Search by name, paste a URL, or import a spec file'}
+          </p>
+        </div>
+
+        {/* Search bar — hidden in manual/grpc modes */}
+        {!showManual && !showGrpcSetup && (
+          <div className="relative">
+            <div className="relative flex items-center command-bar-glow rounded-2xl">
+              {status === 'resolving' ? (
+                <Loader2 size={16} className="absolute left-4 text-accent z-10 animate-spin" />
+              ) : (
+                <Search size={16} className="absolute left-4 text-text-muted z-10" />
+              )}
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => { setInput(e.target.value); if (status === 'error' || status === 'resolved') reset(); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+                onPaste={handlePaste}
+                placeholder=""
+                disabled={status === 'resolving'}
+                className="w-full pl-11 pr-14 py-3.5 text-sm rounded-2xl bg-bg-secondary border border-transparent text-text-primary focus:outline-none transition-all disabled:opacity-60 relative"
+              />
+              {!input && status === 'idle' && (
+                <WavePlaceholder text={placeholder.text} phase={placeholder.phase} />
+              )}
+              {!input && status === 'resolving' && steps.length > 0 && (
+                <span className="absolute left-11 text-sm text-text-muted pointer-events-none select-none z-[2]">
+                  {steps.filter(s => s.status === 'active')[0]?.text || steps[steps.length - 1]?.text}
+                </span>
+              )}
+              {input.trim() && status !== 'resolving' && (
+                <button
+                  onClick={handleSubmit}
+                  className="absolute right-2 p-2 rounded-xl text-white bg-accent hover:bg-accent-hover transition-all duration-200 z-10 cursor-pointer"
+                >
+                  <Send size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Searching shimmer bar */}
+            {status === 'resolving' && (
+              <div className="absolute bottom-0 left-4 right-4 h-[2px] rounded-full overflow-hidden">
+                <div className="h-full bg-accent/60 rounded-full discovery-search-bar" />
+              </div>
+            )}
           </div>
         )}
-
-        {/* Search bar — always visible, adapts to state */}
-        <div className="relative">
-          <div className="relative flex items-center command-bar-glow rounded-2xl">
-            {status === 'resolving' ? (
-              <Loader2 size={16} className="absolute left-4 text-accent z-10 animate-spin" />
-            ) : (
-              <Search size={16} className="absolute left-4 text-text-muted z-10" />
-            )}
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => { setInput(e.target.value); if (status === 'error' || status === 'resolved') reset(); }}
-              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-              onPaste={handlePaste}
-              placeholder=""
-              disabled={status === 'resolving'}
-              className="w-full pl-11 pr-14 py-3.5 text-sm rounded-2xl bg-bg-secondary border border-transparent text-text-primary focus:outline-none transition-all disabled:opacity-60 relative"
-            />
-            {!input && status === 'idle' && (
-              <WavePlaceholder text={placeholder.text} phase={placeholder.phase} />
-            )}
-            {!input && status === 'resolving' && steps.length > 0 && (
-              <span className="absolute left-11 text-sm text-text-muted pointer-events-none select-none z-[2]">
-                {steps.filter(s => s.status === 'active')[0]?.text || steps[steps.length - 1]?.text}
-              </span>
-            )}
-            {input.trim() && status !== 'resolving' && (
-              <button
-                onClick={handleSubmit}
-                className="absolute right-2 p-2 rounded-xl text-white bg-accent hover:bg-accent-hover transition-all duration-200 z-10 cursor-pointer"
-              >
-                <Send size={14} />
-              </button>
-            )}
-          </div>
-
-          {/* Searching shimmer bar */}
-          {status === 'resolving' && (
-            <div className="absolute bottom-0 left-4 right-4 h-[2px] rounded-full overflow-hidden">
-              <div className="h-full bg-accent/60 rounded-full discovery-search-bar" />
-            </div>
-          )}
-        </div>
 
         {/* Result card — slides up below the search bar */}
         {status === 'resolved' && result && (
@@ -1232,19 +1243,10 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
           </div>
         )}
 
-        {/* Manual fallback */}
+        {/* Manual form */}
         {showManual && (
-          <div className="mt-4 animate-fade-in">
+          <div className="animate-fade-in">
             <div className="rounded-xl bg-bg-secondary border border-border p-4 space-y-3">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs text-text-primary font-medium">Add manually</p>
-                <button
-                  onClick={() => { setShowManual(false); setManualName(''); setManualUrl(''); inputRef.current?.focus(); }}
-                  className="text-[11px] text-text-muted hover:text-text-primary transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
               <input
                 type="text"
                 value={manualName}
@@ -1260,54 +1262,76 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
                 placeholder="Base URL (e.g. https://api.example.com)"
                 className="w-full px-3.5 py-2.5 text-xs font-mono rounded-xl bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/40 transition-colors"
               />
-              <button
-                onClick={handleManualSubmit}
-                disabled={!manualName.trim() || !manualUrl.trim()}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white disabled:opacity-40 transition-colors font-medium"
-              >
-                <Plus size={14} /> Add Connection
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleManualSubmit}
+                  disabled={!manualName.trim() || !manualUrl.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white disabled:opacity-40 transition-colors font-medium"
+                >
+                  <Plus size={14} /> Add Connection
+                </button>
+                <button
+                  onClick={() => { setShowManual(false); setManualName(''); setManualUrl(''); inputRef.current?.focus(); }}
+                  className="px-4 py-2.5 text-xs rounded-xl bg-bg-tertiary border border-border hover:bg-bg-hover text-text-primary transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Secondary actions — clean row below search */}
+        {/* Or divider + drop zone + manual link — idle state only */}
         {status === 'idle' && !showManual && !showGrpcSetup && (
-          <div className="flex items-center justify-center gap-1 mt-4">
+          <>
+            <div className="flex items-center gap-3 my-4">
+              <div className="flex-1 h-px bg-border/40" />
+              <span className="text-[10px] uppercase tracking-widest text-text-muted/40 font-medium">or</span>
+              <div className="flex-1 h-px bg-border/40" />
+            </div>
+
             <button
-              onClick={handleBrowse}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-secondary rounded-lg transition-colors"
+              onClick={handleBrowseFile}
+              className="w-full py-6 rounded-xl border border-dashed border-border/50 hover:border-accent/30 hover:bg-accent/[0.03] transition-all duration-200 cursor-pointer group"
             >
-              <FileJson size={11} /> Import file
+              <div className="flex flex-col items-center gap-2.5">
+                <div className="w-9 h-9 rounded-lg bg-bg-tertiary/60 group-hover:bg-accent/10 flex items-center justify-center transition-colors">
+                  <Upload size={16} className="text-text-muted/50 group-hover:text-accent/70 transition-colors" />
+                </div>
+                <div className="text-center">
+                  <p className="text-[11px] text-text-muted/70">
+                    Drop a spec file here or{' '}
+                    <span className="text-accent/80 group-hover:text-accent font-medium">browse</span>
+                  </p>
+                  <div className="flex items-center justify-center gap-1 mt-1.5">
+                    {['.json', '.yaml', '.proto', '.graphql'].map((ext) => (
+                      <span key={ext} className="px-1.5 py-0.5 rounded bg-bg-tertiary/50 text-[9px] font-mono text-text-muted/40">{ext}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </button>
-            <button
-              onClick={handleBrowseProto}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-secondary rounded-lg transition-colors"
-            >
-              <Radio size={11} /> gRPC
-            </button>
-            <button
-              onClick={() => { setShowManual(true); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-secondary rounded-lg transition-colors"
-            >
-              <Plus size={11} /> Manual
-            </button>
-          </div>
+
+            <div className="flex justify-center mt-3">
+              <button
+                onClick={() => setShowManual(true)}
+                className="text-[11px] text-text-muted/50 hover:text-text-muted transition-colors"
+              >
+                or add manually
+              </button>
+            </div>
+          </>
         )}
 
         {showGrpcSetup && (
-          <div className="mt-4 animate-fade-in">
+          <div className="animate-fade-in">
             <div className="rounded-xl border border-accent/20 bg-bg-secondary p-4 space-y-3">
-              <div className="flex items-center gap-2 mb-1">
-                <Radio size={14} className="text-accent" />
-                <h3 className="text-xs font-semibold text-text-primary">Connect gRPC Service</h3>
-              </div>
               {grpcProtoPath && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-bg-tertiary border border-border">
                   <FileJson size={12} className="text-accent shrink-0" />
                   <span className="text-[10px] font-mono text-text-secondary truncate">{grpcProtoPath}</span>
                   <button
-                    onClick={handleBrowseProto}
+                    onClick={handleBrowseFile}
                     className="ml-auto text-[10px] text-accent hover:text-accent-hover transition-colors shrink-0"
                   >
                     Change

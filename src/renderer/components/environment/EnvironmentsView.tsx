@@ -6,7 +6,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { ConnectionIcon } from '../connections/ConnectionsView';
 import {
   Plus, Trash2, Eye, EyeOff, Globe, Edit3, Check, X,
-  Layers, Link, ExternalLink, Search,
+  Layers, Link, ExternalLink, Search, Upload, FileText,
 } from 'lucide-react';
 import type { Environment, ApiConnection } from '@shared/types';
 
@@ -220,6 +220,15 @@ export function EnvironmentsMain() {
     setSelectedEnvId(env.id);
   };
 
+  const handleCreateTemplate = async () => {
+    if (!activeWorkspaceId) return;
+    const env = await createEnvironment(activeWorkspaceId, 'Development');
+    setSelectedEnvId(env.id);
+    await addVariable(env.id, 'api_key', '', 'global', true);
+    await addVariable(env.id, 'base_url', '', 'global', false);
+    await addVariable(env.id, 'token', '', 'global', true);
+  };
+
   const handleAddVariable = async () => {
     if (selectedEnvId) {
       await addVariable(selectedEnvId, '', '', 'global', false);
@@ -319,21 +328,45 @@ export function EnvironmentsMain() {
         </div>
       ) : (
         <div className="flex items-center justify-center h-full">
-          <div className="text-center max-w-sm">
-            <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-4">
-              <Layers size={28} className="text-accent" />
+          <div className="w-full max-w-md px-8">
+            <div className="flex flex-col items-center mb-6">
+              <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
+                <Layers size={18} className="text-text-muted" />
+              </div>
+              <h3 className="text-base font-semibold text-text-primary mb-1">Environments</h3>
+              <p className="text-[11px] text-text-muted/70 text-center">
+                Manage variables like API keys and base URLs across dev, staging, and production
+              </p>
             </div>
-            <h3 className="text-base font-semibold text-text-primary mb-2">Environments</h3>
-            <p className="text-sm text-text-muted leading-relaxed">
-              Create environments to manage variables like API keys, base URLs, and tokens across your requests. Switch between development, staging, and production with one click.
-            </p>
+
             {activeWorkspaceId && (
-              <button
-                onClick={() => handleCreate()}
-                className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/90 transition-colors mx-auto"
-              >
-                <Plus size={14} /> Create Environment
-              </button>
+              <>
+                <button
+                  onClick={() => handleCreate()}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-secondary border border-border hover:border-accent/30 hover:bg-bg-hover transition-all text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-accent/10 group-hover:bg-accent/15 flex items-center justify-center shrink-0 transition-colors">
+                    <Plus size={14} className="text-accent" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-text-primary">Create environment</p>
+                    <p className="text-[10px] text-text-muted/60 mt-0.5">Start with a blank environment and add variables</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleCreateTemplate()}
+                  className="w-full flex items-center gap-3 px-4 py-3 mt-2 rounded-xl bg-bg-secondary border border-border hover:border-accent/30 hover:bg-bg-hover transition-all text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-bg-tertiary/60 group-hover:bg-accent/10 flex items-center justify-center shrink-0 transition-colors">
+                    <FileText size={14} className="text-text-muted/50 group-hover:text-accent/70 transition-colors" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-text-primary">Quick start template</p>
+                    <p className="text-[10px] text-text-muted/60 mt-0.5">Create with common variables like API key, base URL, and token</p>
+                  </div>
+                </button>
+              </>
             )}
           </div>
         </div>
