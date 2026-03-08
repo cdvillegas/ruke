@@ -380,9 +380,12 @@ export function AgentPanel() {
             ))}
             {showThinking && (
               <div className="flex justify-start">
-                <div className="flex items-center gap-2 px-3 py-2">
-                  <Loader2 size={14} className="text-accent animate-spin" />
-                  <span className="text-xs text-text-muted">Thinking...</span>
+                <div className="flex items-center gap-1.5 px-3 py-2">
+                  <span className="flex items-center gap-[3px]">
+                    <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:0ms]" />
+                    <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:150ms]" />
+                    <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:300ms]" />
+                  </span>
                 </div>
               </div>
             )}
