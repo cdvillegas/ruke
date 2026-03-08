@@ -993,7 +993,7 @@ export function AgentPanel() {
           </div>
         </div>
       ) : (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto py-3">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto py-3 relative z-0">
           {activePlan && <InlinePlanView plan={activePlan} />}
           <div className="space-y-3 px-3">
             {visibleMessages.map(msg => (
@@ -1031,7 +1031,7 @@ export function AgentPanel() {
       {/* Input */}
       {hasActiveTab && (
         <div
-          className="shrink-0 border-t border-border p-2.5 relative"
+          className="shrink-0 border-t border-border p-2.5 relative z-20"
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
@@ -1045,62 +1045,67 @@ export function AgentPanel() {
               </div>
             </div>
           )}
-          <div className={`bg-bg-secondary rounded-xl border transition-colors px-3 ${
+          {/* Queued messages — stacked above input */}
+          {messageQueue.length > 0 && (
+            <div className="mb-2 rounded-xl border border-border bg-bg-secondary px-3 py-2">
+              <button
+                onClick={() => setQueueExpanded(!queueExpanded)}
+                className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-primary transition-colors w-full"
+              >
+                {queueExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                <span className="font-medium">{messageQueue.length} Queued</span>
+              </button>
+              {queueExpanded && (
+                <div className="space-y-0.5 mt-1.5">
+                  {messageQueue.map((q, i) => (
+                    <div key={i} className="group/q flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-bg-hover/50 text-xs transition-colors">
+                      <Circle size={8} className="text-text-muted/40 shrink-0" />
+                      <span className="flex-1 truncate text-text-secondary">{q.content.slice(0, 80)}{q.content.length > 80 ? '…' : ''}</span>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover/q:opacity-100 transition-opacity shrink-0">
+                        <button
+                          onClick={() => { removeQueuedMessage(i); setInput(q.content); }}
+                          className="p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
+                          title="Edit"
+                        >
+                          <Pencil size={10} />
+                        </button>
+                        {i > 0 && (
+                          <button
+                            onClick={() => {
+                              const queue = [...messageQueue];
+                              [queue[i - 1], queue[i]] = [queue[i], queue[i - 1]];
+                              useChatStore.getState().reorderQueue(queue);
+                            }}
+                            className="p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
+                            title="Move up"
+                          >
+                            <ArrowUp size={10} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => removeQueuedMessage(i)}
+                          className="p-0.5 rounded text-text-muted hover:text-error transition-colors"
+                          title="Remove"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className={`bg-bg-secondary rounded-xl border transition-all duration-300 px-3 ${
             isRunning
               ? 'input-glow-waiting border-accent/30'
-              : 'border-border focus-within:border-accent/40'
+              : agentMode === 'ask'
+                ? 'border-border focus-within:border-emerald-400/40 focus-within:shadow-[0_0_12px_rgba(52,211,153,0.08)]'
+                : agentMode === 'plan'
+                  ? 'border-border focus-within:border-amber-400/40 focus-within:shadow-[0_0_12px_rgba(251,191,36,0.08)]'
+                  : 'border-border focus-within:border-accent/40 focus-within:shadow-[0_0_12px_rgba(99,102,241,0.08)]'
           }`}>
-            {/* Queued messages — inside the input card */}
-            {messageQueue.length > 0 && (
-              <div className="pt-2">
-                <button
-                  onClick={() => setQueueExpanded(!queueExpanded)}
-                  className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-primary transition-colors w-full mb-1"
-                >
-                  {queueExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                  <span className="font-medium">{messageQueue.length} Queued</span>
-                </button>
-                {queueExpanded && (
-                  <div className="space-y-0.5 mb-1">
-                    {messageQueue.map((q, i) => (
-                      <div key={i} className="group/q flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-bg-hover/50 text-xs transition-colors">
-                        <Circle size={8} className="text-text-muted/40 shrink-0" />
-                        <span className="flex-1 truncate text-text-secondary">{q.content.slice(0, 80)}{q.content.length > 80 ? '…' : ''}</span>
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover/q:opacity-100 transition-opacity shrink-0">
-                          <button
-                            onClick={() => { removeQueuedMessage(i); setInput(q.content); }}
-                            className="p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
-                            title="Edit"
-                          >
-                            <Pencil size={10} />
-                          </button>
-                          {i > 0 && (
-                            <button
-                              onClick={() => {
-                                const queue = [...messageQueue];
-                                [queue[i - 1], queue[i]] = [queue[i], queue[i - 1]];
-                                useChatStore.getState().reorderQueue(queue);
-                              }}
-                              className="p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
-                              title="Move up"
-                            >
-                              <ArrowUp size={10} />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => removeQueuedMessage(i)}
-                            className="p-0.5 rounded text-text-muted hover:text-error transition-colors"
-                            title="Remove"
-                          >
-                            <Trash2 size={10} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Attachments & context mentions */}
             {(attachedFiles.length > 0 || mentions.length > 0) && (
@@ -1125,7 +1130,7 @@ export function AgentPanel() {
                   <div className="flex flex-wrap gap-1.5 pb-0.5 pt-1">
                     {mentions.map(m => (
                       <span key={`${m.type}-${m.id}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent/10 border border-accent/20 text-[11px] text-accent font-medium">
-                        {m.type === 'request' && <ArrowRight size={10} />}
+                        {m.type === 'request' && <Send size={10} />}
                         {m.type === 'connection' && <Plug size={10} />}
                         {m.type === 'environment' && <Layers size={10} />}
                         {m.type === 'collection' && <FolderOpen size={10} />}
@@ -1151,10 +1156,10 @@ export function AgentPanel() {
                   isRunning
                     ? 'Add a follow-up'
                     : agentMode === 'ask'
-                      ? 'What would you like to know?'
+                      ? 'What would you like to know?  @ to add context'
                       : agentMode === 'plan'
-                        ? 'Describe what you want to plan'
-                        : 'What can I help you build?'
+                        ? 'Describe what you want to plan  @ to add context'
+                        : 'What can I help you build?  @ to add context'
                 }
                 rows={1}
                 className="w-full bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-28"
@@ -1184,7 +1189,7 @@ export function AgentPanel() {
                             onClick={() => addMention(item)}
                             className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
                           >
-                            {item.type === 'request' && <ArrowRight size={11} className="text-text-muted shrink-0" />}
+                            {item.type === 'request' && <Send size={11} className="text-text-muted shrink-0" />}
                             {item.type === 'connection' && <Plug size={11} className="text-text-muted shrink-0" />}
                             {item.type === 'environment' && <Layers size={11} className="text-text-muted shrink-0" />}
                             {item.type === 'collection' && <FolderOpen size={11} className="text-text-muted shrink-0" />}
@@ -1203,18 +1208,18 @@ export function AgentPanel() {
             <div className="flex items-center justify-between pb-2.5 pt-1.5">
               {/* Left: mode picker + model picker */}
               <div className="flex items-center gap-1">
-                <div ref={modePickerRef} className="relative">
+                <div ref={modePickerRef}>
                   {(() => {
                     const modeStyles = {
-                      agent: { bg: 'bg-accent/8', border: 'border-accent/15', text: 'text-accent/80', hover: 'hover:bg-accent/12' },
-                      ask: { bg: 'bg-emerald-500/8', border: 'border-emerald-500/15', text: 'text-emerald-400/80', hover: 'hover:bg-emerald-500/12' },
-                      plan: { bg: 'bg-amber-500/8', border: 'border-amber-500/15', text: 'text-amber-400/80', hover: 'hover:bg-amber-500/12' },
+                      agent: { bg: 'bg-accent/8', border: 'border-accent/15', text: 'text-accent/80', hover: 'hover:bg-accent/12', shadow: 'shadow-[0_0_8px_rgba(99,102,241,0.12)]' },
+                      ask: { bg: 'bg-emerald-500/8', border: 'border-emerald-500/15', text: 'text-emerald-400/80', hover: 'hover:bg-emerald-500/12', shadow: 'shadow-[0_0_8px_rgba(52,211,153,0.12)]' },
+                      plan: { bg: 'bg-amber-500/8', border: 'border-amber-500/15', text: 'text-amber-400/80', hover: 'hover:bg-amber-500/12', shadow: 'shadow-[0_0_8px_rgba(251,191,36,0.12)]' },
                     };
                     const s = modeStyles[agentMode];
                     return (
                       <button
                         onClick={() => { setShowModePicker(!showModePicker); setShowModelPicker(false); }}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all ${s.bg} ${s.border} ${s.text} ${s.hover}`}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all ${s.bg} ${s.border} ${s.text} ${s.hover} ${s.shadow}`}
                         title={agentMode === 'agent' ? 'Agent mode — can read and modify' : agentMode === 'plan' ? 'Plan mode — creates plans' : 'Ask mode — read-only'}
                       >
                         {agentMode === 'agent' && <Infinity size={12} className="shrink-0" />}
@@ -1227,7 +1232,13 @@ export function AgentPanel() {
                   })()}
 
                   {showModePicker && (
-                    <div className="absolute bottom-full left-0 mb-1.5 w-52 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in">
+                    <div
+                      className="fixed w-52 bg-bg-secondary border border-border rounded-xl shadow-2xl z-[100] py-1 animate-fade-in"
+                      style={{
+                        bottom: window.innerHeight - (modePickerRef.current?.getBoundingClientRect().top ?? 0) + 4,
+                        left: modePickerRef.current?.getBoundingClientRect().left ?? 0,
+                      }}
+                    >
                       {([
                         { mode: 'agent' as const, icon: Bot, label: 'Agent', desc: 'Can modify your workspace', color: 'text-accent/80', activeBg: 'bg-accent/8' },
                         { mode: 'ask' as const, icon: Eye, label: 'Ask', desc: 'Read-only, answers questions', color: 'text-emerald-400/80', activeBg: 'bg-emerald-500/8' },
@@ -1257,7 +1268,7 @@ export function AgentPanel() {
                   )}
                 </div>
 
-                <div ref={modelPickerRef} className="relative">
+                <div ref={modelPickerRef}>
                   <button
                     onClick={() => { setShowModelPicker(!showModelPicker); setShowModePicker(false); }}
                     className="flex items-center gap-1 px-1.5 py-1 text-xs font-medium transition-all text-text-muted hover:text-text-primary"
@@ -1268,7 +1279,13 @@ export function AgentPanel() {
                   </button>
 
                   {showModelPicker && (
-                    <div className="absolute bottom-full left-0 mb-1.5 w-56 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in max-h-72 overflow-y-auto">
+                    <div
+                      className="fixed w-64 bg-bg-secondary border border-border rounded-xl shadow-2xl z-[100] py-1 animate-fade-in max-h-72 overflow-y-auto"
+                      style={{
+                        bottom: window.innerHeight - (modelPickerRef.current?.getBoundingClientRect().top ?? 0) + 4,
+                        left: modelPickerRef.current?.getBoundingClientRect().left ?? 0,
+                      }}
+                    >
                       {configuredProviders.length === 0 ? (
                         <div className="px-3 py-2.5 text-xs text-text-muted">
                           No API keys configured. Add keys in Settings.
@@ -1338,11 +1355,26 @@ export function AgentPanel() {
                     disabled={!canSend}
                     className={`shrink-0 p-2 rounded-lg transition-all ${
                       canSend
-                        ? 'bg-accent hover:bg-accent-hover text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]'
-                        : 'bg-accent/20 text-white/30 cursor-not-allowed'
+                        ? agentMode === 'ask'
+                          ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                          : agentMode === 'plan'
+                            ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                            : 'bg-accent hover:bg-accent-hover text-white'
+                        : agentMode === 'ask'
+                          ? 'bg-emerald-500/20 text-white/30 cursor-not-allowed'
+                          : agentMode === 'plan'
+                            ? 'bg-amber-500/20 text-white/30 cursor-not-allowed'
+                            : 'bg-accent/20 text-white/30 cursor-not-allowed'
                     }`}
+                    style={canSend ? {
+                      boxShadow: agentMode === 'ask'
+                        ? '0 0 16px rgba(52,211,153,0.5), 0 0 32px rgba(52,211,153,0.2)'
+                        : agentMode === 'plan'
+                          ? '0 0 16px rgba(251,191,36,0.5), 0 0 32px rgba(251,191,36,0.2)'
+                          : '0 0 16px rgba(99,102,241,0.5), 0 0 32px rgba(99,102,241,0.2)',
+                    } : undefined}
                   >
-                    <Send size={14} />
+                    <ArrowUp size={14} />
                   </button>
                 )}
               </div>

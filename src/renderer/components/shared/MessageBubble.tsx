@@ -1,8 +1,49 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ToolCallCard } from './ToolCallCard';
 import { AssistantMessage } from './markdownComponents';
 import { AttachmentChip } from './AttachmentChip';
 import type { ChatMessage } from '@shared/types';
+import { Send, Plug, Layers, FolderOpen } from 'lucide-react';
+
+interface ParsedContext {
+  type: string;
+  label: string;
+  meta?: string;
+}
+
+function parseUserContent(content: string): { text: string; contexts: ParsedContext[] } {
+  const contexts: ParsedContext[] = [];
+  let text = content;
+
+  text = text.replace(/<context\s+type="([^"]+)"\s+id="[^"]+"\s+label="([^"]+)"(?:\s+meta="([^"]+)")?\s*\/>/g,
+    (_match, type, label, meta) => {
+      contexts.push({ type, label, meta });
+      return '';
+    }
+  );
+
+  text = text.replace(/\[(?:Request|Collection|Environment|Connection|Api):\s[^\]]+\]/gi, '');
+  text = text.replace(/Attached context:\s*/gi, '');
+  text = text.trim();
+
+  return { text, contexts };
+}
+
+function ContextChip({ ctx }: { ctx: ParsedContext }) {
+  const Icon = ctx.type === 'request' ? Send
+    : ctx.type === 'connection' ? Plug
+    : ctx.type === 'environment' ? Layers
+    : FolderOpen;
+  const typeLabel = ctx.type.charAt(0).toUpperCase() + ctx.type.slice(1);
+
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-accent/10 border border-accent/20 text-[11px] text-accent font-medium">
+      <Icon size={10} className="shrink-0" />
+      <span>{typeLabel}: {ctx.label}</span>
+      {ctx.meta && <span className="text-accent/50">{ctx.meta}</span>}
+    </span>
+  );
+}
 
 export function StreamingText({ content }: { content: string }) {
   return (
@@ -29,9 +70,10 @@ export const MessageBubble = React.memo(function MessageBubble({
   if (message.role === 'tool') return null;
 
   if (message.role === 'user') {
-    const displayContent = message.attachments?.length
+    const raw = message.attachments?.length
       ? (message.content || '').replace(/<file[\s\S]*?<\/file>/g, '').trim()
-      : message.content;
+      : message.content || '';
+    const { text: displayContent, contexts } = useMemo(() => parseUserContent(raw), [raw]);
 
     return (
       <div className="flex justify-end">
@@ -45,6 +87,13 @@ export const MessageBubble = React.memo(function MessageBubble({
           )}
           {displayContent && (
             <p className="text-sm text-text-primary whitespace-pre-wrap break-words">{displayContent}</p>
+          )}
+          {contexts.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {contexts.map((ctx, i) => (
+                <ContextChip key={i} ctx={ctx} />
+              ))}
+            </div>
           )}
         </div>
       </div>

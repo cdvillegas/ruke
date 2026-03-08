@@ -857,6 +857,53 @@ const selectRequestTool = tool({
       name: found.name,
       method: found.method,
       url: found.url,
+      headers: found.headers.filter((h: any) => h.enabled !== false),
+      params: found.params.filter((p: any) => p.enabled !== false),
+      body: found.body,
+      auth: found.auth,
+      connectionId: found.connectionId || null,
+      endpointId: found.endpointId || null,
+    });
+  },
+});
+
+const getRequestDetailsTool = tool({
+  description: 'Get the full details of a request by name or ID, including headers, params, body, and auth config. Does NOT switch to it in the UI.',
+  inputSchema: z.object({
+    match: z.string().describe('Request name or ID to search for (case-insensitive partial match)'),
+  }),
+  execute: async ({ match }) => {
+    const store = useRequestStore.getState();
+    const colStore = useCollectionStore.getState();
+    const matchStr = match.toLowerCase();
+
+    const allRequests = [...store.uncollectedRequests, ...store.archivedRequests];
+    for (const reqs of Object.values(colStore.requests)) allRequests.push(...reqs);
+
+    const found = allRequests.find(r =>
+      r.id === match ||
+      (r.name || '').toLowerCase() === matchStr ||
+      (r.name || '').toLowerCase().includes(matchStr)
+    );
+
+    if (!found) {
+      return JSON.stringify({ success: false, error: `No request matching "${match}" found.` });
+    }
+
+    return JSON.stringify({
+      success: true,
+      requestId: found.id,
+      name: found.name,
+      method: found.method,
+      url: found.url,
+      headers: found.headers,
+      params: found.params,
+      body: found.body,
+      auth: found.auth,
+      connectionId: found.connectionId || null,
+      endpointId: found.endpointId || null,
+      scripts: found.scripts || null,
+      options: found.options || null,
     });
   },
 });
@@ -2148,6 +2195,7 @@ export const AGENT_TOOLS = {
   update_requests: updateRequestsTool,
   edit_current_request: editCurrentRequestTool,
   select_request: selectRequestTool,
+  get_request_details: getRequestDetailsTool,
   send_request: sendRequestTool,
   send_request_by_id: sendRequestByIdTool,
   list_requests: listRequestsTool,
@@ -2222,6 +2270,7 @@ export const ASK_TOOLS = {
   list_connections: listConnectionsTool,
   search_endpoints: searchEndpointsTool,
   select_request: selectRequestTool,
+  get_request_details: getRequestDetailsTool,
   list_requests: listRequestsTool,
   search_requests: searchRequestsTool,
   get_response: getResponseTool,
@@ -2264,6 +2313,7 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   update_requests: 'Updating requests',
   edit_current_request: 'Editing request',
   select_request: 'Selecting request',
+  get_request_details: 'Reading request details',
   send_request: 'Sending request',
   send_request_by_id: 'Sending request',
   list_requests: 'Listing requests',

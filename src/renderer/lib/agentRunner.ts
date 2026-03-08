@@ -40,12 +40,11 @@ export interface ModelOption {
 
 export const PROVIDER_MODELS: Record<ManagedProvider, ModelOption[]> = {
   openai: [
+    { id: 'gpt-5.4', label: 'GPT-5.4', description: 'Flagship' },
     { id: 'gpt-4o', label: 'GPT-4o', description: 'Fast & capable' },
-    { id: 'gpt-4o-mini', label: 'GPT-4o Mini', description: 'Lightweight & fast' },
-    { id: 'gpt-4.5-preview', label: 'GPT-4.5', description: 'Most creative' },
+    { id: 'gpt-4.1', label: 'GPT-4.1', description: 'Balanced' },
     { id: 'o3', label: 'o3', description: 'Deep reasoning' },
-    { id: 'o3-mini', label: 'o3 Mini', description: 'Fast reasoning' },
-    { id: 'o4-mini', label: 'o4 Mini', description: 'Latest reasoning' },
+    { id: 'o4-mini', label: 'o4 Mini', description: 'Fast reasoning' },
   ],
   anthropic: [
     { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', description: 'Balanced' },
@@ -60,7 +59,7 @@ export const PROVIDER_MODELS: Record<ManagedProvider, ModelOption[]> = {
 };
 
 export const PROVIDER_META: Record<ManagedProvider, { label: string; description: string; placeholder: string }> = {
-  openai: { label: 'OpenAI', description: 'GPT-4o, o3, GPT-4.5', placeholder: 'sk-...' },
+  openai: { label: 'OpenAI', description: 'GPT-5.4, GPT-4o, o3', placeholder: 'sk-...' },
   anthropic: { label: 'Anthropic', description: 'Claude Sonnet, Opus', placeholder: 'sk-ant-...' },
   google: { label: 'Google AI', description: 'Gemini 2.0 Flash, Pro', placeholder: 'AIza...' },
 };
@@ -531,14 +530,20 @@ export async function runAgent(
     flushDelta();
 
     if (!currentMsgEmitted && !stepHasContent) {
-      const text = await result.text;
-      if (text) {
-        callbacks.onMessage({
-          id: currentMsgId,
-          role: 'assistant',
-          content: text,
-          timestamp: new Date().toISOString(),
-        });
+      try {
+        const text = await result.text;
+        if (text) {
+          callbacks.onMessage({
+            id: currentMsgId,
+            role: 'assistant',
+            content: text,
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          callbacks.onError('The model returned an empty response. Try a different model or simplify your request.');
+        }
+      } catch {
+        callbacks.onError('The model returned an empty response. Try a different model or simplify your request.');
       }
     }
   } catch (e: any) {
@@ -546,7 +551,12 @@ export async function runAgent(
     if (options?.abortSignal?.aborted) {
       // Aborted by user -- not an error
     } else {
-      callbacks.onError(e.message || 'Agent error');
+      const msg = e.message || 'Agent error';
+      if (msg.includes('No output generated')) {
+        callbacks.onError('The model returned an empty response. Try a different model or simplify your request.');
+      } else {
+        callbacks.onError(msg);
+      }
     }
   }
 
