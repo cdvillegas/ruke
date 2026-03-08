@@ -1,15 +1,7 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
-import yaml from 'js-yaml';
 import type { ApiConnection, ApiEndpoint, HttpMethod, ProtoDefinition } from '@shared/types';
-
-function parseSpec(text: string): any {
-  const trimmed = text.trim();
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    return JSON.parse(trimmed);
-  }
-  return yaml.load(trimmed);
-}
+import { parseSpec, parseOpenApiEndpoints, getSpecBaseUrl } from '@shared/specParser';
 
 const ICON_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#06b6d4', '#f97316'];
 
@@ -23,6 +15,20 @@ function saveConnections(conns: ApiConnection[]) {
   localStorage.setItem('ruke:connections', JSON.stringify(conns));
 }
 
+function connectionNeedsMigration(conn: ApiConnection): boolean {
+  if (conn.specType !== 'openapi') return false;
+  return conn.endpoints.some(ep => {
+    if (ep.requestBody?.schema?.includes('$ref')) return true;
+    if (ep.requestBody && !ep.parameters?.some(p => p.in === 'body') && ep.requestBody.schema) {
+      try {
+        const parsed = JSON.parse(ep.requestBody.schema);
+        return !!parsed.$ref;
+      } catch { return false; }
+    }
+    return false;
+  });
+}
+
 interface ConnectionState {
   connections: ApiConnection[];
   activeConnectionId: string | null;
@@ -34,6 +40,7 @@ interface ConnectionState {
   setActiveConnection: (id: string | null) => void;
   addEndpoints: (connectionId: string, endpoints: ApiEndpoint[]) => void;
   importOpenApiSpec: (specText: string, sourceUrl?: string) => ApiConnection | null;
+  reimportSpec: (connectionId: string) => Promise<boolean>;
   importGraphQLEndpoint: (url: string, name?: string) => Promise<ApiConnection | null>;
   importGrpcProto: (serverUrl: string, filePath: string, name?: string) => Promise<ApiConnection | null>;
   importGrpcReflection: (serverUrl: string, tlsEnabled: boolean, name?: string) => Promise<ApiConnection | null>;
@@ -45,7 +52,16 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   activeConnectionId: null,
 
   loadConnections: () => {
-    set({ connections: loadConnections() });
+    const conns = loadConnections();
+    set({ connections: conns });
+
+    for (const conn of conns) {
+      if (connectionNeedsMigration(conn) && conn.specUrl) {
+        get().reimportSpec(conn.id).then(ok => {
+          if (ok) console.log(`Auto-migrated connection: ${conn.name}`);
+        });
+      }
+    }
   },
 
   addConnection: (partial) => {
@@ -104,54 +120,9 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       const description = spec.info?.description;
       const version = spec.info?.version;
 
-      let baseUrl = '';
-      if (spec.servers?.[0]?.url) {
-        baseUrl = spec.servers[0].url;
-      } else if (spec.host) {
-        const scheme = spec.schemes?.[0] || 'https';
-        baseUrl = `${scheme}://${spec.host}${spec.basePath || ''}`;
-      }
+      const baseUrl = getSpecBaseUrl(spec);
 
-      const endpoints: ApiEndpoint[] = [];
-      const paths = spec.paths || {};
-
-      for (const [path, methods] of Object.entries(paths) as [string, any][]) {
-        for (const [method, details] of Object.entries(methods) as [string, any][]) {
-          if (['get', 'post', 'put', 'patch', 'delete', 'head', 'options'].includes(method)) {
-            const params: ApiEndpoint['parameters'] = (details.parameters || []).map((p: any) => ({
-              name: p.name,
-              in: p.in,
-              required: p.required || false,
-              type: p.schema?.type || p.type || 'string',
-              description: p.description,
-            }));
-
-            let requestBody: ApiEndpoint['requestBody'] | undefined;
-            if (details.requestBody?.content?.['application/json']) {
-              const schema = details.requestBody.content['application/json'].schema;
-              requestBody = {
-                type: 'json',
-                schema: JSON.stringify(schema, null, 2),
-                example: details.requestBody.content['application/json'].example
-                  ? JSON.stringify(details.requestBody.content['application/json'].example, null, 2)
-                  : undefined,
-              };
-            }
-
-            endpoints.push({
-              id: nanoid(),
-              connectionId: '',
-              method: method.toUpperCase() as HttpMethod,
-              path,
-              summary: details.summary || `${method.toUpperCase()} ${path}`,
-              description: details.description,
-              parameters: params && params.length > 0 ? params : undefined,
-              requestBody,
-              tags: details.tags,
-            });
-          }
-        }
-      }
+      const endpoints = parseOpenApiEndpoints(spec);
 
       const conn = get().addConnection({
         name: version ? `${title} v${version}` : title,
@@ -174,6 +145,34 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     } catch (e) {
       console.error('Failed to parse OpenAPI spec:', e);
       return null;
+    }
+  },
+
+  reimportSpec: async (connectionId) => {
+    const conn = get().getConnection(connectionId);
+    if (!conn || !conn.specUrl) return false;
+
+    try {
+      const res = await fetch(conn.specUrl);
+      const text = await res.text();
+      const spec = parseSpec(text);
+      const endpoints = parseOpenApiEndpoints(spec);
+
+      const updated = get().connections.map(c =>
+        c.id === connectionId
+          ? {
+              ...c,
+              endpoints: endpoints.map(e => ({ ...e, connectionId })),
+              updatedAt: new Date().toISOString(),
+            }
+          : c
+      );
+      set({ connections: updated });
+      saveConnections(updated);
+      return true;
+    } catch (e) {
+      console.error('Failed to reimport spec:', e);
+      return false;
     }
   },
 

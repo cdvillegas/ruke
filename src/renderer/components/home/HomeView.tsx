@@ -1,15 +1,25 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useRequestStore } from '../../stores/requestStore';
 import { useConnectionStore } from '../../stores/connectionStore';
+import { useCollectionStore } from '../../stores/collectionStore';
 import { useUiStore } from '../../stores/uiStore';
 import {
-  Sparkles, Send, Plug, Clock, Loader2, Globe,
+  Sparkles, Send, Plug, Loader2, Globe,
   Plus, ChevronRight, Upload, Check, X, AlertCircle, Search,
-  Bot, ToggleLeft, ToggleRight, Key, ArrowRight,
+  ToggleLeft, ToggleRight, Key, ArrowRight,
 } from 'lucide-react';
 import { METHOD_COLORS } from '@shared/constants';
 import type { HttpMethod, DiscoveryResult, ApiEndpoint, ApiConnection } from '@shared/types';
 import { ConnectionIcon } from '../connections/ConnectionsView';
+import { nanoid } from 'nanoid';
+
+interface AgentMessage {
+  id: string;
+  type: 'thinking' | 'action' | 'result' | 'error';
+  text: string;
+  detail?: string;
+  onClick?: () => void;
+}
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
 
@@ -283,30 +293,6 @@ function DiscoveryResults({ results, query, loading, onConnect, onConnectAndExpl
   );
 }
 
-// --- AI Thinking Indicator ---
-
-function AiThinkingIndicator({ stage }: { stage: string }) {
-  return (
-    <div className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-accent/5 border border-accent/20 animate-fade-in">
-      <div className="relative flex items-center justify-center w-8 h-8">
-        <div className="absolute inset-0 rounded-full bg-accent/20 ai-pulse" />
-        <Bot size={16} className="text-accent relative z-10" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-text-primary">{stage}</span>
-          <span className="flex gap-0.5">
-            <span className="w-1 h-1 rounded-full bg-accent thinking-dot" style={{ animationDelay: '0ms' }} />
-            <span className="w-1 h-1 rounded-full bg-accent thinking-dot" style={{ animationDelay: '200ms' }} />
-            <span className="w-1 h-1 rounded-full bg-accent thinking-dot" style={{ animationDelay: '400ms' }} />
-          </span>
-        </div>
-        <p className="text-[10px] text-text-muted mt-0.5">AI is processing your request</p>
-      </div>
-    </div>
-  );
-}
-
 // --- Search Results ---
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
@@ -449,7 +435,7 @@ function AiModeToggle({ enabled, onToggle, hasKey }: { enabled: boolean; onToggl
 
 function AiCallToAction({ onEnable }: { onEnable: () => void }) {
   const keyExists = hasAiKey();
-  const { setActiveView } = useUiStore();
+  const setActiveView = useUiStore((s) => s.setActiveView);
 
   return (
     <div className="w-full rounded-xl border border-dashed border-accent/30 bg-accent/5 p-4 animate-fade-in">
@@ -494,17 +480,28 @@ function AiCallToAction({ onEnable }: { onEnable: () => void }) {
 export function HomeView() {
   const [input, setInput] = useState('');
   const [processing, setProcessing] = useState(false);
-  const [aiStage, setAiStage] = useState('');
+  const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
   const [discoveryResults, setDiscoveryResults] = useState<DiscoveryResult[] | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [discoveryQuery, setDiscoveryQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const connections = useConnectionStore((s) => s.connections);
-  const history = useRequestStore((s) => s.history);
-  const { setActiveView, aiModeEnabled, toggleAiMode, setAiMode } = useUiStore();
+  const setActiveView = useUiStore((s) => s.setActiveView);
+  const aiModeEnabled = useUiStore((s) => s.aiModeEnabled);
+  const toggleAiMode = useUiStore((s) => s.toggleAiMode);
+  const setAiMode = useUiStore((s) => s.setAiMode);
   const aiPlaceholder = useWavePlaceholder(PLACEHOLDERS_AI);
   const searchPlaceholder = useWavePlaceholder(PLACEHOLDERS_SEARCH);
   const placeholder = aiModeEnabled ? aiPlaceholder : searchPlaceholder;
+
+  const setStatus = useCallback((msg: Omit<AgentMessage, 'id'>) => {
+    setAgentMessages(prev => {
+      const logs = prev.filter(m => m.type !== 'thinking' && m.type !== 'action');
+      return [...logs, { ...msg, id: nanoid() }];
+    });
+  }, []);
+
+  const clearMessages = useCallback(() => setAgentMessages([]), []);
 
   const searchResults = useMemo(() => {
     if (aiModeEnabled || !input.trim()) return [];
@@ -513,7 +510,7 @@ export function HomeView() {
 
   const showSearchResults = !aiModeEnabled && input.trim().length > 0;
   const showDiscovery = discoveryResults !== null || discoveryLoading;
-  const showAiThinking = processing && aiModeEnabled;
+  const showAgent = agentMessages.length > 0;
   const totalEndpoints = connections.reduce((sum, c) => sum + c.endpoints.length, 0);
 
   useEffect(() => {
@@ -522,22 +519,45 @@ export function HomeView() {
 
   const handleSelectEndpoint = useCallback((result: SearchResult) => {
     const store = useRequestStore.getState();
-    const url = result.connection.baseUrl + result.endpoint.path;
+    const ep = result.endpoint;
+    const conn = result.connection;
+    const url = conn.baseUrl + ep.path;
+
+    let body: any = { type: 'none' };
+    if (ep.requestBody) {
+      if (ep.requestBody.example) {
+        body = { type: 'json', raw: ep.requestBody.example };
+      } else {
+        const bodyParams = (ep.parameters || []).filter(p => p.in === 'body');
+        if (bodyParams.length > 0) {
+          const template: Record<string, any> = {};
+          for (const bp of bodyParams) {
+            if (bp.type === 'integer' || bp.type === 'number') template[bp.name] = 0;
+            else if (bp.type === 'boolean') template[bp.name] = false;
+            else if (bp.type.endsWith('[]')) template[bp.name] = [];
+            else if (bp.type === 'object') template[bp.name] = {};
+            else template[bp.name] = '';
+          }
+          body = { type: 'json', raw: JSON.stringify(template, null, 2) };
+        }
+      }
+    }
+
     store.updateActiveRequest({
       url,
-      method: result.endpoint.method,
-      name: result.endpoint.summary || `${result.endpoint.method} ${result.endpoint.path}`,
+      method: ep.method,
+      connectionId: conn.id,
+      endpointId: ep.id,
+      name: ep.summary || `${ep.method} ${ep.path}`,
       headers: [{ key: '', value: '', enabled: true }],
-      params: (result.endpoint.parameters || []).filter(p => p.in === 'query').map(p => ({
+      params: (ep.parameters || []).filter(p => p.in === 'query').map(p => ({
         key: p.name,
         value: '',
         enabled: true,
       })),
-      body: result.endpoint.requestBody?.example
-        ? { type: 'json', raw: result.endpoint.requestBody.example }
-        : { type: 'none' },
+      body,
     });
-    setActiveView('request');
+    setActiveView('requests');
     setInput('');
   }, [setActiveView]);
 
@@ -562,6 +582,7 @@ export function HomeView() {
     }
 
     setProcessing(true);
+    clearMessages();
     const trimmed = input.trim();
 
     if (isUrl(trimmed)) {
@@ -575,7 +596,6 @@ export function HomeView() {
       setProcessing(false);
     } else {
       await handleAiInput(trimmed);
-      setProcessing(false);
     }
   };
 
@@ -599,7 +619,7 @@ export function HomeView() {
     } else {
       const store = useRequestStore.getState();
       store.updateActiveRequest({ url, method: 'GET', name: url });
-      setActiveView('request');
+      setActiveView('requests');
     }
     setInput('');
   };
@@ -616,7 +636,7 @@ export function HomeView() {
     }
     const store = useRequestStore.getState();
     store.updateActiveRequest({ url, method, name: `${method} ${url}` });
-    setActiveView('request');
+    setActiveView('requests');
     setInput('');
   };
 
@@ -632,7 +652,7 @@ export function HomeView() {
     } catch {
       const store = useRequestStore.getState();
       store.updateActiveRequest({ url, method: 'GET', name: url });
-      setActiveView('request');
+      setActiveView('requests');
       setInput('');
     }
   };
@@ -641,7 +661,6 @@ export function HomeView() {
     setDiscoveryQuery(query);
     setDiscoveryLoading(true);
     setDiscoveryResults([]);
-    setAiStage('Discovering APIs');
     setInput('');
 
     try {
@@ -659,7 +678,6 @@ export function HomeView() {
       }]);
     }
     setDiscoveryLoading(false);
-    setAiStage('');
   };
 
   const connectResults = (results: DiscoveryResult[]) => {
@@ -695,58 +713,285 @@ export function HomeView() {
   const handleConnectAndExplore = (results: DiscoveryResult[]) => {
     connectResults(results);
     localStorage.setItem('ruke:explorer_open', 'true');
-    setActiveView('request');
+    setActiveView('requests');
+  };
+
+  const buildApiContext = (): string => {
+    if (connections.length === 0) return 'No APIs connected yet. The user needs to connect an API first before you can create requests for it.';
+
+    const parts: string[] = ['Connected APIs with available endpoints:'];
+    for (const conn of connections) {
+      parts.push(`\n## ${conn.name}`);
+      parts.push(`Base URL: ${conn.baseUrl}`);
+      if (conn.description) parts.push(`Description: ${conn.description}`);
+      if (conn.endpoints.length === 0) {
+        parts.push('(no endpoints loaded)');
+        continue;
+      }
+      parts.push(`Endpoints (${conn.endpoints.length} total):`);
+      for (const ep of conn.endpoints.slice(0, 50)) {
+        let line = `  ${ep.method} ${ep.path}`;
+        if (ep.summary) line += ` — ${ep.summary}`;
+        if (ep.requestBody) line += ' [has body]';
+        if (ep.parameters?.length) {
+          const params = ep.parameters.filter(p => p.in === 'query' || p.in === 'path');
+          if (params.length) line += ` (params: ${params.map(p => `${p.name}:${p.in}`).join(', ')})`;
+        }
+        parts.push(line);
+      }
+      if (conn.endpoints.length > 50) {
+        parts.push(`  ... and ${conn.endpoints.length - 50} more`);
+      }
+    }
+    return parts.join('\n');
+  };
+
+  const parseAiResponse = (content: string): { action: string; request?: any; collection?: any } | null => {
+    let cleaned = content.trim();
+    const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch) cleaned = fenceMatch[1].trim();
+
+    const braceStart = cleaned.indexOf('{');
+    if (braceStart === -1) return null;
+    let depth = 0;
+    let braceEnd = -1;
+    for (let i = braceStart; i < cleaned.length; i++) {
+      if (cleaned[i] === '{') depth++;
+      else if (cleaned[i] === '}') { depth--; if (depth === 0) { braceEnd = i; break; } }
+    }
+    if (braceEnd === -1) return null;
+
+    try {
+      const obj = JSON.parse(cleaned.slice(braceStart, braceEnd + 1));
+      if (obj.action === 'create_request' && obj.request) return obj;
+      if (obj.action === 'create_collection' && obj.collection) return obj;
+      if (obj.request) return { action: 'create_request', request: obj.request };
+      if (obj.collection) return { action: 'create_collection', collection: obj.collection };
+      if (obj.method && obj.url) return { action: 'create_request', request: obj };
+    } catch {}
+    return null;
+  };
+
+  const enrichRequestFromSpec = (request: any): any => {
+    if (!request.url) return request;
+    const enriched = { ...request };
+    const url = request.url;
+    const method = (request.method || 'GET').toUpperCase();
+
+    const norm = (s: string) => s.replace(/\/+$/, '').replace(/\/+/g, '/');
+
+    for (const conn of connections) {
+      const base = norm(conn.baseUrl);
+
+      let extractedPath: string | null = null;
+      if (url.includes(conn.baseUrl)) {
+        extractedPath = url.slice(url.indexOf(conn.baseUrl) + conn.baseUrl.length);
+      } else {
+        try {
+          const urlObj = new URL(url);
+          const baseObj = new URL(conn.baseUrl);
+          if (urlObj.hostname === baseObj.hostname) {
+            const basePath = norm(baseObj.pathname);
+            const fullPath = norm(urlObj.pathname);
+            if (fullPath.startsWith(basePath)) {
+              extractedPath = fullPath.slice(basePath.length);
+            } else {
+              extractedPath = fullPath;
+            }
+          }
+        } catch {}
+      }
+      if (extractedPath === null) continue;
+
+      if (!extractedPath.startsWith('/')) extractedPath = '/' + extractedPath;
+      extractedPath = norm(extractedPath);
+
+      const ep = conn.endpoints.find(e =>
+        e.method.toUpperCase() === method && norm(e.path) === extractedPath
+      );
+      if (!ep) continue;
+
+      enriched.connectionId = conn.id;
+      enriched.endpointId = ep.id;
+      enriched.url = conn.baseUrl.replace(/\/+$/, '') + ep.path;
+
+      if (ep.parameters?.length) {
+        const queryParams = ep.parameters.filter(p => p.in === 'query').map(p => ({
+          key: p.name,
+          value: '',
+          enabled: true,
+        }));
+        if (queryParams.length) enriched.params = queryParams;
+        const pathParams = ep.parameters.filter(p => p.in === 'path');
+        if (pathParams.length) {
+          for (const p of pathParams) {
+            enriched.url = enriched.url.replace(`{${p.name}}`, `{{${p.name}}}`);
+          }
+        }
+      }
+      if (ep.requestBody?.example && (!enriched.body || enriched.body.type === 'none')) {
+        enriched.body = { type: 'json', raw: ep.requestBody.example };
+      }
+      break;
+    }
+    return enriched;
   };
 
   const handleAiInput = async (prompt: string) => {
-    setAiStage('Understanding request');
+    clearMessages();
+    setInput('');
+    setStatus({ type: 'thinking', text: 'Understanding your request...' });
+
     try {
-      const context = connections.length > 0
-        ? `Connected APIs:\n${connections.map(c => `- ${c.name} (${c.baseUrl}): ${c.endpoints.length} endpoints — ${c.endpoints.slice(0, 5).map(e => `${e.method} ${e.path}`).join(', ')}${c.endpoints.length > 5 ? '...' : ''}`).join('\n')}`
-        : '';
+      if (connections.length === 0) {
+        setStatus({ type: 'error', text: 'No APIs connected. Connect an API first, then ask me to create requests.' });
+        setProcessing(false);
+        return;
+      }
 
-      setAiStage('Generating response');
+      const apiNames = connections.map(c => c.name).join(', ');
+      setStatus({ type: 'action', text: `Exploring ${connections.length} API${connections.length !== 1 ? 's' : ''}: ${apiNames}` });
 
+      const context = buildApiContext();
       const result = await window.ruke.ai.chat(
         [{ role: 'user', content: prompt, timestamp: new Date().toISOString() }],
         context
       );
 
-      if (result.content) {
-        try {
-          const jsonMatch = result.content.match(/\{[\s\S]*"action"\s*:\s*"create_request"[\s\S]*\}/);
-          if (jsonMatch) {
-            setAiStage('Building request');
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (parsed.request) {
-              const store = useRequestStore.getState();
-              store.updateActiveRequest({
-                method: parsed.request.method || 'GET',
-                url: parsed.request.url || '',
-                headers: parsed.request.headers || [],
-                params: parsed.request.params || [],
-                body: parsed.request.body || { type: 'none' },
-                auth: parsed.request.auth || { type: 'none' },
-                name: parsed.request.name || prompt,
-              });
-              setActiveView('request');
-              setInput('');
-              setAiStage('');
-              return;
-            }
-          }
-        } catch {}
+      if (result.error) {
+        setStatus({ type: 'error', text: result.error });
+        setProcessing(false);
+        return;
       }
 
-      const store = useRequestStore.getState();
-      store.updateActiveRequest({ name: prompt });
-      setActiveView('request');
-      setInput('');
+      if (result.content) {
+        const parsed = parseAiResponse(result.content);
+
+        if (parsed?.action === 'create_collection' && parsed.collection) {
+          await handleCreateCollection(parsed.collection, prompt);
+          return;
+        }
+
+        if (parsed?.action === 'create_request' && parsed.request) {
+          await handleCreateRequest(parsed.request, prompt);
+          return;
+        }
+
+        setStatus({ type: 'error', text: 'Could not understand the response. Try being more specific, e.g. "Create a POST request to chat completions".' });
+      } else {
+        setStatus({ type: 'error', text: 'No response from AI. Check your API key in Settings.' });
+      }
     } catch {
-      setActiveView('request');
-      setInput('');
+      setStatus({ type: 'error', text: 'Something went wrong. Check your API key in Settings.' });
     }
-    setAiStage('');
+    setProcessing(false);
+  };
+
+  const handleCreateRequest = async (request: any, prompt: string) => {
+    const store = useRequestStore.getState();
+    const enriched = enrichRequestFromSpec(request);
+    const method = enriched.method || 'GET';
+    const url = enriched.url || '';
+    const name = enriched.name || prompt;
+
+    setStatus({ type: 'action', text: `Creating ${method} ${name}...` });
+
+    const tabId = store.addPendingTab({ name, method });
+
+    await new Promise(r => setTimeout(r, 400));
+
+    store.resolvePendingTab(tabId, {
+      method,
+      url,
+      headers: enriched.headers || [{ key: '', value: '', enabled: true }],
+      params: enriched.params || [{ key: '', value: '', enabled: true }],
+      body: enriched.body || { type: 'none' },
+      auth: enriched.auth || { type: 'none' },
+      connectionId: enriched.connectionId,
+      endpointId: enriched.endpointId,
+      name,
+    });
+
+    setStatus({
+      type: 'result',
+      text: `Created ${method} request`,
+      detail: name,
+      onClick: () => {
+        store.switchTab(tabId);
+        setActiveView('requests');
+      },
+    });
+
+    await new Promise(r => setTimeout(r, 600));
+    store.switchTab(tabId);
+    setActiveView('requests');
+    setProcessing(false);
+  };
+
+  const handleCreateCollection = async (collection: any, prompt: string) => {
+    const collectionName = collection.name || prompt;
+    const requests = collection.requests || [];
+
+    setStatus({ type: 'action', text: `Creating collection "${collectionName}"...` });
+
+    const collStore = useCollectionStore.getState();
+    const newCollection = await collStore.createCollection(collectionName);
+    collStore.toggleExpanded(newCollection.id);
+
+    const reqStore = useRequestStore.getState();
+
+    for (let i = 0; i < requests.length; i++) {
+      const req = requests[i];
+      const enriched = enrichRequestFromSpec(req);
+      const method = enriched.method || 'GET';
+      const name = enriched.name || `${method} request`;
+
+      setStatus({ type: 'action', text: `Creating request ${i + 1}/${requests.length}: ${name}` });
+
+      const tabId = reqStore.addPendingTab({
+        name,
+        method,
+        collectionId: newCollection.id,
+      });
+
+      await new Promise(r => setTimeout(r, 250));
+
+      const resolved = {
+        method,
+        url: enriched.url || '',
+        headers: enriched.headers || [{ key: '', value: '', enabled: true }],
+        params: enriched.params || [{ key: '', value: '', enabled: true }],
+        body: enriched.body || { type: 'none' },
+        auth: enriched.auth || { type: 'none' },
+        connectionId: enriched.connectionId,
+        endpointId: enriched.endpointId,
+        name,
+        collectionId: newCollection.id,
+      };
+
+      reqStore.resolvePendingTab(tabId, resolved);
+
+      const savedReq = useRequestStore.getState().openTabs.find(t => t.id === tabId);
+      if (savedReq) {
+        try {
+          await window.ruke.db.query('createRequest', { ...savedReq, collectionId: newCollection.id });
+        } catch (e) {
+          console.error('[agent] failed to persist request:', e);
+        }
+      }
+    }
+
+    await collStore.loadRequests(newCollection.id);
+
+    setStatus({
+      type: 'result',
+      text: `Created "${collectionName}" with ${requests.length} request${requests.length !== 1 ? 's' : ''}`,
+      onClick: () => setActiveView('requests'),
+    });
+
+    await new Promise(r => setTimeout(r, 600));
+    setActiveView('requests');
+    setProcessing(false);
   };
 
   const handleFileDrop = async (e: React.DragEvent) => {
@@ -797,18 +1042,16 @@ export function HomeView() {
     }
   };
 
-  const recentHistory = history.slice(0, 6);
-
   return (
     <div
       className="h-full flex flex-col items-center justify-center overflow-y-auto"
       onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
       onDrop={handleFileDrop}
     >
-      <div className="w-full max-w-2xl px-6 py-8 flex flex-col items-center">
+      <div className="w-full max-w-2xl px-6 py-6 flex flex-col items-center">
 
         {/* Mode Toggle + Stats Bar */}
-        <div className="w-full flex items-center justify-between mb-3 px-1">
+        <div className="w-full flex items-center justify-between mb-2 px-1">
           <div className="flex items-center gap-2">
             <AiModeToggle
               enabled={aiModeEnabled}
@@ -844,9 +1087,11 @@ export function HomeView() {
         </div>
 
         {/* Command Bar */}
-        <div className="w-full relative mb-8">
+        <div className={`w-full relative ${showAgent ? 'mb-2' : 'mb-5'} transition-all`}>
           <div className={`relative flex items-center rounded-2xl ${aiModeEnabled ? 'command-bar-glow' : 'command-bar-search'}`}>
-            {aiModeEnabled ? (
+            {processing ? (
+              <Loader2 size={16} className="absolute left-4 text-accent z-10 animate-spin" />
+            ) : aiModeEnabled ? (
               <Sparkles size={16} className="absolute left-4 text-accent z-10" />
             ) : (
               <Search size={16} className="absolute left-4 text-text-muted z-10" />
@@ -855,23 +1100,29 @@ export function HomeView() {
               ref={inputRef}
               type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => { setInput(e.target.value); if (agentMessages.length > 0 && !processing) clearMessages(); }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSubmit();
                 if (e.key === 'Escape') {
                   setInput('');
+                  clearMessages();
                   setDiscoveryResults(null);
                   setDiscoveryQuery('');
                 }
               }}
               placeholder=""
               disabled={processing || discoveryLoading}
-              className="w-full pl-11 pr-14 py-4 text-sm rounded-2xl bg-bg-secondary border border-transparent text-text-primary focus:outline-none transition-all disabled:opacity-50 relative"
+              className="w-full pl-11 pr-14 py-4 text-sm rounded-2xl bg-bg-secondary border border-transparent text-text-primary focus:outline-none transition-all disabled:opacity-60 relative"
             />
-            {!input && !showDiscovery && (
+            {!input && processing && (
+              <span className="absolute left-11 text-sm text-accent pointer-events-none select-none z-[2] flex items-center gap-2">
+                <span className="agent-working-dots">Working on it</span>
+              </span>
+            )}
+            {!input && !processing && !showDiscovery && (
               <WavePlaceholder text={placeholder.text} phase={placeholder.phase} />
             )}
-            {!input && showDiscovery && (
+            {!input && !processing && showDiscovery && (
               <span className="absolute left-11 text-sm text-text-muted pointer-events-none select-none z-[2]">
                 {discoveryQuery}
               </span>
@@ -897,7 +1148,7 @@ export function HomeView() {
 
         {/* Search Results (non-AI mode) */}
         {showSearchResults && (
-          <div className="w-full mb-4 rounded-xl bg-bg-secondary/50 border border-border overflow-hidden">
+          <div className="w-full mb-3 rounded-xl bg-bg-secondary/50 border border-border overflow-hidden">
             <EndpointSearchResults
               results={searchResults}
               query={input}
@@ -906,16 +1157,40 @@ export function HomeView() {
           </div>
         )}
 
-        {/* AI Thinking State */}
-        {showAiThinking && (
-          <div className="w-full mb-4">
-            <AiThinkingIndicator stage={aiStage || 'Processing'} />
+        {/* Agent Status */}
+        {showAgent && (
+          <div className="w-full mb-3">
+            {agentMessages.map((msg) => (
+              <div
+                key={msg.id}
+                className="discovery-result-enter flex items-center gap-2.5 px-4 py-2.5 rounded-xl"
+              >
+                {(msg.type === 'thinking' || msg.type === 'action') && <Loader2 size={13} className="text-accent animate-spin shrink-0" />}
+                {msg.type === 'result' && <Check size={13} className="text-green-400 shrink-0" />}
+                {msg.type === 'error' && <AlertCircle size={13} className="text-red-400 shrink-0" />}
+                <span className={`text-xs ${
+                  msg.type === 'result' ? 'text-text-primary' :
+                  msg.type === 'error' ? 'text-red-400' :
+                  'text-text-muted'
+                }`}>
+                  {msg.text}
+                </span>
+                {msg.detail && (
+                  <span
+                    className={`text-[11px] font-mono ${msg.onClick ? 'text-accent cursor-pointer hover:underline' : 'text-text-muted'}`}
+                    onClick={msg.onClick}
+                  >
+                    {msg.detail}
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
         {/* Discovery Results */}
         {showDiscovery && (
-          <div className="w-full mb-6">
+          <div className="w-full mb-4">
             <DiscoveryResults
               results={discoveryResults || []}
               query={discoveryQuery}
@@ -932,11 +1207,11 @@ export function HomeView() {
         )}
 
         {/* Main content when not searching */}
-        {!showDiscovery && !showSearchResults && !showAiThinking && !input.trim() && (
+        {!showDiscovery && !showSearchResults && !showAgent && !input.trim() && (
           <>
             {/* AI CTA when AI is off */}
             {!aiModeEnabled && connections.length > 0 && (
-              <div className="w-full mb-6">
+              <div className="w-full mb-4">
                 <AiCallToAction onEnable={() => {
                   if (hasAiKey()) {
                     setAiMode(true);
@@ -947,116 +1222,62 @@ export function HomeView() {
               </div>
             )}
 
-            {/* Connected APIs */}
-            <div className="w-full mb-8">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Plug size={14} className="text-text-muted" />
-                  <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Connected APIs</h2>
-                </div>
-                {connections.length > 0 && (
+            {/* Quick Actions */}
+            <div className="w-full">
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => { useRequestStore.getState().newRequest(); setActiveView('requests'); }}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-secondary border border-border hover:border-accent/30 hover:bg-accent/5 transition-all text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
+                    <Plus size={16} className="text-accent" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-text-primary">New Request</p>
+                    <p className="text-[10px] text-text-muted">Cmd+N</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setActiveView('requests')}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-secondary border border-border hover:border-border-light hover:bg-bg-tertiary transition-all text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
+                    <Send size={14} className="text-accent" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-text-primary">Saved Requests</p>
+                    <p className="text-[10px] text-text-muted">Collections</p>
+                  </div>
+                </button>
+                {connections.length > 0 ? (
                   <button
                     onClick={() => setActiveView('connections')}
-                    className="text-[10px] text-text-muted hover:text-accent transition-colors"
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-secondary border border-border hover:border-border-light hover:bg-bg-tertiary transition-all text-left group"
                   >
-                    View All
+                    <div className="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
+                      <Plug size={14} className="text-accent" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-text-primary">Connected APIs</p>
+                      <p className="text-[10px] text-text-muted">{connections.length} connected</p>
+                    </div>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setActiveView('connections')}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-accent/40 bg-accent/5 hover:bg-accent/10 hover:border-accent/60 transition-all text-left group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
+                      <Globe size={14} className="text-accent" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-accent">Connect API</p>
+                      <p className="text-[10px] text-text-muted">Add a spec</p>
+                    </div>
                   </button>
                 )}
               </div>
-
-              {connections.length === 0 ? (
-                <div
-                  onClick={handleFileClick}
-                  className="border-2 border-dashed border-border rounded-2xl p-8 text-center cursor-pointer hover:border-accent/40 hover:bg-accent/5 transition-all"
-                >
-                  <Globe size={24} className="mx-auto text-text-muted mb-3 opacity-50" />
-                  <p className="text-sm text-text-muted mb-1">No APIs connected yet</p>
-                  <p className="text-xs text-text-muted">
-                    Drop a spec file, paste a URL, or type "connect Stripe API"
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-2">
-                  {connections.slice(0, 3).map((conn) => (
-                    <button
-                      key={conn.id}
-                      onClick={() => {
-                        useConnectionStore.getState().setActiveConnection(conn.id);
-                        setActiveView('connections');
-                      }}
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-secondary border border-border hover:border-border-light hover:bg-bg-tertiary transition-all group text-left"
-                    >
-                      <ConnectionIcon conn={conn} size="sm" className="!w-8 !h-8 !rounded-lg" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-text-primary truncate">{conn.name}</p>
-                        <p className="text-[10px] text-text-muted font-mono truncate">{conn.baseUrl}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {conn.specType === 'graphql' && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-method-patch/20 text-method-patch">GQL</span>
-                        )}
-                        {conn.specType === 'grpc' && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-method-put/20 text-method-put">gRPC</span>
-                        )}
-                        <span className="text-[10px] text-text-muted px-1.5 py-0.5 rounded bg-bg-tertiary">
-                          {conn.endpoints.length} {conn.specType === 'grpc' ? 'methods' : conn.specType === 'graphql' ? 'operations' : 'endpoints'}
-                        </span>
-                        <ChevronRight size={14} className="text-text-muted group-hover:text-text-primary transition-colors" />
-                      </div>
-                    </button>
-                  ))}
-                  {connections.length > 3 && (
-                    <button
-                      onClick={() => setActiveView('connections')}
-                      className="flex items-center justify-center py-2 text-[11px] text-text-muted hover:text-accent transition-colors"
-                    >
-                      +{connections.length - 3} more
-                    </button>
-                  )}
-                </div>
-              )}
             </div>
-
-            {/* Recent Activity */}
-            {recentHistory.length > 0 && (
-              <div className="w-full">
-                <div className="flex items-center gap-2 mb-3">
-                  <Clock size={14} className="text-text-muted" />
-                  <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Recent</h2>
-                </div>
-                <div className="space-y-1">
-                  {recentHistory.map((entry) => (
-                    <button
-                      key={entry.id}
-                      onClick={() => {
-                        if (entry.request) {
-                          useRequestStore.getState().openTab(entry.request);
-                          setActiveView('request');
-                        }
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-bg-secondary transition-colors group"
-                    >
-                      <span
-                        className="font-mono font-bold text-[10px] w-12 text-left shrink-0"
-                        style={{ color: METHOD_COLORS[entry.method] || '#6b7280' }}
-                      >
-                        {entry.method}
-                      </span>
-                      <span className="text-xs text-text-secondary font-mono truncate flex-1 text-left">
-                        {entry.url}
-                      </span>
-                      <span className={`font-mono text-[10px] shrink-0 ${
-                        entry.status >= 200 && entry.status < 300 ? 'text-success' :
-                        entry.status >= 400 ? 'text-error' : 'text-warning'
-                      }`}>
-                        {entry.status || 'ERR'}
-                      </span>
-                      <span className="text-[10px] text-text-muted shrink-0">{entry.duration}ms</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>

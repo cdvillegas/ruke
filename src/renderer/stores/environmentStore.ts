@@ -10,10 +10,11 @@ interface EnvironmentState {
   globalVariables: EnvVariable[];
 
   loadEnvironments: (workspaceId: string) => Promise<void>;
-  createEnvironment: (workspaceId: string, name: string) => Promise<Environment>;
+  createEnvironment: (workspaceId: string, name: string, connectionId?: string, baseUrl?: string) => Promise<Environment>;
   setActiveEnvironment: (workspaceId: string, envId: string) => Promise<void>;
   deleteEnvironment: (id: string) => Promise<void>;
   renameEnvironment: (id: string, name: string) => Promise<void>;
+  updateEnvironmentBaseUrl: (id: string, baseUrl: string) => Promise<void>;
   loadVariables: (environmentId: string) => Promise<void>;
   addVariable: (environmentId: string, key: string, value: string, scope?: VariableScope, isSecret?: boolean) => Promise<void>;
   updateVariable: (id: string, updates: Partial<EnvVariable>) => Promise<void>;
@@ -22,6 +23,10 @@ interface EnvironmentState {
   getResolvedVariableDetails: () => ResolvedVariable[];
   resolveString: (str: string) => string;
   getEnvironmentVariables: (envId: string) => EnvVariable[];
+  getGlobalEnvironments: () => Environment[];
+  getEnvironmentsByConnection: (connectionId: string) => Environment[];
+  resolveBaseUrl: (connectionId: string, connectionBaseUrl: string) => string;
+  getAllVariableKeys: () => string[];
 }
 
 export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
@@ -41,12 +46,13 @@ export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
     } catch { /* db not ready */ }
   },
 
-  createEnvironment: async (workspaceId, name) => {
+  createEnvironment: async (workspaceId, name, connectionId?, baseUrl?) => {
     const id = nanoid();
     const sortOrder = get().environments.length;
-    await window.ruke.db.query('createEnvironment', id, workspaceId, name, sortOrder);
+    await window.ruke.db.query('createEnvironment', id, workspaceId, name, sortOrder, connectionId, baseUrl);
     const env: Environment = {
       id, workspaceId, name, isActive: false, sortOrder,
+      connectionId, baseUrl,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     };
     set((s) => ({ environments: [...s.environments, env] }));
@@ -76,6 +82,13 @@ export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
     await window.ruke.db.query('updateEnvironment', id, { name });
     set((s) => ({
       environments: s.environments.map((e) => (e.id === id ? { ...e, name } : e)),
+    }));
+  },
+
+  updateEnvironmentBaseUrl: async (id, baseUrl) => {
+    await window.ruke.db.query('updateEnvironment', id, { baseUrl });
+    set((s) => ({
+      environments: s.environments.map((e) => (e.id === id ? { ...e, baseUrl } : e)),
     }));
   },
 
@@ -168,5 +181,34 @@ export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
 
   getEnvironmentVariables: (envId) => {
     return get().variables.get(envId) || [];
+  },
+
+  getGlobalEnvironments: () => {
+    return get().environments.filter((e) => !e.connectionId);
+  },
+
+  getEnvironmentsByConnection: (connectionId) => {
+    return get().environments.filter((e) => e.connectionId === connectionId);
+  },
+
+  resolveBaseUrl: (connectionId, connectionBaseUrl) => {
+    const { activeEnvironmentId, environments } = get();
+    if (!activeEnvironmentId) return connectionBaseUrl;
+
+    const activeEnv = environments.find((e) => e.id === activeEnvironmentId);
+    if (activeEnv?.baseUrl) return activeEnv.baseUrl;
+
+    const connEnvs = environments.filter((e) => e.connectionId === connectionId && e.isActive);
+    const connEnv = connEnvs[0];
+    if (connEnv?.baseUrl) return connEnv.baseUrl;
+
+    return connectionBaseUrl;
+  },
+
+  getAllVariableKeys: () => {
+    const { activeEnvironmentId, variables } = get();
+    if (!activeEnvironmentId) return [];
+    const vars = variables.get(activeEnvironmentId) || [];
+    return vars.map((v) => v.key).filter(Boolean);
   },
 }));

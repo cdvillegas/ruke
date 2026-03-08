@@ -10,8 +10,10 @@ import { APP_VERSION } from '@shared/constants';
 export function ImportExport() {
   const [status, setStatus] = useState<'idle' | 'importing' | 'exporting' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
-  const { collections, createCollection } = useCollectionStore();
-  const { activeRequest, saveRequest } = useRequestStore();
+  const collections = useCollectionStore((s) => s.collections);
+  const createCollection = useCollectionStore((s) => s.createCollection);
+  const activeRequest = useRequestStore((s) => s.activeRequest);
+  const saveRequest = useRequestStore((s) => s.saveRequest);
 
   const handleExport = async () => {
     setStatus('exporting');

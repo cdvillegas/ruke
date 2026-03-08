@@ -174,7 +174,7 @@ function ApiKeyCard() {
 }
 
 function ClearDataSection() {
-  const { resetOnboarding } = useUiStore();
+  const resetOnboarding = useUiStore((s) => s.resetOnboarding);
   const connections = useConnectionStore((s) => s.connections);
   const deleteConnection = useConnectionStore((s) => s.deleteConnection);
   const clearHistory = useRequestStore((s) => s.clearHistory);
@@ -286,7 +286,8 @@ function ClearDataSection() {
 }
 
 export function SettingsView() {
-  const { theme, toggleTheme } = useUiStore();
+  const theme = useUiStore((s) => s.theme);
+  const toggleTheme = useUiStore((s) => s.toggleTheme);
   const connections = useConnectionStore((s) => s.connections);
 
   return (

@@ -4,7 +4,11 @@ import { History, Search, Trash2, Clock, ExternalLink } from 'lucide-react';
 import { METHOD_COLORS } from '@shared/constants';
 
 export function HistoryView() {
-  const { history, loadHistory, clearHistory, searchHistory, openTab } = useRequestStore();
+  const history = useRequestStore((s) => s.history);
+  const loadHistory = useRequestStore((s) => s.loadHistory);
+  const clearHistory = useRequestStore((s) => s.clearHistory);
+  const searchHistory = useRequestStore((s) => s.searchHistory);
+  const openTab = useRequestStore((s) => s.openTab);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {

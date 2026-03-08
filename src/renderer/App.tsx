@@ -3,10 +3,11 @@ import { useUiStore } from './stores/uiStore';
 import { useCollectionStore } from './stores/collectionStore';
 import { useRequestStore } from './stores/requestStore';
 import { useConnectionStore } from './stores/connectionStore';
-import { HomeView } from './components/home/HomeView';
-import { RequestView } from './components/request/RequestView';
+import { ChatView } from './components/chat/ChatView';
+import { RequestsView } from './components/requests/RequestsView';
 import { ConnectionsView } from './components/connections/ConnectionsView';
 import { SettingsView } from './components/settings/SettingsView';
+import { EnvironmentsView } from './components/environment/EnvironmentsView';
 import { NavRail } from './components/layout/NavRail';
 import { Onboarding } from './components/onboarding/Onboarding';
 import { CommandPalette } from './components/layout/CommandPalette';
@@ -34,7 +35,11 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 }
 
 function AppInner() {
-  const { onboarding, commandPaletteOpen, setCommandPaletteOpen, activeView, theme } = useUiStore();
+  const onboarding = useUiStore((s) => s.onboarding);
+  const commandPaletteOpen = useUiStore((s) => s.commandPaletteOpen);
+  const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
+  const activeView = useUiStore((s) => s.activeView);
+  const theme = useUiStore((s) => s.theme);
   const loadWorkspaces = useCollectionStore((s) => s.loadWorkspaces);
   const loadHistory = useRequestStore((s) => s.loadHistory);
   const loadConnections = useConnectionStore((s) => s.loadConnections);
@@ -45,7 +50,10 @@ function AppInner() {
   }, [theme]);
 
   useEffect(() => {
-    loadWorkspaces();
+    loadWorkspaces().then(() => {
+      const wsId = useCollectionStore.getState().activeWorkspaceId;
+      if (wsId) useEnvironmentStore.getState().loadEnvironments(wsId);
+    });
     loadHistory();
     loadConnections();
   }, []);
@@ -62,6 +70,17 @@ function AppInner() {
         const vars = useEnvironmentStore.getState().resolveVariables();
         sendRequest(vars);
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault();
+        const { newRequest } = useRequestStore.getState();
+        newRequest();
+        useUiStore.getState().setActiveView('requests');
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        const { saveRequest } = useRequestStore.getState();
+        saveRequest();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -75,9 +94,10 @@ function AppInner() {
     <div className="flex h-screen w-screen overflow-hidden bg-bg-primary">
       <NavRail />
       <main className="flex-1 min-h-0 overflow-hidden">
-        {activeView === 'home' && <HomeView />}
-        {activeView === 'request' && <RequestView />}
+        {activeView === 'chats' && <ChatView />}
+        {activeView === 'requests' && <RequestsView />}
         {activeView === 'connections' && <ConnectionsView />}
+        {activeView === 'environments' && <EnvironmentsView />}
         {activeView === 'settings' && <SettingsView />}
       </main>
       {commandPaletteOpen && <CommandPalette />}

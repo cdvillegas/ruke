@@ -5,8 +5,10 @@ import { ResponseHeaders } from './ResponseHeaders';
 import { Clock, HardDrive, ArrowDown } from 'lucide-react';
 
 export function ResponseViewer() {
-  const { response, loading } = useRequestStore();
-  const { activeResponseTab, setActiveResponseTab } = useUiStore();
+  const response = useRequestStore((s) => s.response);
+  const loading = useRequestStore((s) => s.loading);
+  const activeResponseTab = useUiStore((s) => s.activeResponseTab);
+  const setActiveResponseTab = useUiStore((s) => s.setActiveResponseTab);
 
   if (loading) {
     return (

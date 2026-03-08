@@ -10,7 +10,7 @@ export function AIPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { setAiPanelOpen } = useUiStore();
+  const setAiPanelOpen = useUiStore((s) => s.setAiPanelOpen);
   const activeRequest = useRequestStore((s) => s.activeRequest);
   const response = useRequestStore((s) => s.response);
 

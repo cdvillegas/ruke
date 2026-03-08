@@ -1,6 +1,138 @@
-import type { ApiResponse } from '@shared/types';
+import type { ApiResponse, DiscoveryResult } from '@shared/types';
+import registryData from '../../main/agent/registry.json';
+import { parseSpec, parseOpenApiEndpoints, getSpecBaseUrl } from '@shared/specParser';
+import { SYSTEM_PROMPT } from '../../main/ai/prompts';
 
 const isElectron = typeof window !== 'undefined' && !!(window as any).ruke;
+
+// ---------------------------------------------------------------------------
+// Registry-based discovery helpers (mirrors main process logic for web mode)
+// ---------------------------------------------------------------------------
+
+interface RegistryEntry {
+  name: string;
+  description: string;
+  baseUrl: string;
+  specUrl?: string;
+  type: 'openapi' | 'graphql';
+  aliases: string[];
+  auth?: string;
+}
+
+type Registry = Record<string, RegistryEntry>;
+
+const bundledRegistry: Registry = registryData as unknown as Registry;
+
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function fuzzyMatchRegistry(query: string, registry: Registry): RegistryEntry | null {
+  const q = normalize(query);
+  for (const [key, entry] of Object.entries(registry)) {
+    if (normalize(key) === q) return entry;
+  }
+  for (const entry of Object.values(registry)) {
+    const matches = entry.aliases.some(a => {
+      const n = normalize(a);
+      return n === q || n.includes(q) || q.includes(n);
+    });
+    if (matches) return entry;
+  }
+  for (const entry of Object.values(registry)) {
+    if (normalize(entry.name).includes(q) || q.includes(normalize(entry.name))) return entry;
+  }
+  return null;
+}
+
+async function fetchAndParseSpecWeb(specUrl: string): Promise<{ spec: any; url: string } | null> {
+  try {
+    const res = await fetch(specUrl, { signal: AbortSignal.timeout(60000) });
+    if (!res.ok) return null;
+    const text = await res.text();
+    const spec = parseSpec(text);
+    if (spec?.openapi || spec?.swagger || spec?.paths) return { spec, url: specUrl };
+  } catch {}
+  return null;
+}
+
+function buildDiscoveryResult(
+  spec: any,
+  meta: { name?: string; description?: string; baseUrl?: string },
+  specUrl: string,
+): DiscoveryResult {
+  const endpoints = parseOpenApiEndpoints(spec);
+  const baseUrl = meta.baseUrl || getSpecBaseUrl(spec);
+  return {
+    name: meta.name || spec.info?.title || 'API',
+    description: meta.description || spec.info?.description || '',
+    baseUrl,
+    specUrl,
+    specType: 'openapi',
+    endpointCount: endpoints.length,
+    endpoints,
+  };
+}
+
+async function discoverFromRegistry(query: string): Promise<DiscoveryResult | null> {
+  const entry = fuzzyMatchRegistry(query, bundledRegistry);
+  if (!entry) return null;
+
+  if (entry.specUrl) {
+    const fetched = await fetchAndParseSpecWeb(entry.specUrl);
+    if (fetched) {
+      return buildDiscoveryResult(fetched.spec, {
+        name: entry.name,
+        description: entry.description,
+        baseUrl: entry.baseUrl,
+      }, fetched.url);
+    }
+  }
+  return {
+    name: entry.name,
+    description: entry.description,
+    baseUrl: entry.baseUrl,
+    specType: entry.type === 'graphql' ? 'graphql' : 'openapi',
+    endpointCount: 0,
+    endpoints: [],
+  };
+}
+
+async function discoverFromApisGuru(query: string): Promise<DiscoveryResult | null> {
+  const q = normalize(query);
+  try {
+    const res = await fetch('https://api.apis.guru/v2/providers.json', { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const providers: string[] = json.data || [];
+    const matched = providers.find(p => normalize(p) === q)
+      || providers.find(p => normalize(p).startsWith(q))
+      || providers.find(p => normalize(p).includes(q) || q.includes(normalize(p).replace(/\.com$|\.io$|\.org$/, '')));
+    if (!matched) return null;
+
+    const apiRes = await fetch(`https://api.apis.guru/v2/${encodeURIComponent(matched)}.json`, { signal: AbortSignal.timeout(10000) });
+    if (!apiRes.ok) return null;
+    const data = await apiRes.json();
+    const apis = data.apis || {};
+    const apiKeys = Object.keys(apis);
+    if (apiKeys.length === 0) return null;
+    const apiEntry = apis[apiKeys[0]];
+    const specUrl = apiEntry.swaggerUrl || apiEntry.swaggerYamlUrl;
+    if (!specUrl) return null;
+
+    const fetched = await fetchAndParseSpecWeb(specUrl);
+    if (!fetched) return null;
+    const info = apiEntry.info || {};
+    return buildDiscoveryResult(fetched.spec, {
+      name: info.title || matched,
+      description: info.description || '',
+      baseUrl: '',
+    }, fetched.url);
+  } catch {}
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 
 function getStore(key: string): any[] {
   try {
@@ -248,7 +380,7 @@ export function initBridge() {
             body: JSON.stringify({
               model: 'gpt-4o-mini',
               messages: [
-                { role: 'system', content: 'You are Rüke AI, an expert API development assistant.' },
+                { role: 'system', content: SYSTEM_PROMPT },
                 ...(context ? [{ role: 'system', content: `Context:\n${context}` }] : []),
                 ...messages.map((m: any) => ({ role: m.role, content: m.content })),
               ],
@@ -269,41 +401,81 @@ export function initBridge() {
       },
     },
     agent: {
-      discover: async (query: string) => {
-        if (!aiKeyStore) {
-          return [{ name: 'Error', description: 'No API key configured. Add your OpenAI API key in Settings.', baseUrl: '', specType: 'openapi', endpointCount: 0, endpoints: [], error: 'No API key' }];
+      discover: async (query: string): Promise<DiscoveryResult[]> => {
+        // Tier 1: Registry lookup (no AI key needed)
+        const registryResult = await discoverFromRegistry(query);
+        if (registryResult && registryResult.endpointCount > 0) {
+          return [registryResult];
         }
-        try {
-          const res = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aiKeyStore}` },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [
-                { role: 'system', content: `You are an API discovery assistant. Given a user query about APIs they want to connect to, return a JSON array of API suggestions.\n\nFor each API, include:\n- name: The official API name\n- description: One-line description\n- specUrl: Direct URL to the OpenAPI/Swagger spec JSON or YAML file (if you know it)\n- docsUrl: URL to the API documentation page\n- baseUrl: The API base URL\n- type: "openapi" or "graphql"\n\nReturn ONLY a JSON array, no other text.\n\nImportant:\n- Only suggest real, existing APIs with correct URLs\n- Prefer official spec URLs from GitHub repos or official documentation\n- If you're unsure of the exact spec URL, provide the docsUrl and baseUrl so the system can probe for common spec paths\n- Include both REST and GraphQL APIs when relevant\n- Return up to 5 results` },
-                { role: 'user', content: query },
-              ],
-              temperature: 0.2,
-              max_tokens: 2000,
-            }),
-          });
-          const data = await res.json();
-          const content = data.choices?.[0]?.message?.content || '';
-          const jsonMatch = content.match(/\[[\s\S]*\]/);
-          if (!jsonMatch) return [];
-          const suggestions = JSON.parse(jsonMatch[0]);
-          return suggestions.map((s: any) => ({
-            name: s.name,
-            description: s.description,
-            baseUrl: s.baseUrl || '',
-            specUrl: s.specUrl,
-            specType: s.type || 'openapi',
-            endpointCount: 0,
-            endpoints: [],
-          }));
-        } catch (e: any) {
-          return [{ name: 'Error', description: e.message || 'Discovery failed', baseUrl: '', specType: 'openapi', endpointCount: 0, endpoints: [], error: e.message }];
+
+        // Tier 2: APIs.guru lookup (no AI key needed)
+        const apisGuruResult = await discoverFromApisGuru(query);
+        if (apisGuruResult && apisGuruResult.endpointCount > 0) {
+          return [apisGuruResult];
         }
+
+        // Tier 3: LLM suggestion (requires API key)
+        if (aiKeyStore) {
+          try {
+            const res = await fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aiKeyStore}` },
+              body: JSON.stringify({
+                model: 'gpt-4o-mini',
+                messages: [
+                  { role: 'system', content: `You are an API discovery assistant. Given a user query about APIs they want to connect to, return a JSON array of API suggestions.\n\nFor each API, include:\n- name: The official API name\n- description: One-line description\n- specUrl: Direct URL to the OpenAPI/Swagger spec JSON or YAML file (if you know it)\n- docsUrl: URL to the API documentation page\n- baseUrl: The API base URL\n- type: "openapi" or "graphql"\n\nReturn ONLY a JSON array, no other text.\n\nImportant:\n- Only suggest real, existing APIs with correct URLs\n- Prefer official spec URLs from GitHub repos or official documentation\n- If you're unsure of the exact spec URL, provide the docsUrl and baseUrl so the system can probe for common spec paths\n- Include both REST and GraphQL APIs when relevant\n- Return up to 5 results` },
+                  { role: 'user', content: query },
+                ],
+                temperature: 0.2,
+                max_tokens: 2000,
+              }),
+            });
+            const data = await res.json();
+            const content = data.choices?.[0]?.message?.content || '';
+            const jsonMatch = content.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              const suggestions = JSON.parse(jsonMatch[0]);
+              const results: DiscoveryResult[] = [];
+              for (const s of suggestions) {
+                if (s.specUrl) {
+                  const fetched = await fetchAndParseSpecWeb(s.specUrl);
+                  if (fetched) {
+                    results.push(buildDiscoveryResult(fetched.spec, {
+                      name: s.name,
+                      description: s.description,
+                      baseUrl: s.baseUrl || '',
+                    }, fetched.url));
+                    continue;
+                  }
+                }
+                results.push({
+                  name: s.name,
+                  description: s.description || '',
+                  baseUrl: s.baseUrl || '',
+                  specUrl: s.specUrl,
+                  specType: s.type || 'openapi',
+                  endpointCount: 0,
+                  endpoints: [],
+                });
+              }
+              if (results.some(r => r.endpointCount > 0)) return results;
+            }
+          } catch {}
+        }
+
+        // Return whatever partial result we have
+        if (registryResult) return [registryResult];
+        return [{
+          name: query,
+          description: '',
+          baseUrl: '',
+          specType: 'openapi',
+          endpointCount: 0,
+          endpoints: [],
+          error: aiKeyStore
+            ? 'Could not find a machine-readable spec. You can add this API manually.'
+            : 'API not found in registry. Add an API key in Settings for broader discovery.',
+        }];
       },
     },
     file: {

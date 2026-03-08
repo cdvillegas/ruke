@@ -5,7 +5,11 @@ import { EnvSwitcher } from '../environment/EnvSwitcher';
 import { Sparkles, Command, Plus, Moon, Sun } from 'lucide-react';
 
 export function TopBar() {
-  const { theme, toggleTheme, toggleAiPanel, aiPanelOpen, setCommandPaletteOpen } = useUiStore();
+  const theme = useUiStore((s) => s.theme);
+  const toggleTheme = useUiStore((s) => s.toggleTheme);
+  const toggleAiPanel = useUiStore((s) => s.toggleAiPanel);
+  const aiPanelOpen = useUiStore((s) => s.aiPanelOpen);
+  const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const activeWorkspace = useCollectionStore((s) => {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return ws?.name || 'My Workspace';

@@ -2,7 +2,8 @@ import { useRequestStore } from '../../stores/requestStore';
 import { KeyValueEditor } from './KeyValueEditor';
 
 export function HeadersEditor() {
-  const { activeRequest, setHeaders } = useRequestStore();
+  const activeRequest = useRequestStore((s) => s.activeRequest);
+  const setHeaders = useRequestStore((s) => s.setHeaders);
 
   return (
     <KeyValueEditor

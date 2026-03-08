@@ -2,7 +2,8 @@ import { useRequestStore } from '../../stores/requestStore';
 import { KeyValueEditor } from './KeyValueEditor';
 
 export function ParamsEditor() {
-  const { activeRequest, setParams } = useRequestStore();
+  const activeRequest = useRequestStore((s) => s.activeRequest);
+  const setParams = useRequestStore((s) => s.setParams);
 
   return (
     <KeyValueEditor

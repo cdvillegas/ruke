@@ -1,0 +1,136 @@
+{
+  "openai": {
+    "name": "OpenAI API",
+    "description": "LLM API for chat completions, embeddings, images, audio, and fine-tuning",
+    "baseUrl": "https://api.openai.com/v1",
+    "specUrl": "https://raw.githubusercontent.com/openai/openai-openapi/2025-03-21/openapi.yaml",
+    "type": "openapi",
+    "aliases": ["openai", "gpt", "chatgpt", "gpt-4", "gpt-4o", "dall-e", "whisper"],
+    "auth": "bearer"
+  },
+  "github": {
+    "name": "GitHub REST API",
+    "description": "GitHub's v3 REST API for repos, issues, pull requests, actions, and more",
+    "baseUrl": "https://api.github.com",
+    "specUrl": "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
+    "type": "openapi",
+    "aliases": ["github", "gh", "github api"],
+    "auth": "bearer"
+  },
+  "stripe": {
+    "name": "Stripe API",
+    "description": "Payment processing API for charges, subscriptions, invoices, and more",
+    "baseUrl": "https://api.stripe.com",
+    "specUrl": "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json",
+    "type": "openapi",
+    "aliases": ["stripe", "stripe payments", "stripe billing"],
+    "auth": "bearer"
+  },
+  "twilio": {
+    "name": "Twilio API",
+    "description": "Cloud communications API for SMS, voice, video, and messaging",
+    "baseUrl": "https://api.twilio.com",
+    "specUrl": "https://raw.githubusercontent.com/twilio/twilio-oai/main/spec/json/twilio_api_v2010.json",
+    "type": "openapi",
+    "aliases": ["twilio", "twilio sms", "twilio voice"],
+    "auth": "basic"
+  },
+  "slack": {
+    "name": "Slack Web API",
+    "description": "Slack platform API for messaging, channels, users, and workspace management",
+    "baseUrl": "https://slack.com/api",
+    "specUrl": "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json",
+    "type": "openapi",
+    "aliases": ["slack", "slack api", "slack bot"],
+    "auth": "bearer"
+  },
+  "discord": {
+    "name": "Discord API",
+    "description": "Discord platform API for bots, guilds, channels, and messaging",
+    "baseUrl": "https://discord.com/api/v10",
+    "specUrl": "https://raw.githubusercontent.com/discord/discord-api-spec/main/specs/openapi.json",
+    "type": "openapi",
+    "aliases": ["discord", "discord bot", "discord api"],
+    "auth": "bearer"
+  },
+  "notion": {
+    "name": "Notion API",
+    "description": "Notion API for databases, pages, blocks, and workspace content",
+    "baseUrl": "https://api.notion.com/v1",
+    "specUrl": "https://api.apis.guru/v2/specs/notion.com/1.0.0/openapi.json",
+    "type": "openapi",
+    "aliases": ["notion", "notion api"],
+    "auth": "bearer"
+  },
+  "spotify": {
+    "name": "Spotify Web API",
+    "description": "Spotify API for tracks, playlists, albums, artists, and playback control",
+    "baseUrl": "https://api.spotify.com/v1",
+    "specUrl": "https://api.apis.guru/v2/specs/spotify.com/1.0.0/openapi.json",
+    "type": "openapi",
+    "aliases": ["spotify", "spotify api", "spotify music"],
+    "auth": "bearer"
+  },
+  "sendgrid": {
+    "name": "SendGrid API",
+    "description": "Email delivery API for transactional and marketing email",
+    "baseUrl": "https://api.sendgrid.com/v3",
+    "specUrl": "https://api.apis.guru/v2/specs/sendgrid.com/1.0.0/openapi.json",
+    "type": "openapi",
+    "aliases": ["sendgrid", "sendgrid email", "twilio sendgrid"],
+    "auth": "bearer"
+  },
+  "vercel": {
+    "name": "Vercel API",
+    "description": "Vercel platform API for deployments, projects, domains, and teams",
+    "baseUrl": "https://api.vercel.com",
+    "specUrl": "https://api.apis.guru/v2/specs/vercel.com/0.0.1/openapi.json",
+    "type": "openapi",
+    "aliases": ["vercel", "vercel api", "zeit"],
+    "auth": "bearer"
+  },
+  "digitalocean": {
+    "name": "DigitalOcean API",
+    "description": "Cloud infrastructure API for droplets, databases, Kubernetes, and networking",
+    "baseUrl": "https://api.digitalocean.com/v2",
+    "specUrl": "https://api.apis.guru/v2/specs/digitalocean.com/2.0/openapi.json",
+    "type": "openapi",
+    "aliases": ["digitalocean", "do", "digital ocean"],
+    "auth": "bearer"
+  },
+  "cloudflare": {
+    "name": "Cloudflare API",
+    "description": "Cloudflare API for DNS, CDN, Workers, and security services",
+    "baseUrl": "https://api.cloudflare.com/client/v4",
+    "specUrl": "https://raw.githubusercontent.com/cloudflare/api-schemas/main/openapi.json",
+    "type": "openapi",
+    "aliases": ["cloudflare", "cf", "cloudflare workers"],
+    "auth": "bearer"
+  },
+  "twitter": {
+    "name": "Twitter / X API",
+    "description": "Twitter/X API v2 for tweets, users, spaces, and direct messages",
+    "baseUrl": "https://api.twitter.com/2",
+    "specUrl": "https://api.apis.guru/v2/specs/twitter.com/current/2.61/openapi.json",
+    "type": "openapi",
+    "aliases": ["twitter", "x", "x api", "twitter api", "tweets"],
+    "auth": "bearer"
+  },
+  "anthropic": {
+    "name": "Anthropic API",
+    "description": "Claude AI API for messages, completions, and embeddings",
+    "baseUrl": "https://api.anthropic.com/v1",
+    "type": "openapi",
+    "aliases": ["anthropic", "claude", "claude api", "claude ai"],
+    "auth": "api-key"
+  },
+  "petstore": {
+    "name": "Petstore (Sample API)",
+    "description": "Classic OpenAPI sample API for testing and learning",
+    "baseUrl": "https://petstore3.swagger.io/api/v3",
+    "specUrl": "https://petstore3.swagger.io/api/v3/openapi.json",
+    "type": "openapi",
+    "aliases": ["petstore", "swagger petstore", "sample api", "test api", "demo api"],
+    "auth": "none"
+  }
+}

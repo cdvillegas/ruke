@@ -117,15 +117,25 @@ export function createRepository(db: Database.Database) {
     getEnvironments(workspaceId: string): Environment[] {
       return db.prepare(
         `SELECT id, workspace_id as workspaceId, name, is_active as isActive,
-         sort_order as sortOrder, created_at as createdAt, updated_at as updatedAt
+         sort_order as sortOrder, connection_id as connectionId, base_url as baseUrl,
+         created_at as createdAt, updated_at as updatedAt
          FROM environments WHERE workspace_id = ? ORDER BY sort_order`
       ).all(workspaceId) as any[];
     },
 
-    createEnvironment(id: string, workspaceId: string, name: string, sortOrder: number): void {
+    getEnvironmentsByConnection(connectionId: string): Environment[] {
+      return db.prepare(
+        `SELECT id, workspace_id as workspaceId, name, is_active as isActive,
+         sort_order as sortOrder, connection_id as connectionId, base_url as baseUrl,
+         created_at as createdAt, updated_at as updatedAt
+         FROM environments WHERE connection_id = ? ORDER BY sort_order`
+      ).all(connectionId) as any[];
+    },
+
+    createEnvironment(id: string, workspaceId: string, name: string, sortOrder: number, connectionId?: string, baseUrl?: string): void {
       db.prepare(
-        'INSERT INTO environments (id, workspace_id, name, sort_order) VALUES (?, ?, ?, ?)'
-      ).run(id, workspaceId, name, sortOrder);
+        'INSERT INTO environments (id, workspace_id, name, sort_order, connection_id, base_url) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(id, workspaceId, name, sortOrder, connectionId ?? null, baseUrl ?? null);
     },
 
     setActiveEnvironment(workspaceId: string, envId: string): void {
@@ -138,6 +148,8 @@ export function createRepository(db: Database.Database) {
       const values: any[] = [];
       if (data.name !== undefined) { sets.push('name = ?'); values.push(data.name); }
       if (data.sortOrder !== undefined) { sets.push('sort_order = ?'); values.push(data.sortOrder); }
+      if (data.baseUrl !== undefined) { sets.push('base_url = ?'); values.push(data.baseUrl); }
+      if (data.connectionId !== undefined) { sets.push('connection_id = ?'); values.push(data.connectionId); }
       sets.push("updated_at = datetime('now')");
       values.push(id);
       db.prepare(`UPDATE environments SET ${sets.join(', ')} WHERE id = ?`).run(...values);

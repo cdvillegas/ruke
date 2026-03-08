@@ -93,6 +93,16 @@ export function initDatabase(dbPath: string): Database.Database {
     );
   `);
 
+  // Migrations: add new columns safely
+  const envColumns = db.prepare("PRAGMA table_info(environments)").all() as { name: string }[];
+  const envColNames = new Set(envColumns.map(c => c.name));
+  if (!envColNames.has('connection_id')) {
+    db.exec("ALTER TABLE environments ADD COLUMN connection_id TEXT");
+  }
+  if (!envColNames.has('base_url')) {
+    db.exec("ALTER TABLE environments ADD COLUMN base_url TEXT");
+  }
+
   const wsCount = db.prepare('SELECT COUNT(*) as count FROM workspaces').get() as { count: number };
   if (wsCount.count === 0) {
     const { nanoid } = require('nanoid') as { nanoid: () => string };

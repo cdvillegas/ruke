@@ -38,7 +38,8 @@ export function GrpcRequestBuilder({
   protoDefinition, onLoadProto,
 }: GrpcRequestBuilderProps) {
   const resolveString = useEnvironmentStore((s) => s.resolveString);
-  const { activeRequestTab, setActiveRequestTab } = useUiStore();
+  const activeRequestTab = useUiStore((s) => s.activeRequestTab);
+  const setActiveRequestTab = useUiStore((s) => s.setActiveRequestTab);
 
   const [serviceDropdownOpen, setServiceDropdownOpen] = useState(false);
 

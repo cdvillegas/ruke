@@ -15,7 +15,8 @@ const BODY_TYPES: { id: BodyType; label: string }[] = [
 ];
 
 export function BodyEditor() {
-  const { activeRequest, setBody } = useRequestStore();
+  const activeRequest = useRequestStore((s) => s.activeRequest);
+  const setBody = useRequestStore((s) => s.setBody);
   const body = activeRequest.body;
   const gql = body.graphql || { query: '', variables: '{}' };
 

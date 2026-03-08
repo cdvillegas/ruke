@@ -3,12 +3,14 @@ import { useConnectionStore } from '../../stores/connectionStore';
 import { useRequestStore } from '../../stores/requestStore';
 import { useGrpcStore } from '../../stores/grpcStore';
 import { useEnvironmentStore } from '../../stores/environmentStore';
+import { useCollectionStore } from '../../stores/collectionStore';
 import { useUiStore } from '../../stores/uiStore';
+import { VariableHighlight } from '../shared/VariableInput';
 import {
   Plug, Plus, Trash2, Globe, ChevronRight, ChevronDown,
   Search, Play, Upload, Loader2, Check, AlertCircle, Sparkles,
-  FileJson, Send, Copy, ExternalLink, Shield,
-  Terminal, Code2, Braces, ChevronUp, Info,
+  FileJson, Send, Copy, ExternalLink, Shield, RefreshCw,
+  Terminal, Code2, Braces, ChevronUp,
   Zap, Database, Cloud, Server, Lock, Key, Cpu,
   Box, Layers, Radio, Wifi, Activity, Heart,
   Star, Bookmark, Flag, Bell, Mail, MessageSquare,
@@ -45,6 +47,19 @@ import {
   IceCreamCone, Cookie, Donut, Candy, CupSoda, Martini,
   Beer, Egg, EggFried, Ham, Drumstick, Beef,
   CakeSlice, ChefHat, CookingPot,
+  Rat, Mouse, FishOff, Footprints,
+  Lollipop, Dices, Swords, Drama,
+  Smile, SmilePlus, Laugh, Meh, Frown, Angry,
+  ThumbsUp, ThumbsDown, HandMetal, Handshake,
+  HeartHandshake, HeartCrack,
+  Baby, PersonStanding, Volleyball,
+  Flower, Clover, TreeDeciduous, Trees, Palmtree, Shrub, Wheat,
+  Rainbow, Sunrise, Sunset, Eclipse, MoonStar, Stars,
+  Tornado, Droplet, Droplets, MountainSnow,
+  CloudRain, CloudSnow, CloudLightning, CloudSun,
+  FlameKindling, Tent, TentTree, TreePalm,
+  Citrus, Salad, Soup, Milk, GlassWater, Nut,
+  Stamp, Sticker,
   type LucideIcon,
 } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
@@ -54,36 +69,60 @@ import type { ApiConnection, ApiEndpoint, EndpointParam, DiscoveryResult, GrpcMe
 import yaml from 'js-yaml';
 
 const ALL_ICONS: Record<string, LucideIcon> = {
-  Globe, Zap, Database, Cloud, Server, Lock, Key, Rocket,
-  Star, Heart, Shield, Flame, Bot, Sparkle, Wand2,
-  Cpu, Monitor, Smartphone, Tablet, Code2, Terminal, Braces, FileCode2,
-  Container, GitBranch, GitMerge, Github, Blocks, Puzzle, Component,
-  Globe2, Link, AtSign, Hash, Wifi, Signal, Radio, QrCode, Satellite, Earth,
-  ShoppingCart, CreditCard, Coins, Wallet, Store, Package, Truck, Warehouse,
-  BarChart3, TrendingUp, PieChart, LineChart, Gauge, Gift, Receipt, PiggyBank,
-  Mail, MessageSquare, Bell, Mic, Headset, Send, Tv, Podcast,
-  Users, User, GraduationCap, Brain, Lightbulb, Award, Trophy, Crown, Target,
-  BadgeCheck, Medal,
-  Palette, Brush, Pencil, Eraser, Scissors, Camera, Image, Aperture,
-  Sun, Moon, Waves, Mountain, TreePine, Leaf, Flower2, Sprout, Snowflake, Wind,
-  Dog, Cat, Bird, Bug, Fish, Squirrel, Rabbit, Turtle,
-  Snail, Worm, PawPrint, Shell,
-  Plane, Car, Ship, Bike, TrainFront, MapPin, Compass, Anchor, Map,
-  Navigation, LocateFixed,
-  Coffee, Pizza, Apple, Cake, Utensils, Wine, Cherry, Grape,
-  Banana, Carrot, Croissant, Sandwich, IceCreamCone, Cookie, Donut, Candy,
-  CupSoda, Martini, Beer, Egg, EggFried, Ham, Drumstick, Beef,
-  CakeSlice, ChefHat, CookingPot,
-  HeartPulse, Pill, Dna, Atom, Microscope, Telescope, Dumbbell, Activity,
-  Stethoscope, Bone,
-  Wrench, Cog, SlidersHorizontal, Fingerprint, ShieldCheck, Eye, Scan, Siren,
-  LayoutGrid, LayoutDashboard, Layers, Box, BookOpen, Library,
-  FolderOpen, FolderGit2, Table2, ListChecks, ClipboardList, FileText,
-  Home, Building2, Hourglass, Timer, Calendar, AlarmClock, Umbrella,
-  Gem, Diamond, PartyPopper, Popcorn, Clapperboard,
-  Gamepad2, Music, Film, Bookmark, Flag,
-  Headphones, Printer, HardDrive, CircuitBoard, Binary,
-  Ghost, Skull, Plug, Space, Orbit,
+  Dog, Cat, Bird, Fish, Bug, Rabbit, Turtle, Squirrel,
+  Snail, Rat, Mouse, Worm, PawPrint, Shell, Bone, Footprints,
+
+  Smile, SmilePlus, Laugh, Meh, Frown, Angry, Baby, PersonStanding,
+  ThumbsUp, ThumbsDown, HandMetal, Handshake,
+  Heart, HeartCrack, HeartHandshake, HeartPulse,
+
+  Ghost, Skull, Swords, Dices, Gamepad2, Puzzle,
+  Drama, Volleyball, Rocket, Flame, FlameKindling,
+  Crown, Gem, Diamond, Trophy, Award, Medal, BadgeCheck,
+  Star, Sparkle, Wand2, PartyPopper, Gift, Target,
+  Lollipop, Candy, Popcorn, Sticker, Stamp,
+
+  Sun, Moon, MoonStar, Stars, Eclipse, Rainbow,
+  CloudSun, CloudRain, CloudSnow, CloudLightning,
+  Sunrise, Sunset, Snowflake, Wind, Tornado,
+  Droplet, Droplets, Waves, Mountain, MountainSnow,
+  TreePine, TreeDeciduous, Trees, Palmtree, TreePalm, Shrub,
+  Leaf, Flower, Flower2, Clover, Sprout, Wheat,
+
+  Coffee, Pizza, Apple, Cherry, Grape, Banana, Citrus, Carrot, Nut,
+  Cake, CakeSlice, Croissant, Sandwich, Cookie, Donut, IceCreamCone, Egg, EggFried,
+  Utensils, Wine, Beer, Martini, CupSoda, Milk, GlassWater,
+  Ham, Drumstick, Beef, Salad, Soup,
+  ChefHat, CookingPot,
+
+  Tent, TentTree, Compass, Anchor, MapPin, Map, Navigation,
+  Plane, Car, Ship, Bike, TrainFront, Truck,
+  Globe, Globe2, Earth, Umbrella,
+
+  Zap, Database, Cloud, Server, Lock, Key, Cpu, Bot,
+  Code2, Terminal, Braces, FileCode2, Container,
+  GitBranch, GitMerge, Github, Blocks, Component,
+  Monitor, Smartphone, Tablet, Tv,
+  Link, AtSign, Hash, Wifi, Signal, Radio, QrCode,
+  Satellite, Space, Orbit,
+  HardDrive, CircuitBoard, Binary,
+
+  ShoppingCart, CreditCard, Coins, Wallet, Store, Package, Warehouse,
+  BarChart3, TrendingUp, PieChart, LineChart, Gauge, Receipt, PiggyBank,
+
+  Mail, MessageSquare, Bell, Mic, Headset, Send, Podcast,
+  Users, User, GraduationCap, Brain, Lightbulb,
+
+  Palette, Brush, Pencil, Camera, Image, Aperture,
+  Music, Film, Clapperboard, Headphones, Bookmark, Flag,
+
+  Shield, ShieldCheck, Fingerprint, Eye, Scan, Siren,
+  Dna, Atom, Pill, Stethoscope, Microscope, Telescope, Dumbbell, Activity,
+  Wrench, Cog, SlidersHorizontal,
+
+  Home, Building2, LayoutGrid, LayoutDashboard, Layers, Box,
+  BookOpen, Library, FolderOpen, Plug,
+  Hourglass, Timer, Calendar, AlarmClock,
 };
 
 const ICON_PALETTE = [
@@ -151,7 +190,7 @@ function IconCustomizer({ conn }: { conn: ApiConnection }) {
         <button className="group relative" title="Customize icon">
           <ConnectionIcon conn={conn} size="md" />
           <div className="absolute inset-0 rounded-xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-            <Sparkles size={14} className="text-white" />
+            <Pencil size={14} className="text-white" />
           </div>
         </button>
       </Popover.Trigger>
@@ -399,6 +438,7 @@ interface ResolveResult {
   endpointCount: number;
   specType: 'openapi' | 'graphql' | 'grpc' | 'manual';
   specText?: string;
+  endpoints?: ApiEndpoint[];
   discoveryResults?: DiscoveryResult[];
 }
 
@@ -434,7 +474,7 @@ export function ConnectionsView() {
       }
 
       useUiStore.getState().setActiveProtocol('grpc');
-      useUiStore.getState().setActiveView('request');
+      useUiStore.getState().setActiveView('requests');
       return;
     }
 
@@ -459,23 +499,47 @@ export function ConnectionsView() {
       });
       useUiStore.getState().setActiveProtocol('graphql');
     } else {
+      let body: any = { type: 'none' };
+      if (endpoint.requestBody) {
+        if (endpoint.requestBody.example) {
+          body = { type: endpoint.requestBody.type, raw: endpoint.requestBody.example };
+        } else {
+          const bodyParams = (endpoint.parameters || []).filter(p => p.in === 'body');
+          if (bodyParams.length > 0) {
+            const template: Record<string, any> = {};
+            for (const bp of bodyParams) {
+              if (bp.type === 'integer' || bp.type === 'number') template[bp.name] = 0;
+              else if (bp.type === 'boolean') template[bp.name] = false;
+              else if (bp.type.endsWith('[]')) template[bp.name] = [];
+              else if (bp.type === 'object') template[bp.name] = {};
+              else template[bp.name] = '';
+            }
+            body = { type: 'json', raw: JSON.stringify(template, null, 2) };
+          } else if (endpoint.requestBody.schema && !endpoint.requestBody.schema.includes('$ref')) {
+            body = { type: endpoint.requestBody.type, raw: endpoint.requestBody.schema };
+          } else {
+            body = { type: 'json', raw: '{}' };
+          }
+        }
+      }
+
       store.updateActiveRequest({
         method: endpoint.method,
         url,
+        connectionId: conn.id,
+        endpointId: endpoint.id,
         name: endpoint.summary || `${endpoint.method} ${endpoint.path}`,
         headers: [{ key: '', value: '', enabled: true }],
         params: (endpoint.parameters || [])
           .filter(p => p.in === 'query')
           .map(p => ({ key: p.name, value: '', enabled: true })),
-        body: endpoint.requestBody
-          ? { type: endpoint.requestBody.type, raw: endpoint.requestBody.example || endpoint.requestBody.schema || '' }
-          : { type: 'none' },
+        body,
         auth: conn.auth,
       });
       useUiStore.getState().setActiveProtocol('rest');
     }
 
-    useUiStore.getState().setActiveView('request');
+    useUiStore.getState().setActiveView('requests');
   };
 
   return (
@@ -648,26 +712,30 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
 
     completeActiveStep();
 
+    // If the backend already resolved endpoints, use them directly
+    const withEndpoints = valid.filter(r => r.endpointCount > 0 && r.endpoints.length > 0);
+    if (withEndpoints.length > 0) {
+      const best = withEndpoints[0];
+      setResult({
+        name: best.name,
+        description: best.description,
+        baseUrl: best.baseUrl,
+        specUrl: best.specUrl,
+        endpointCount: best.endpointCount,
+        specType: best.specType,
+        endpoints: best.endpoints,
+        discoveryResults: withEndpoints.length > 1 ? withEndpoints : undefined,
+      });
+      setStatus('resolved');
+      return true;
+    }
+
+    // Try fetching spec from renderer as fallback
     for (const r of valid) {
       if (r.specUrl) {
         const fetched = await tryFetchSpec(r.specUrl);
         if (fetched) return true;
       }
-    }
-
-    const withEndpoints = valid.filter(r => r.endpointCount > 0);
-    if (withEndpoints.length > 0) {
-      setResult({
-        name: withEndpoints[0].name,
-        description: withEndpoints[0].description,
-        baseUrl: withEndpoints[0].baseUrl,
-        specUrl: withEndpoints[0].specUrl,
-        endpointCount: withEndpoints[0].endpointCount,
-        specType: withEndpoints[0].specType,
-        discoveryResults: withEndpoints.length > 1 ? withEndpoints : undefined,
-      });
-      setStatus('resolved');
-      return true;
     }
 
     setResult({
@@ -756,9 +824,6 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
       return;
     }
 
-    addStep('Thinking...');
-    await new Promise(r => setTimeout(r, 400));
-
     addStep(`Looking up ${trimmed}...`);
     try {
       const results: DiscoveryResult[] = await window.ruke.agent.discover(trimmed);
@@ -768,21 +833,10 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
       failActiveStep();
     }
 
-    addStep(`Searching for ${trimmed} API spec...`);
-    try {
-      const results: DiscoveryResult[] = await window.ruke.agent.discover(
-        `Find the OpenAPI or Swagger spec URL for the ${trimmed} API. Include the direct spec file URL if possible.`
-      );
-      if (await handleDiscoveryResults(results)) return;
-      failActiveStep();
-    } catch {
-      failActiveStep();
-    }
-
     setShowManual(true);
     setStatus('error');
     setError(`Could not find the ${trimmed} API. Try pasting a spec URL or adding manually.`);
-  }, [importOpenApiSpec]);
+  }, [importOpenApiSpec, addConnection, setActiveConnection]);
 
   const handleSubmit = () => {
     if (status === 'resolving') return;
@@ -876,6 +930,7 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
   };
 
   const handleConnect = (r: ResolveResult) => {
+    // If we have endpoints from discovery results (multi-result picker)
     if (r.discoveryResults && r.discoveryResults.length > 0) {
       const match = r.discoveryResults.find(d => d.name === r.name);
       if (match && match.endpoints.length > 0) {
@@ -893,12 +948,29 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
       }
     }
 
+    // If we have endpoints carried through from discovery
+    if (r.endpoints && r.endpoints.length > 0) {
+      const conn = addConnection({
+        name: r.name,
+        baseUrl: r.baseUrl,
+        specUrl: r.specUrl,
+        specType: r.specType === 'manual' ? 'openapi' : r.specType,
+        description: r.description,
+        endpoints: r.endpoints,
+      });
+      setActiveConnection(conn.id);
+      notifyConnected(r.name, r.endpoints.length, r.specType);
+      return;
+    }
+
+    // Spec was already imported via resolveSpecText (connection already exists)
     if (r.endpointCount > 0) {
       selectLatest();
       notifyConnected(r.name, r.endpointCount, r.specType);
       return;
     }
 
+    // Manual / no-endpoints connection
     const conn = addConnection({
       name: r.name,
       baseUrl: r.baseUrl,
@@ -966,7 +1038,7 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
 
   return (
     <div
-      className={onConnected ? '' : 'h-full flex flex-col items-center justify-center'}
+      className={onConnected ? 'relative' : 'relative h-full flex flex-col items-center justify-center'}
       onDragOver={(e) => e.preventDefault()}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -974,234 +1046,226 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
     >
       <div className={onConnected ? 'w-full' : 'w-full max-w-lg px-8'}>
 
-        {/* Drop Zone */}
-        <div
-          className={`relative rounded-2xl border-2 border-dashed transition-all duration-200 ${
-            dragging
-              ? 'border-accent bg-accent/5 scale-[1.01]'
-              : 'border-border hover:border-border-light'
-          }`}
-        >
-          <div className={`${status === 'idle' ? 'p-6 pb-4' : 'p-6'}`}>
-            {/* Icon + helper text */}
-            {status === 'idle' && (
-              <div className="text-center mb-5">
-                <div className="w-12 h-12 rounded-2xl bg-bg-tertiary flex items-center justify-center mx-auto mb-3">
-                  {dragging ? (
-                    <Upload size={20} className="text-accent" />
-                  ) : (
-                    <Globe size={20} className="text-text-muted" />
-                  )}
+        {/* Drop overlay — scoped to this panel */}
+        {dragging && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm rounded-2xl">
+            <div className="flex flex-col items-center gap-3 animate-fade-in">
+              <div className="w-14 h-14 rounded-2xl bg-accent/10 border-2 border-dashed border-accent flex items-center justify-center">
+                <Upload size={22} className="text-accent" />
+              </div>
+              <p className="text-sm font-medium text-text-primary">Drop your spec file</p>
+              <p className="text-xs text-text-muted">OpenAPI, Swagger, or .proto</p>
+            </div>
+          </div>
+        )}
+
+        {/* Header — only in idle, subtle */}
+        {status === 'idle' && !showManual && !showGrpcSetup && (
+          <div className="text-center mb-6">
+            <h2 className="text-base font-semibold text-text-primary mb-1">Connect an API</h2>
+            <p className="text-xs text-text-muted">Search by name, paste a URL, or drop a spec file</p>
+          </div>
+        )}
+
+        {/* Search bar — always visible, adapts to state */}
+        <div className="relative">
+          <div className="relative flex items-center command-bar-glow rounded-2xl">
+            {status === 'resolving' ? (
+              <Loader2 size={16} className="absolute left-4 text-accent z-10 animate-spin" />
+            ) : (
+              <Search size={16} className="absolute left-4 text-text-muted z-10" />
+            )}
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => { setInput(e.target.value); if (status === 'error' || status === 'resolved') reset(); }}
+              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+              onPaste={handlePaste}
+              placeholder=""
+              disabled={status === 'resolving'}
+              className="w-full pl-11 pr-14 py-3.5 text-sm rounded-2xl bg-bg-secondary border border-transparent text-text-primary focus:outline-none transition-all disabled:opacity-60 relative"
+            />
+            {!input && status === 'idle' && (
+              <WavePlaceholder text={placeholder.text} phase={placeholder.phase} />
+            )}
+            {!input && status === 'resolving' && steps.length > 0 && (
+              <span className="absolute left-11 text-sm text-text-muted pointer-events-none select-none z-[2]">
+                {steps.filter(s => s.status === 'active')[0]?.text || steps[steps.length - 1]?.text}
+              </span>
+            )}
+            {input.trim() && status !== 'resolving' && (
+              <button
+                onClick={handleSubmit}
+                className="absolute right-2 p-2 rounded-xl text-white bg-accent hover:bg-accent-hover transition-all duration-200 z-10 cursor-pointer"
+              >
+                <Send size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Searching shimmer bar */}
+          {status === 'resolving' && (
+            <div className="absolute bottom-0 left-4 right-4 h-[2px] rounded-full overflow-hidden">
+              <div className="h-full bg-accent/60 rounded-full discovery-search-bar" />
+            </div>
+          )}
+        </div>
+
+        {/* Result card — slides up below the search bar */}
+        {status === 'resolved' && result && (
+          <div className="mt-3 discovery-result-enter">
+            <button
+              onClick={() => handleConnect(result)}
+              className="w-full group rounded-xl bg-bg-secondary border border-border hover:border-accent/40 p-4 text-left transition-all duration-200 hover:bg-bg-hover"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shrink-0">
+                  <Globe size={18} className="text-accent" />
                 </div>
-                <p className="text-sm text-text-primary font-medium mb-1">
-                  {dragging ? 'Drop your spec file' : 'Drop a file, paste a URL, or just type'}
-                </p>
-                <p className="text-xs text-text-muted">
-                  OpenAPI specs, Swagger files, URLs, or just an API name like "Stripe"
-                </p>
-              </div>
-            )}
-
-            {/* Input with glow */}
-            {status !== 'resolved' && (
-              <div className="relative">
-                <div className="relative flex items-center command-bar-glow rounded-2xl">
-                  <Sparkles size={16} className="absolute left-4 text-accent z-10" />
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={input}
-                    onChange={(e) => { setInput(e.target.value); if (status === 'error') reset(); }}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                    onPaste={handlePaste}
-                    placeholder=""
-                    disabled={status === 'resolving'}
-                    className="w-full pl-11 pr-14 py-4 text-sm rounded-2xl bg-bg-secondary border border-transparent text-text-primary focus:outline-none transition-all disabled:opacity-50 relative"
-                  />
-                  {!input && status === 'idle' && (
-                    <WavePlaceholder text={placeholder.text} phase={placeholder.phase} />
-                  )}
-                  {!input && status === 'resolving' && steps.length > 0 && (
-                    <span className="absolute left-11 text-sm text-text-muted pointer-events-none select-none z-[2]">
-                      {steps[steps.length - 1].text}
-                    </span>
-                  )}
-                  <button
-                    onClick={handleSubmit}
-                    disabled={status === 'resolving' || !input.trim()}
-                    className={`absolute right-2 p-2.5 rounded-xl text-white transition-all duration-300 z-10 ${
-                      input.trim() && status !== 'resolving'
-                        ? 'bg-accent hover:bg-accent-hover shadow-[0_0_12px_rgba(59,130,246,0.4)] hover:shadow-[0_0_20px_rgba(59,130,246,0.6)] cursor-pointer'
-                        : status === 'resolving'
-                          ? 'bg-accent/40 cursor-wait'
-                          : 'bg-accent/20 opacity-30 cursor-not-allowed'
-                    }`}
-                  >
-                    {status === 'resolving' ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Progress steps */}
-            {steps.length > 0 && (
-              <div className="mt-4 space-y-1.5">
-                {steps.map((step, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-center gap-2.5 text-xs transition-opacity duration-300 ${
-                      step.status === 'active' ? 'text-text-primary' : step.status === 'done' ? 'text-text-muted' : 'text-text-muted/50'
-                    }`}
-                  >
-                    {step.status === 'active' && (
-                      <Loader2 size={12} className="animate-spin text-accent shrink-0" />
-                    )}
-                    {step.status === 'done' && (
-                      <Check size={12} className="text-green-400 shrink-0" />
-                    )}
-                    {step.status === 'failed' && (
-                      <span className="w-3 h-3 flex items-center justify-center shrink-0 text-text-muted/40">—</span>
-                    )}
-                    <span className={step.status === 'active' ? 'animate-pulse' : ''}>{step.text}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Result card */}
-            {status === 'resolved' && result && (
-              <div className="animate-fade-in">
-                <div className="rounded-xl bg-bg-secondary border border-accent/20 p-4">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
-                      <Check size={16} className="text-accent" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-semibold text-text-primary">{result.name}</h3>
-                      {result.description && (
-                        <p className="text-xs text-text-muted mt-0.5 line-clamp-2">{result.description}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-[11px] text-text-muted mb-4">
-                    {result.baseUrl && (
-                      <span className="font-mono truncate">{result.baseUrl}</span>
-                    )}
-                    {result.endpointCount > 0 && (
-                      <span className="shrink-0 px-1.5 py-0.5 rounded bg-accent/10 text-accent font-medium">
-                        {result.endpointCount} endpoints
-                      </span>
-                    )}
-                    <span className="shrink-0 px-1.5 py-0.5 rounded bg-bg-tertiary">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-text-primary truncate">{result.name}</h3>
+                    <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-bg-tertiary text-[10px] text-text-muted font-medium">
                       {result.specType === 'graphql' ? 'GraphQL' : result.specType === 'grpc' ? 'gRPC' : result.specType === 'manual' ? 'Manual' : 'REST'}
                     </span>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleConnect(result)}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white transition-colors font-medium"
-                    >
-                      <Plug size={14} /> Connect
-                    </button>
-                    <button
-                      onClick={() => { reset(); setInput(''); inputRef.current?.focus(); }}
-                      className="px-4 py-2.5 text-xs rounded-xl bg-bg-tertiary border border-border hover:bg-bg-hover text-text-primary transition-colors"
-                    >
-                      Try another
-                    </button>
-                  </div>
+                  {result.description && (
+                    <p className="text-xs text-text-muted mt-0.5 line-clamp-1">{result.description}</p>
+                  )}
                 </div>
-
-                {/* Additional discovery results */}
-                {result.discoveryResults && result.discoveryResults.length > 1 && (
-                  <div className="mt-3 space-y-1.5">
-                    <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Also found</p>
-                    {result.discoveryResults.filter(r => r.name !== result.name).map((r, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setResult({
-                          name: r.name,
-                          description: r.description,
-                          baseUrl: r.baseUrl,
-                          specUrl: r.specUrl,
-                          endpointCount: r.endpointCount,
-                          specType: r.specType,
-                          discoveryResults: result.discoveryResults,
-                        })}
-                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-bg-secondary text-left transition-colors"
-                      >
-                        <Globe size={12} className="text-text-muted shrink-0" />
-                        <span className="text-xs text-text-primary flex-1 truncate">{r.name}</span>
-                        {r.endpointCount > 0 && (
-                          <span className="text-[9px] text-text-muted">{r.endpointCount} endpoints</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  {result.endpointCount > 0 && (
+                    <span className="px-2 py-1 rounded-lg bg-accent/10 text-accent text-[11px] font-semibold tabular-nums">
+                      {result.endpointCount} endpoints
+                    </span>
+                  )}
+                  <ChevronRight size={14} className="text-text-muted group-hover:text-accent transition-colors" />
+                </div>
               </div>
-            )}
+              {result.baseUrl && (
+                <p className="text-[11px] font-mono text-text-muted mt-2 ml-[52px] truncate">{result.baseUrl}</p>
+              )}
+            </button>
 
-            {/* Error */}
-            {status === 'error' && error && (
-              <div className="flex items-start gap-2 mt-3 animate-fade-in">
-                <AlertCircle size={14} className="text-warning shrink-0 mt-0.5" />
-                <span className="text-xs text-text-muted">{error}</span>
-              </div>
-            )}
-
-            {/* Manual fallback */}
-            {showManual && (
-              <div className="mt-4 pt-4 border-t border-border space-y-3 animate-fade-in">
-                <p className="text-xs text-text-secondary font-medium">Add manually</p>
-                <input
-                  type="text"
-                  value={manualName}
-                  onChange={(e) => setManualName(e.target.value)}
-                  placeholder="API name"
-                  className="w-full px-3 py-2 text-xs rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-                />
-                <input
-                  type="text"
-                  value={manualUrl}
-                  onChange={(e) => setManualUrl(e.target.value)}
-                  placeholder="Base URL"
-                  className="w-full px-3 py-2 text-xs font-mono rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-                />
+            {/* Additional discovery results */}
+            {result.discoveryResults && result.discoveryResults.length > 1 && (
+              result.discoveryResults.filter(r => r.name !== result.name).map((r, i) => (
                 <button
-                  onClick={handleManualSubmit}
-                  disabled={!manualName.trim() || !manualUrl.trim()}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white disabled:opacity-50 transition-colors"
+                  key={i}
+                  onClick={() => setResult({
+                    name: r.name,
+                    description: r.description,
+                    baseUrl: r.baseUrl,
+                    specUrl: r.specUrl,
+                    endpointCount: r.endpointCount,
+                    specType: r.specType,
+                    endpoints: r.endpoints,
+                    discoveryResults: result.discoveryResults,
+                  })}
+                  className="w-full group rounded-xl bg-bg-secondary border border-border hover:border-accent/40 p-4 text-left transition-all duration-200 hover:bg-bg-hover mt-2 discovery-result-enter"
+                  style={{ animationDelay: `${(i + 1) * 60}ms` }}
                 >
-                  <Plus size={14} /> Connect
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-bg-tertiary flex items-center justify-center shrink-0">
+                      <Globe size={18} className="text-text-muted" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-medium text-text-primary truncate">{r.name}</h3>
+                      {r.baseUrl && (
+                        <p className="text-[11px] font-mono text-text-muted mt-0.5 truncate">{r.baseUrl}</p>
+                      )}
+                    </div>
+                    {r.endpointCount > 0 && (
+                      <span className="px-2 py-1 rounded-lg bg-bg-tertiary text-text-muted text-[11px] font-medium tabular-nums shrink-0">
+                        {r.endpointCount}
+                      </span>
+                    )}
+                    <ChevronRight size={14} className="text-text-muted group-hover:text-accent transition-colors shrink-0" />
+                  </div>
+                </button>
+              ))
+            )}
+
+            {/* Reset link */}
+            <div className="mt-3 text-center">
+              <button
+                onClick={() => { reset(); setInput(''); inputRef.current?.focus(); }}
+                className="text-[11px] text-text-muted hover:text-text-primary transition-colors"
+              >
+                Search for a different API
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {status === 'error' && error && (
+          <div className="flex items-center gap-2 mt-3 px-1 animate-fade-in">
+            <AlertCircle size={13} className="text-warning shrink-0" />
+            <span className="text-xs text-text-muted">{error}</span>
+          </div>
+        )}
+
+        {/* Manual fallback */}
+        {showManual && (
+          <div className="mt-4 animate-fade-in">
+            <div className="rounded-xl bg-bg-secondary border border-border p-4 space-y-3">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-text-primary font-medium">Add manually</p>
+                <button
+                  onClick={() => { setShowManual(false); setManualName(''); setManualUrl(''); inputRef.current?.focus(); }}
+                  className="text-[11px] text-text-muted hover:text-text-primary transition-colors"
+                >
+                  Cancel
                 </button>
               </div>
-            )}
+              <input
+                type="text"
+                value={manualName}
+                onChange={(e) => setManualName(e.target.value)}
+                placeholder="API name"
+                autoFocus
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/40 transition-colors"
+              />
+              <input
+                type="text"
+                value={manualUrl}
+                onChange={(e) => setManualUrl(e.target.value)}
+                placeholder="Base URL (e.g. https://api.example.com)"
+                className="w-full px-3.5 py-2.5 text-xs font-mono rounded-xl bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/40 transition-colors"
+              />
+              <button
+                onClick={handleManualSubmit}
+                disabled={!manualName.trim() || !manualUrl.trim()}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white disabled:opacity-40 transition-colors font-medium"
+              >
+                <Plus size={14} /> Add Connection
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Secondary actions */}
-        {status === 'idle' && !showGrpcSetup && (
-          <div className="flex items-center justify-center gap-4 mt-4">
+        {/* Secondary actions — clean row below search */}
+        {status === 'idle' && !showManual && !showGrpcSetup && (
+          <div className="flex items-center justify-center gap-1 mt-4">
             <button
               onClick={handleBrowse}
-              className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-secondary rounded-lg transition-colors"
             >
-              <FileJson size={12} /> Browse spec file
+              <FileJson size={11} /> Import file
             </button>
-            <span className="text-border">|</span>
             <button
               onClick={handleBrowseProto}
-              className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-secondary rounded-lg transition-colors"
             >
-              <Radio size={12} /> Load .proto
+              <Radio size={11} /> gRPC
             </button>
-            <span className="text-border">|</span>
             <button
-              onClick={() => setShowManual(true)}
-              className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
+              onClick={() => { setShowManual(true); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-secondary rounded-lg transition-colors"
             >
-              <Plus size={12} /> Add manually
+              <Plus size={11} /> Manual
             </button>
           </div>
         )}
@@ -1337,7 +1401,14 @@ function endpointToCurl(conn: ApiConnection, ep: ApiEndpoint): string {
     if (ep.requestBody.example) {
       parts.push(`  -d '${ep.requestBody.example}'`);
     } else {
-      parts.push(`  -d '{}'`);
+      const bodyParams = (ep.parameters || []).filter(p => p.in === 'body');
+      if (bodyParams.length > 0) {
+        const template: Record<string, any> = {};
+        for (const bp of bodyParams) template[bp.name] = `<${bp.type}>`;
+        parts.push(`  -d '${JSON.stringify(template)}'`);
+      } else {
+        parts.push(`  -d '{}'`);
+      }
     }
   }
 
@@ -1345,20 +1416,7 @@ function endpointToCurl(conn: ApiConnection, ep: ApiEndpoint): string {
 }
 
 function VariableHighlightedUrl({ url }: { url: string }) {
-  const parts = url.split(VARIABLE_REGEX);
-  if (parts.length <= 1) return <span className="font-mono">{url}</span>;
-
-  return (
-    <span className="font-mono">
-      {parts.map((part, i) =>
-        i % 2 === 1 ? (
-          <span key={i} className="text-accent bg-accent/10 rounded px-0.5">{`{{${part}}}`}</span>
-        ) : (
-          <span key={i}>{part}</span>
-        )
-      )}
-    </span>
-  );
+  return <VariableHighlight text={url} />;
 }
 
 function ParamTable({ params, title }: { params: EndpointParam[]; title: string }) {
@@ -1383,7 +1441,13 @@ function ParamTable({ params, title }: { params: EndpointParam[]; title: string 
                   {p.required && <span className="text-error ml-1 text-[9px]">*</span>}
                 </td>
                 <td className="px-3 py-2 text-text-muted font-mono text-[10px]">{p.type}</td>
-                <td className="px-3 py-2 text-text-muted hidden sm:table-cell">{p.description || '—'}</td>
+                <td className="px-3 py-2 text-text-muted hidden sm:table-cell">
+                  {p.description ? (
+                    <span className="[&_p]:inline [&_p]:m-0 [&_a]:text-accent [&_a]:underline [&_code]:bg-bg-tertiary [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[10px] [&_code]:font-mono [&_strong]:text-text-primary [&_em]:text-text-secondary">
+                      <Markdown>{p.description.replace(/\n{2,}/g, ' ')}</Markdown>
+                    </span>
+                  ) : '—'}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1434,8 +1498,9 @@ function EndpointRow({ conn, ep, onRun }: { conn: ApiConnection; ep: ApiEndpoint
   const pathParams = ep.parameters?.filter(p => p.in === 'path') || [];
   const queryParams = ep.parameters?.filter(p => p.in === 'query') || [];
   const headerParams = ep.parameters?.filter(p => p.in === 'header') || [];
+  const bodyParams = ep.parameters?.filter(p => p.in === 'body') || [];
   const hasDetails = pathParams.length > 0 || queryParams.length > 0 || headerParams.length > 0
-    || ep.description || ep.requestBody;
+    || bodyParams.length > 0 || ep.description || ep.requestBody;
 
   const isGrpc = conn.specType === 'grpc';
   let grpcMethodType: string | null = null;
@@ -1524,7 +1589,7 @@ function EndpointRow({ conn, ep, onRun }: { conn: ApiConnection; ep: ApiEndpoint
           </div>
 
           {ep.description && (
-            <div className="prose-sm text-xs text-text-secondary leading-relaxed [&_a]:text-accent [&_a]:underline [&_code]:bg-bg-tertiary [&_code]:px-1 [&_code]:rounded [&_code]:text-[11px] [&_code]:font-mono [&_p]:my-1">
+            <div className="text-xs text-text-secondary leading-relaxed [&_a]:text-accent [&_a]:underline [&_code]:bg-bg-tertiary [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[10px] [&_code]:font-mono [&_p]:my-1 first:[&_p]:mt-0 last:[&_p]:mb-0 [&_strong]:text-text-primary [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:my-1 [&_li]:my-0.5">
               <Markdown>{ep.description}</Markdown>
             </div>
           )}
@@ -1533,11 +1598,14 @@ function EndpointRow({ conn, ep, onRun }: { conn: ApiConnection; ep: ApiEndpoint
           <ParamTable params={queryParams} title="Query Parameters" />
           <ParamTable params={headerParams} title="Headers" />
 
-          {ep.requestBody?.schema && (
-            <SchemaBlock schema={ep.requestBody.schema} label="Request Body" />
+          {bodyParams.length > 0 && (
+            <ParamTable params={bodyParams} title="Body Fields" />
           )}
           {ep.requestBody?.example && (
             <SchemaBlock schema={ep.requestBody.example} label="Example" />
+          )}
+          {ep.requestBody?.schema && bodyParams.length === 0 && !ep.requestBody.schema.includes('$ref') && (
+            <SchemaBlock schema={ep.requestBody.schema} label="Request Body Schema" />
           )}
         </div>
       )}
@@ -1553,9 +1621,14 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
   onDelete: () => void;
 }) {
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set(['all']));
-  const [showDescription, setShowDescription] = useState(false);
-  const { environments, activeEnvironmentId } = useEnvironmentStore();
+  const [reimporting, setReimporting] = useState(false);
+  const [showEnvs, setShowEnvs] = useState(false);
+  const reimportSpec = useConnectionStore((s) => s.reimportSpec);
+  const { environments, activeEnvironmentId, getEnvironmentsByConnection, createEnvironment, getEnvironmentVariables } = useEnvironmentStore();
   const resolveString = useEnvironmentStore((s) => s.resolveString);
+  const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
+  const setActiveView = useUiStore((s) => s.setActiveView);
+  const connEnvs = getEnvironmentsByConnection(conn.id);
 
   const activeEnv = environments.find(e => e.id === activeEnvironmentId);
   const resolvedBaseUrl = resolveString(conn.baseUrl);
@@ -1618,6 +1691,20 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {conn.specUrl && conn.specType === 'openapi' && (
+            <button
+              onClick={async () => {
+                setReimporting(true);
+                await reimportSpec(conn.id);
+                setReimporting(false);
+              }}
+              disabled={reimporting}
+              className="p-2 rounded-lg text-text-muted hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-50"
+              title="Re-import spec (resolves schemas)"
+            >
+              <RefreshCw size={14} className={reimporting ? 'animate-spin' : ''} />
+            </button>
+          )}
           <button
             onClick={onDelete}
             className="p-2 rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-colors"
@@ -1629,7 +1716,7 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
       </div>
 
       {/* Badges Row */}
-      <div className="flex items-center gap-2 flex-wrap mb-5">
+      <div className="flex items-center gap-2 flex-wrap mb-3">
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-bg-tertiary border border-border text-[10px] text-text-muted">
           {conn.specType === 'openapi' && <><Code2 size={10} /> OpenAPI</>}
           {conn.specType === 'graphql' && <><Braces size={10} /> GraphQL</>}
@@ -1669,22 +1756,59 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
 
       {/* Description */}
       {conn.description && (
-        <div className="mb-5">
-          <button
-            onClick={() => setShowDescription(!showDescription)}
-            className="flex items-center gap-1.5 text-[10px] text-text-muted hover:text-text-primary transition-colors mb-2"
-          >
-            <Info size={10} />
-            <span>{showDescription ? 'Hide description' : 'Show description'}</span>
-            {showDescription ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-          </button>
-          {showDescription && (
-            <div className="rounded-xl bg-bg-secondary border border-border p-4 prose-sm text-xs text-text-secondary leading-relaxed [&_a]:text-accent [&_a]:underline [&_code]:bg-bg-tertiary [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_code]:font-mono [&_p]:my-2 [&_h1]:text-text-primary [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-text-primary [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1.5 [&_h3]:text-text-primary [&_h3]:text-xs [&_h3]:font-medium [&_h3]:mt-2 [&_h3]:mb-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:my-2 [&_li]:my-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-accent/30 [&_blockquote]:pl-3 [&_blockquote]:text-text-muted [&_blockquote]:italic [&_pre]:bg-bg-tertiary [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:overflow-x-auto [&_pre]:my-2">
-              <Markdown>{conn.description}</Markdown>
-            </div>
-          )}
+        <div className="mb-4 text-xs text-text-secondary leading-relaxed [&_a]:text-accent [&_a]:underline [&_code]:bg-bg-tertiary [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_code]:font-mono [&_p]:my-1 first:[&_p]:mt-0 last:[&_p]:mb-0 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-text-primary [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-text-primary [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-1 [&_h3]:text-text-primary [&_h3]:text-xs [&_h3]:font-medium [&_h3]:mt-1.5 [&_h3]:mb-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-accent/30 [&_blockquote]:pl-3 [&_blockquote]:text-text-muted [&_blockquote]:italic [&_pre]:bg-bg-tertiary [&_pre]:rounded-lg [&_pre]:p-2 [&_pre]:overflow-x-auto [&_pre]:my-1">
+          <Markdown>{conn.description}</Markdown>
         </div>
       )}
+
+      {/* Environments section */}
+      <div className="mb-4 rounded-xl border border-border overflow-hidden">
+        <button
+          onClick={() => setShowEnvs(!showEnvs)}
+          className="w-full flex items-center justify-between px-4 py-2.5 bg-bg-secondary hover:bg-bg-tertiary transition-colors text-left"
+        >
+          <div className="flex items-center gap-2">
+            {showEnvs ? <ChevronDown size={13} className="text-text-muted" /> : <ChevronRight size={13} className="text-text-muted" />}
+            <Layers size={13} className="text-accent" />
+            <span className="text-xs font-semibold text-text-primary">Environments</span>
+          </div>
+          <span className="text-[10px] text-text-muted">{connEnvs.length}</span>
+        </button>
+        {showEnvs && (
+          <div className="border-t border-border">
+            {connEnvs.map((env) => {
+              const varCount = getEnvironmentVariables(env.id).length;
+              return (
+                <div
+                  key={env.id}
+                  onClick={() => setActiveView('environments')}
+                  className="flex items-center justify-between px-4 py-2 hover:bg-bg-hover cursor-pointer transition-colors border-b border-border last:border-b-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${env.id === activeEnvironmentId ? 'bg-success' : 'bg-text-muted/30'}`} />
+                    <span className="text-xs text-text-primary">{env.name}</span>
+                    {env.baseUrl && (
+                      <span className="text-[10px] text-text-muted font-mono truncate max-w-48">{env.baseUrl}</span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-text-muted">{varCount} var{varCount !== 1 ? 's' : ''}</span>
+                </div>
+              );
+            })}
+            <button
+              onClick={async () => {
+                if (activeWorkspaceId) {
+                  await createEnvironment(activeWorkspaceId, `${conn.name} - New Env`, conn.id, conn.baseUrl);
+                }
+              }}
+              className="w-full flex items-center gap-2 px-4 py-2 text-xs text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+            >
+              <Plus size={12} />
+              Add Environment
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Search */}
       <div className="relative mb-4">

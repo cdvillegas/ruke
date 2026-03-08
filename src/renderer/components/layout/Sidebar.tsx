@@ -16,9 +16,11 @@ const NAV_ITEMS: { id: AppView; label: string; icon: typeof History }[] = [
 ];
 
 export function Sidebar() {
-  const { sidebarWidth, activeView, setActiveView } = useUiStore();
-  const { createCollection } = useCollectionStore();
-  const { history } = useRequestStore();
+  const sidebarWidth = useUiStore((s) => s.sidebarWidth);
+  const activeView = useUiStore((s) => s.activeView);
+  const setActiveView = useUiStore((s) => s.setActiveView);
+  const createCollection = useCollectionStore((s) => s.createCollection);
+  const history = useRequestStore((s) => s.history);
   const [searchQuery, setSearchQuery] = useState('');
   const [collectionsExpanded, setCollectionsExpanded] = useState(true);
   const [historyExpanded, setHistoryExpanded] = useState(false);

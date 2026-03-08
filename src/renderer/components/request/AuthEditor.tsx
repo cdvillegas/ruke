@@ -10,7 +10,8 @@ const AUTH_TYPES: { id: AuthType; label: string; icon: typeof Shield }[] = [
 ];
 
 export function AuthEditor() {
-  const { activeRequest, setAuth } = useRequestStore();
+  const activeRequest = useRequestStore((s) => s.activeRequest);
+  const setAuth = useRequestStore((s) => s.setAuth);
   const auth = activeRequest.auth;
 
   return (

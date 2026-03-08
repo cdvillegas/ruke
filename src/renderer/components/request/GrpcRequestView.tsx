@@ -26,7 +26,7 @@ export function GrpcRequestView() {
     activeRequest, updateActiveRequest, sendRequest, response, loading,
     getProtoDefinition, loadProtoFromDialog,
   } = useGrpcStore();
-  const { setActiveView } = useUiStore();
+  const setActiveView = useUiStore((s) => s.setActiveView);
 
   const protoDef = getProtoDefinition();
 
@@ -35,9 +35,9 @@ export function GrpcRequestView() {
       {/* Tab bar */}
       <div className="flex items-center border-b border-border bg-bg-secondary shrink-0">
         <button
-          onClick={() => setActiveView('home')}
+          onClick={() => setActiveView('chats')}
           className="px-3 py-2.5 text-text-muted hover:text-text-primary transition-colors border-r border-border"
-          title="Back to Home"
+          title="Back to Chats"
         >
           <ArrowLeft size={15} />
         </button>

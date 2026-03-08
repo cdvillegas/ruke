@@ -6,8 +6,8 @@ interface CollectionState {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   collections: Collection[];
-  requests: Map<string, ApiRequest[]>;
-  expandedIds: Set<string>;
+  requests: Record<string, ApiRequest[]>;
+  expandedIds: string[];
 
   loadWorkspaces: () => Promise<void>;
   setActiveWorkspace: (id: string) => void;
@@ -25,8 +25,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   workspaces: [],
   activeWorkspaceId: null,
   collections: [],
-  requests: new Map(),
-  expandedIds: new Set(),
+  requests: {},
+  expandedIds: [],
 
   loadWorkspaces: async () => {
     try {
@@ -40,7 +40,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   setActiveWorkspace: (id) => {
-    set({ activeWorkspaceId: id, collections: [], requests: new Map() });
+    set({ activeWorkspaceId: id, collections: [], requests: {} });
     get().loadCollections();
   },
 
@@ -59,11 +59,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   loadRequests: async (collectionId) => {
     try {
       const reqs = await window.ruke.db.query('getRequests', collectionId);
-      set((s) => {
-        const newMap = new Map(s.requests);
-        newMap.set(collectionId, reqs);
-        return { requests: newMap };
-      });
+      set((s) => ({
+        requests: { ...s.requests, [collectionId]: reqs },
+      }));
     } catch { /* db not ready */ }
   },
 
@@ -105,12 +103,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   toggleExpanded: (id) => {
-    set((s) => {
-      const newSet = new Set(s.expandedIds);
-      if (newSet.has(id)) newSet.delete(id);
-      else newSet.add(id);
-      return { expandedIds: newSet };
-    });
+    set((s) => ({
+      expandedIds: s.expandedIds.includes(id)
+        ? s.expandedIds.filter((eid) => eid !== id)
+        : [...s.expandedIds, id],
+    }));
   },
 
   getTree: () => {
@@ -121,7 +118,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         .filter((c) => c.parentId === collection.id)
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .map(buildNode),
-      requests: requests.get(collection.id) || [],
+      requests: requests[collection.id] || [],
     });
     return collections
       .filter((c) => !c.parentId)

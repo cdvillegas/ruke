@@ -31,6 +31,8 @@ export interface RequestBody {
 export interface ApiRequest {
   id: string;
   collectionId: string | null;
+  connectionId?: string;
+  endpointId?: string;
   name: string;
   method: HttpMethod;
   url: string;
@@ -89,6 +91,8 @@ export interface Environment {
   name: string;
   isActive: boolean;
   sortOrder: number;
+  connectionId?: string;
+  baseUrl?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -234,7 +238,32 @@ export interface GrpcResponse {
   timestamp: string;
 }
 
-export type AppView = 'home' | 'request' | 'history' | 'environments' | 'connections' | 'settings';
+export type AppView = 'chats' | 'requests' | 'history' | 'environments' | 'connections' | 'settings';
+
+export interface ChatToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+  result?: string;
+  status: 'pending' | 'running' | 'done' | 'error';
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'tool';
+  content: string | null;
+  toolCalls?: ChatToolCall[];
+  toolCallId?: string;
+  timestamp: string;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface OnboardingState {
   completed: boolean;
@@ -273,10 +302,11 @@ export interface ApiEndpoint {
 
 export interface EndpointParam {
   name: string;
-  in: 'query' | 'path' | 'header';
+  in: 'query' | 'path' | 'header' | 'body';
   required: boolean;
   type: string;
   description?: string;
+  enumValues?: string[];
 }
 
 export interface RequestThread {

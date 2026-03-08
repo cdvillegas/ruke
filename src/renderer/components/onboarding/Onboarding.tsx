@@ -39,7 +39,7 @@ export function Onboarding() {
   const [connectedName, setConnectedName] = useState('');
   const [endpointCount, setEndpointCount] = useState(0);
   const [connectedType, setConnectedType] = useState<'openapi' | 'graphql' | 'grpc'>('openapi');
-  const { completeOnboarding } = useUiStore();
+  const completeOnboarding = useUiStore((s) => s.completeOnboarding);
 
   const handleConnected = (name: string, count: number, type: 'openapi' | 'graphql' | 'grpc') => {
     setConnectedName(name);
@@ -50,7 +50,7 @@ export function Onboarding() {
 
   const handleSkipToApp = () => {
     completeOnboarding();
-    useUiStore.getState().setActiveView('home');
+    useUiStore.getState().setActiveView('chats');
   };
 
   return (

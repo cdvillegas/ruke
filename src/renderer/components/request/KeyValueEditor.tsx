@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { useEnvironmentStore } from '../../stores/environmentStore';
+import { VariableInput } from '../shared/VariableInput';
 import type { KeyValue } from '@shared/types';
 
 interface Props {
@@ -60,10 +61,9 @@ export function KeyValueEditor({ pairs, onChange, keyPlaceholder = 'Key', valueP
               }`}
             />
             <div className="relative">
-              <input
-                type="text"
+              <VariableInput
                 value={pair.value}
-                onChange={(e) => update(i, 'value', e.target.value)}
+                onChange={(v) => update(i, 'value', v)}
                 placeholder={valuePlaceholder}
                 className={`w-full px-3 py-1.5 text-xs rounded-md bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors ${
                   !pair.enabled ? 'opacity-40' : ''

@@ -8,8 +8,11 @@ import { SettingsView } from '../settings/SettingsView';
 import { X } from 'lucide-react';
 
 export function MainPanel() {
-  const { activeView } = useUiStore();
-  const { openTabs, activeTabId, switchTab, closeTab } = useRequestStore();
+  const activeView = useUiStore((s) => s.activeView);
+  const openTabs = useRequestStore((s) => s.openTabs);
+  const activeTabId = useRequestStore((s) => s.activeTabId);
+  const switchTab = useRequestStore((s) => s.switchTab);
+  const closeTab = useRequestStore((s) => s.closeTab);
 
   if (activeView === 'history') return <HistoryView />;
   if (activeView === 'environments') return <EnvEditor />;

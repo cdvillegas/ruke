@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 import type { ApiRequest, ApiResponse, HttpMethod, KeyValue, RequestBody, AuthConfig, HistoryEntry, DiscoveryResult } from '@shared/types';
+import { useConnectionStore } from './connectionStore';
+import { useEnvironmentStore } from './environmentStore';
 
 declare global {
   interface Window {
@@ -45,6 +47,7 @@ interface RequestState {
   history: HistoryEntry[];
   openTabs: ApiRequest[];
   activeTabId: string;
+  pendingTabIds: string[];
 
   setActiveRequest: (req: ApiRequest) => void;
   updateActiveRequest: (updates: Partial<ApiRequest>) => void;
@@ -55,11 +58,18 @@ interface RequestState {
   setBody: (body: RequestBody) => void;
   setAuth: (auth: AuthConfig) => void;
   setName: (name: string) => void;
+  linkConnection: (connectionId: string | undefined) => void;
+  linkEndpoint: (endpointId: string | undefined) => void;
+  getResolvedUrl: () => string;
+  getEffectiveAuth: () => AuthConfig;
   sendRequest: (resolvedVariables?: Record<string, string>) => Promise<void>;
   newRequest: (collectionId?: string | null) => void;
   openTab: (req: ApiRequest) => void;
   closeTab: (id: string) => void;
   switchTab: (id: string) => void;
+  addPendingTab: (partial?: Partial<ApiRequest>) => string;
+  resolvePendingTab: (id: string, updates: Partial<ApiRequest>) => void;
+  isPending: (id: string) => boolean;
   loadHistory: () => Promise<void>;
   clearHistory: () => Promise<void>;
   searchHistory: (query: string) => Promise<void>;
@@ -77,6 +87,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
     history: [],
     openTabs: [initial],
     activeTabId: initial.id,
+    pendingTabIds: [],
 
     setActiveRequest: (req) => set({ activeRequest: req, activeTabId: req.id }),
 
@@ -97,12 +108,43 @@ export const useRequestStore = create<RequestState>((set, get) => {
     setAuth: (auth) => get().updateActiveRequest({ auth }),
     setName: (name) => get().updateActiveRequest({ name }),
 
+    linkConnection: (connectionId) => get().updateActiveRequest({ connectionId }),
+    linkEndpoint: (endpointId) => get().updateActiveRequest({ endpointId }),
+
+    getResolvedUrl: () => {
+      const req = get().activeRequest;
+      if (req.connectionId) {
+        const conn = useConnectionStore.getState().getConnection(req.connectionId);
+        if (conn) {
+          const envBaseUrl = useEnvironmentStore.getState().resolveBaseUrl(conn.id, conn.baseUrl);
+          const base = envBaseUrl.replace(/\/+$/, '');
+          const path = req.url.startsWith('/') ? req.url : `/${req.url}`;
+          return req.url.startsWith('http') ? req.url : `${base}${path}`;
+        }
+      }
+      return req.url;
+    },
+
+    getEffectiveAuth: () => {
+      const req = get().activeRequest;
+      if (req.auth.type !== 'none') return req.auth;
+      if (req.connectionId) {
+        const conn = useConnectionStore.getState().getConnection(req.connectionId);
+        if (conn && conn.auth.type !== 'none') return conn.auth;
+      }
+      return req.auth;
+    },
+
     sendRequest: async (resolvedVariables) => {
       set({ loading: true, response: null });
       try {
         const req = get().activeRequest;
+        const resolvedUrl = get().getResolvedUrl();
+        const effectiveAuth = get().getEffectiveAuth();
         const response = await window.ruke.sendRequest({
           ...req,
+          url: resolvedUrl,
+          auth: effectiveAuth,
           resolvedVariables,
         });
         set({ response, loading: false });
@@ -197,6 +239,33 @@ export const useRequestStore = create<RequestState>((set, get) => {
         return {};
       });
     },
+
+    addPendingTab: (partial = {}) => {
+      const req = createEmptyRequest(partial.collectionId || null);
+      const merged = { ...req, ...partial, id: req.id };
+      set((s) => ({
+        openTabs: [...s.openTabs, merged],
+        pendingTabIds: [...s.pendingTabIds, merged.id],
+      }));
+      return merged.id;
+    },
+
+    resolvePendingTab: (id, updates) => {
+      set((s) => {
+        const updated = s.openTabs.map((t) =>
+          t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
+        );
+        const resolvedTab = updated.find((t) => t.id === id);
+        const isActive = s.activeTabId === id;
+        return {
+          openTabs: updated,
+          pendingTabIds: s.pendingTabIds.filter((pid) => pid !== id),
+          ...(isActive && resolvedTab ? { activeRequest: resolvedTab } : {}),
+        };
+      });
+    },
+
+    isPending: (id) => get().pendingTabIds.includes(id),
 
     loadHistory: async () => {
       try {

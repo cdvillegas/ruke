@@ -5,8 +5,9 @@ import { useConnectionStore } from '../../stores/connectionStore';
 import { useEnvironmentStore } from '../../stores/environmentStore';
 import {
   Search, Send, Plus, Home, Plug,
-  Settings, Globe, Play,
+  Settings, Globe, Play, FolderPlus, FileText, Layers,
 } from 'lucide-react';
+import { useCollectionStore } from '../../stores/collectionStore';
 import { METHOD_COLORS } from '@shared/constants';
 
 interface CommandItem {
@@ -22,15 +23,19 @@ export function CommandPalette() {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const { setCommandPaletteOpen, setActiveView } = useUiStore();
-  const { newRequest } = useRequestStore();
+  const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
+  const setActiveView = useUiStore((s) => s.setActiveView);
+  const newRequest = useRequestStore((s) => s.newRequest);
   const connections = useConnectionStore((s) => s.connections);
+  const { environments, activeEnvironmentId, setActiveEnvironment, createEnvironment } = useEnvironmentStore();
+  const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
 
   const close = () => setCommandPaletteOpen(false);
 
   const commands: CommandItem[] = [
-    { id: 'home', label: 'Go Home', icon: Home, action: () => { setActiveView('home'); close(); }, category: 'Navigation' },
-    { id: 'new-request', label: 'New Request', icon: Plus, action: () => { newRequest(); setActiveView('request'); close(); }, category: 'Request' },
+    { id: 'chats', label: 'Go to Chats', icon: Home, action: () => { setActiveView('chats'); close(); }, category: 'Navigation' },
+    { id: 'requests', label: 'View Requests', icon: FileText, action: () => { setActiveView('requests'); close(); }, category: 'Navigation' },
+    { id: 'new-request', label: 'New Request', icon: Plus, action: () => { newRequest(); setActiveView('requests'); close(); }, category: 'Request' },
     { id: 'send', label: 'Send Current Request', icon: Send, action: () => {
       const { sendRequest } = useRequestStore.getState();
       const vars = useEnvironmentStore.getState().resolveVariables();
@@ -38,7 +43,26 @@ export function CommandPalette() {
       close();
     }, category: 'Request' },
     { id: 'connections', label: 'View Connected APIs', icon: Plug, action: () => { setActiveView('connections'); close(); }, category: 'Navigation' },
+    { id: 'environments', label: 'View Environments', icon: Layers, action: () => { setActiveView('environments'); close(); }, category: 'Navigation' },
     { id: 'settings', label: 'Settings', icon: Settings, action: () => { setActiveView('settings'); close(); }, category: 'Navigation' },
+    { id: 'new-env', label: 'Create Environment', icon: Plus, action: async () => {
+      if (activeWorkspaceId) {
+        await createEnvironment(activeWorkspaceId, 'New Environment');
+        setActiveView('environments');
+      }
+      close();
+    }, category: 'Environment' },
+    ...environments.map((env) => ({
+      id: `switch-env-${env.id}`,
+      label: `Switch to ${env.name}`,
+      detail: env.id === activeEnvironmentId ? 'Active' : undefined,
+      icon: Layers,
+      action: () => {
+        if (activeWorkspaceId) setActiveEnvironment(activeWorkspaceId, env.id);
+        close();
+      },
+      category: 'Environment',
+    })),
     ...connections.flatMap(conn =>
       conn.endpoints.slice(0, 10).map(ep => ({
         id: `${conn.id}-${ep.id}`,
@@ -52,7 +76,7 @@ export function CommandPalette() {
             url: conn.baseUrl + ep.path,
             name: ep.summary || `${ep.method} ${ep.path}`,
           });
-          setActiveView('request');
+          setActiveView('requests');
           close();
         },
         category: conn.name,

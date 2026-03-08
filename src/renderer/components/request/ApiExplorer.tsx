@@ -56,10 +56,36 @@ export function ApiExplorer({ onClose }: { onClose: () => void }) {
     const isGraphQL = conn.specType === 'graphql';
     const url = isGraphQL ? conn.baseUrl : conn.baseUrl.replace(/\/+$/, '') + ep.path;
 
+    let body: any = { type: 'none' };
+    if (isGraphQL) {
+      body = { type: 'graphql' as any, raw: `{\n  ${ep.path} {\n    \n  }\n}` };
+    } else if (ep.requestBody) {
+      if (ep.requestBody.example) {
+        body = { type: ep.requestBody.type, raw: ep.requestBody.example };
+      } else {
+        const bodyParams = (ep.parameters || []).filter(p => p.in === 'body');
+        if (bodyParams.length > 0) {
+          const template: Record<string, any> = {};
+          for (const bp of bodyParams) {
+            if (bp.type === 'integer' || bp.type === 'number') template[bp.name] = 0;
+            else if (bp.type === 'boolean') template[bp.name] = false;
+            else if (bp.type.endsWith('[]')) template[bp.name] = [];
+            else if (bp.type === 'object') template[bp.name] = {};
+            else template[bp.name] = '';
+          }
+          body = { type: 'json', raw: JSON.stringify(template, null, 2) };
+        } else {
+          body = { type: ep.requestBody.type, raw: ep.requestBody.schema || '{}' };
+        }
+      }
+    }
+
     store.newRequest();
     store.updateActiveRequest({
       method: ep.method,
       url,
+      connectionId: conn.id,
+      endpointId: ep.id,
       name: ep.summary || `${ep.method} ${ep.path}`,
       headers: isGraphQL
         ? [{ key: 'Content-Type', value: 'application/json', enabled: true }]
@@ -67,11 +93,7 @@ export function ApiExplorer({ onClose }: { onClose: () => void }) {
       params: (ep.parameters || [])
         .filter(p => p.in === 'query')
         .map(p => ({ key: p.name, value: '', enabled: true })),
-      body: isGraphQL
-        ? { type: 'graphql' as any, raw: `{\n  ${ep.path} {\n    \n  }\n}` }
-        : ep.requestBody
-          ? { type: ep.requestBody.type, raw: ep.requestBody.example || ep.requestBody.schema || '' }
-          : { type: 'none' },
+      body,
       auth: conn.auth,
     });
 

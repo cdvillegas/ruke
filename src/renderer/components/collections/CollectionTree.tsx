@@ -16,7 +16,10 @@ interface Props {
 export function CollectionTree({ searchQuery }: Props) {
   const collections = useCollectionStore((s) => s.collections);
   const requests = useCollectionStore((s) => s.requests);
-  const { expandedIds, toggleExpanded, deleteCollection, renameCollection } = useCollectionStore();
+  const expandedIds = useCollectionStore((s) => s.expandedIds);
+  const toggleExpanded = useCollectionStore((s) => s.toggleExpanded);
+  const deleteCollection = useCollectionStore((s) => s.deleteCollection);
+  const renameCollection = useCollectionStore((s) => s.renameCollection);
 
   const tree = useMemo(() => {
     const buildNode = (col: typeof collections[number]): CollectionTreeNode => ({
@@ -25,7 +28,7 @@ export function CollectionTree({ searchQuery }: Props) {
         .filter((c) => c.parentId === col.id)
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .map(buildNode),
-      requests: requests.get(col.id) || [],
+      requests: requests[col.id] || [],
     });
     return collections
       .filter((c) => !c.parentId)
@@ -81,7 +84,7 @@ function CollectionNode({
 }: {
   node: CollectionTreeNode;
   depth: number;
-  expandedIds: Set<string>;
+  expandedIds: string[];
   toggleExpanded: (id: string) => void;
   deleteCollection: (id: string) => Promise<void>;
   renameCollection: (id: string, name: string) => Promise<void>;
@@ -90,7 +93,7 @@ function CollectionNode({
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(node.collection.name);
   const openTab = useRequestStore((s) => s.openTab);
-  const expanded = expandedIds.has(node.collection.id);
+  const expanded = expandedIds.includes(node.collection.id);
 
   const handleRename = async () => {
     if (editName.trim() && editName !== node.collection.name) {
