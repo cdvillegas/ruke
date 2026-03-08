@@ -49,9 +49,9 @@ export function createRepository(db: Database.Database) {
     getRequests(collectionId: string): ApiRequest[] {
       const rows = db.prepare(
         `SELECT id, collection_id as collectionId, name, method, url,
-         headers, params, body, auth, sort_order as sortOrder,
+         headers, params, body, auth, archived, sort_order as sortOrder,
          created_at as createdAt, updated_at as updatedAt
-         FROM requests WHERE collection_id = ? ORDER BY sort_order`
+         FROM requests WHERE collection_id = ? AND (archived = 0 OR archived IS NULL) ORDER BY sort_order`
       ).all(collectionId) as any[];
       return rows.map(parseRequestRow);
     },
@@ -59,7 +59,7 @@ export function createRepository(db: Database.Database) {
     getAllRequests(workspaceId: string): ApiRequest[] {
       const rows = db.prepare(
         `SELECT r.id, r.collection_id as collectionId, r.name, r.method, r.url,
-         r.headers, r.params, r.body, r.auth, r.sort_order as sortOrder,
+         r.headers, r.params, r.body, r.auth, r.archived, r.sort_order as sortOrder,
          r.created_at as createdAt, r.updated_at as updatedAt
          FROM requests r
          LEFT JOIN collections c ON r.collection_id = c.id
@@ -69,10 +69,33 @@ export function createRepository(db: Database.Database) {
       return rows.map(parseRequestRow);
     },
 
+    getUncollectedRequests(): ApiRequest[] {
+      const rows = db.prepare(
+        `SELECT id, collection_id as collectionId, name, method, url,
+         headers, params, body, auth, archived, sort_order as sortOrder,
+         created_at as createdAt, updated_at as updatedAt
+         FROM requests
+         WHERE collection_id IS NULL AND (archived = 0 OR archived IS NULL)
+         ORDER BY updated_at DESC`
+      ).all() as any[];
+      return rows.map(parseRequestRow);
+    },
+
+    getArchivedRequests(): ApiRequest[] {
+      const rows = db.prepare(
+        `SELECT id, collection_id as collectionId, name, method, url,
+         headers, params, body, auth, archived, sort_order as sortOrder,
+         created_at as createdAt, updated_at as updatedAt
+         FROM requests WHERE archived = 1
+         ORDER BY updated_at DESC`
+      ).all() as any[];
+      return rows.map(parseRequestRow);
+    },
+
     getRequestById(id: string): ApiRequest | null {
       const row = db.prepare(
         `SELECT id, collection_id as collectionId, name, method, url,
-         headers, params, body, auth, sort_order as sortOrder,
+         headers, params, body, auth, archived, sort_order as sortOrder,
          created_at as createdAt, updated_at as updatedAt
          FROM requests WHERE id = ?`
       ).get(id) as any;
@@ -81,12 +104,13 @@ export function createRepository(db: Database.Database) {
 
     createRequest(req: ApiRequest): void {
       db.prepare(
-        `INSERT INTO requests (id, collection_id, name, method, url, headers, params, body, auth, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO requests (id, collection_id, name, method, url, headers, params, body, auth, archived, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         req.id, req.collectionId, req.name, req.method, req.url,
         JSON.stringify(req.headers), JSON.stringify(req.params),
-        JSON.stringify(req.body), JSON.stringify(req.auth), req.sortOrder
+        JSON.stringify(req.body), JSON.stringify(req.auth),
+        req.archived ? 1 : 0, req.sortOrder
       );
     },
 
@@ -101,12 +125,21 @@ export function createRepository(db: Database.Database) {
       if (data.body !== undefined) { sets.push('body = ?'); values.push(JSON.stringify(data.body)); }
       if (data.auth !== undefined) { sets.push('auth = ?'); values.push(JSON.stringify(data.auth)); }
       if (data.collectionId !== undefined) { sets.push('collection_id = ?'); values.push(data.collectionId); }
+      if (data.archived !== undefined) { sets.push('archived = ?'); values.push(data.archived ? 1 : 0); }
       if (data.sortOrder !== undefined) { sets.push('sort_order = ?'); values.push(data.sortOrder); }
       sets.push("updated_at = datetime('now')");
       values.push(id);
       if (sets.length > 1) {
         db.prepare(`UPDATE requests SET ${sets.join(', ')} WHERE id = ?`).run(...values);
       }
+    },
+
+    archiveRequest(id: string): void {
+      db.prepare("UPDATE requests SET archived = 1, collection_id = NULL, updated_at = datetime('now') WHERE id = ?").run(id);
+    },
+
+    unarchiveRequest(id: string): void {
+      db.prepare("UPDATE requests SET archived = 0, updated_at = datetime('now') WHERE id = ?").run(id);
     },
 
     deleteRequest(id: string): void {
@@ -272,6 +305,7 @@ function parseRequestRow(row: any): ApiRequest {
     params: JSON.parse(row.params),
     body: JSON.parse(row.body),
     auth: JSON.parse(row.auth),
+    archived: !!row.archived,
   };
 }
 

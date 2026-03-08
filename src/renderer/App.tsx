@@ -3,7 +3,6 @@ import { useUiStore } from './stores/uiStore';
 import { useCollectionStore } from './stores/collectionStore';
 import { useRequestStore } from './stores/requestStore';
 import { useConnectionStore } from './stores/connectionStore';
-import { ChatView } from './components/chat/ChatView';
 import { RequestsView } from './components/requests/RequestsView';
 import { ConnectionsView } from './components/connections/ConnectionsView';
 import { SettingsView } from './components/settings/SettingsView';
@@ -56,6 +55,8 @@ function AppInner() {
     });
     loadHistory();
     loadConnections();
+    useRequestStore.getState().loadUncollectedRequests();
+    useRequestStore.getState().loadArchivedRequests();
   }, []);
 
   useEffect(() => {
@@ -81,6 +82,10 @@ function AppInner() {
         const { saveRequest } = useRequestStore.getState();
         saveRequest();
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
+        e.preventDefault();
+        useUiStore.getState().toggleAiPanel();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -94,8 +99,7 @@ function AppInner() {
     <div className="flex h-screen w-screen overflow-hidden bg-bg-primary">
       <NavRail />
       <main className="flex-1 min-h-0 overflow-hidden">
-        {activeView === 'chats' && <ChatView />}
-        {activeView === 'requests' && <RequestsView />}
+        {(activeView === 'chats' || activeView === 'requests') && <RequestsView />}
         {activeView === 'connections' && <ConnectionsView />}
         {activeView === 'environments' && <EnvironmentsView />}
         {activeView === 'settings' && <SettingsView />}

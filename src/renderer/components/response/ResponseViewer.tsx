@@ -13,19 +13,30 @@ export function ResponseViewer() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex gap-1">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <div className="w-10 h-10 rounded-full border-2 border-accent/20" />
+            <div
+              className="absolute inset-0 w-10 h-10 rounded-full border-2 border-transparent border-t-accent"
+              style={{ animation: 'spin 1s linear infinite' }}
+            />
+            <div
+              className="absolute inset-1 w-8 h-8 rounded-full"
+              style={{ animation: 'glow-send 2s ease-in-out infinite', background: 'rgba(99, 102, 241, 0.08)' }}
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
-                className="w-2 h-2 rounded-full bg-accent"
+                className="w-1.5 h-1.5 rounded-full bg-accent"
                 style={{
-                  animation: `pulse-dot 1s ease-in-out ${i * 0.2}s infinite`,
+                  animation: `pulse-dot 1.2s ease-in-out ${i * 0.2}s infinite`,
                 }}
               />
             ))}
+            <p className="text-xs text-text-muted ml-1">Sending request...</p>
           </div>
-          <p className="text-xs text-text-muted">Sending request...</p>
         </div>
       </div>
     );

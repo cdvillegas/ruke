@@ -45,7 +45,13 @@ interface RequestState {
   response: ApiResponse | null;
   loading: boolean;
   history: HistoryEntry[];
+
+  uncollectedRequests: ApiRequest[];
+  archivedRequests: ApiRequest[];
+
+  /** @deprecated kept for agent compatibility — maps to uncollectedRequests */
   openTabs: ApiRequest[];
+  /** @deprecated kept for agent compatibility */
   activeTabId: string;
   pendingTabIds: string[];
   newRequestIds: string[];
@@ -64,7 +70,16 @@ interface RequestState {
   getResolvedUrl: () => string;
   getEffectiveAuth: () => AuthConfig;
   sendRequest: (resolvedVariables?: Record<string, string>) => Promise<void>;
+
+  selectRequest: (req: ApiRequest) => void;
   newRequest: (collectionId?: string | null) => void;
+
+  loadUncollectedRequests: () => Promise<void>;
+  loadArchivedRequests: () => Promise<void>;
+  archiveRequest: (id: string) => Promise<void>;
+  unarchiveRequest: (id: string) => Promise<void>;
+  moveToCollection: (id: string, collectionId: string) => Promise<void>;
+
   openTab: (req: ApiRequest) => void;
   closeTab: (id: string) => void;
   switchTab: (id: string) => void;
@@ -72,6 +87,7 @@ interface RequestState {
   resolvePendingTab: (id: string, updates: Partial<ApiRequest>) => void;
   markSeen: (id: string) => void;
   isPending: (id: string) => boolean;
+
   loadHistory: () => Promise<void>;
   clearHistory: () => Promise<void>;
   searchHistory: (query: string) => Promise<void>;
@@ -87,6 +103,10 @@ export const useRequestStore = create<RequestState>((set, get) => {
     response: null,
     loading: false,
     history: [],
+
+    uncollectedRequests: [],
+    archivedRequests: [],
+
     openTabs: [initial],
     activeTabId: initial.id,
     pendingTabIds: [],
@@ -100,6 +120,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
         return {
           activeRequest: updated,
           openTabs: s.openTabs.map((t) => (t.id === updated.id ? updated : t)),
+          uncollectedRequests: s.uncollectedRequests.map((r) => (r.id === updated.id ? updated : r)),
         };
       }),
 
@@ -152,6 +173,16 @@ export const useRequestStore = create<RequestState>((set, get) => {
         });
         set({ response, loading: false });
 
+        // Auto-rename if still default name
+        if (req.name === 'New Request' && req.url) {
+          const pathPart = req.url.startsWith('http')
+            ? new URL(req.url).pathname
+            : req.url.startsWith('/') ? req.url : `/${req.url}`;
+          const autoName = `${req.method} ${pathPart}`;
+          get().updateActiveRequest({ name: autoName });
+          try { await window.ruke.db.query('updateRequest', req.id, { name: autoName }); } catch {}
+        }
+
         const historyId = nanoid();
         await window.ruke.db.query('addHistory', {
           id: historyId,
@@ -166,6 +197,8 @@ export const useRequestStore = create<RequestState>((set, get) => {
         });
 
         get().loadHistory();
+        get().saveRequest();
+        get().loadUncollectedRequests();
       } catch (err) {
         set({
           loading: false,
@@ -182,6 +215,10 @@ export const useRequestStore = create<RequestState>((set, get) => {
       }
     },
 
+    selectRequest: (req) => {
+      set({ activeRequest: req, activeTabId: req.id, response: null });
+    },
+
     newRequest: (collectionId = null) => {
       const req = createEmptyRequest(collectionId);
       set((s) => ({
@@ -190,8 +227,67 @@ export const useRequestStore = create<RequestState>((set, get) => {
         openTabs: [...s.openTabs, req],
         activeTabId: req.id,
       }));
+      // Auto-persist to DB
+      window.ruke.db.query('createRequest', req)
+        .then(() => get().loadUncollectedRequests())
+        .catch(() => {});
     },
 
+    loadUncollectedRequests: async () => {
+      try {
+        const reqs = await window.ruke.db.query('getUncollectedRequests');
+        set({ uncollectedRequests: Array.isArray(reqs) ? reqs : [] });
+      } catch {}
+    },
+
+    loadArchivedRequests: async () => {
+      try {
+        const reqs = await window.ruke.db.query('getArchivedRequests');
+        set({ archivedRequests: Array.isArray(reqs) ? reqs : [] });
+      } catch {}
+    },
+
+    archiveRequest: async (id) => {
+      try {
+        await window.ruke.db.query('archiveRequest', id);
+      } catch {}
+      const { activeRequest } = get();
+      if (activeRequest.id === id) {
+        const req = createEmptyRequest();
+        set({ activeRequest: req, response: null });
+      }
+      get().loadUncollectedRequests();
+      get().loadArchivedRequests();
+      // Reload all collections since the request may have been in one
+      try {
+        const { useCollectionStore } = await import('./collectionStore');
+        const cols = useCollectionStore.getState().collections;
+        for (const c of cols) {
+          useCollectionStore.getState().loadRequests(c.id);
+        }
+      } catch {}
+    },
+
+    unarchiveRequest: async (id) => {
+      try {
+        await window.ruke.db.query('unarchiveRequest', id);
+      } catch {}
+      get().loadUncollectedRequests();
+      get().loadArchivedRequests();
+    },
+
+    moveToCollection: async (id, collectionId) => {
+      try {
+        await window.ruke.db.query('updateRequest', id, { collectionId });
+      } catch {}
+      get().loadUncollectedRequests();
+      try {
+        const { useCollectionStore } = await import('./collectionStore');
+        useCollectionStore.getState().loadRequests(collectionId);
+      } catch {}
+    },
+
+    // Legacy tab methods kept for agent/HomeView compatibility
     openTab: (req) => {
       set((s) => {
         const exists = s.openTabs.find((t) => t.id === req.id);
@@ -281,9 +377,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
       try {
         const history = await window.ruke.db.query('getHistory', 50, 0);
         set({ history });
-      } catch {
-        /* db not ready */
-      }
+      } catch {}
     },
 
     clearHistory: async () => {
@@ -318,25 +412,32 @@ export const useRequestStore = create<RequestState>((set, get) => {
           useCollectionStore.getState().loadRequests(req.collectionId);
         } catch {}
       }
+      get().loadUncollectedRequests();
     },
 
     loadRequest: async (id) => {
       const req = await window.ruke.db.query('getRequestById', id);
       if (req) {
-        get().openTab(req);
+        get().selectRequest(req);
       }
     },
 
     deleteRequest: async (id) => {
-      const req = get().openTabs.find(t => t.id === id);
+      const { activeRequest } = get();
       try { await window.ruke.db.query('deleteRequest', id); } catch {}
-      get().closeTab(id);
-      if (req?.collectionId) {
-        try {
-          const { useCollectionStore } = await import('./collectionStore');
-          useCollectionStore.getState().loadRequests(req.collectionId);
-        } catch {}
+      if (activeRequest.id === id) {
+        const req = createEmptyRequest();
+        set({ activeRequest: req, response: null });
       }
+      get().loadUncollectedRequests();
+      get().loadArchivedRequests();
+      try {
+        const { useCollectionStore } = await import('./collectionStore');
+        const cols = useCollectionStore.getState().collections;
+        for (const c of cols) {
+          useCollectionStore.getState().loadRequests(c.id);
+        }
+      } catch {}
     },
   };
 });

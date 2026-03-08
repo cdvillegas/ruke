@@ -1,6 +1,6 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { useEnvironmentStore } from '../../stores/environmentStore';
-import { VariableInput } from '../shared/VariableInput';
+import { InlineEditor } from '../shared/InlineEditor';
 import type { KeyValue } from '@shared/types';
 
 interface Props {
@@ -30,7 +30,6 @@ export function KeyValueEditor({ pairs, onChange, keyPlaceholder = 'Key', valueP
 
   return (
     <div className="space-y-1.5">
-      {/* Header row */}
       <div className="grid grid-cols-[auto_1fr_1fr_auto] gap-2 px-1 text-[10px] text-text-muted uppercase tracking-wider font-semibold">
         <div className="w-5" />
         <div>Key</div>
@@ -51,23 +50,18 @@ export function KeyValueEditor({ pairs, onChange, keyPlaceholder = 'Key', valueP
               onChange={(e) => update(i, 'enabled', e.target.checked)}
               className="w-4 h-4 rounded border-border accent-accent cursor-pointer"
             />
-            <input
-              type="text"
+            <InlineEditor
               value={pair.key}
-              onChange={(e) => update(i, 'key', e.target.value)}
+              onChange={(v) => update(i, 'key', v)}
               placeholder={keyPlaceholder}
-              className={`px-3 py-1.5 text-xs rounded-md bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors ${
-                !pair.enabled ? 'opacity-40' : ''
-              }`}
+              disabled={!pair.enabled}
             />
             <div className="relative">
-              <VariableInput
+              <InlineEditor
                 value={pair.value}
                 onChange={(v) => update(i, 'value', v)}
                 placeholder={valuePlaceholder}
-                className={`w-full px-3 py-1.5 text-xs rounded-md bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors ${
-                  !pair.enabled ? 'opacity-40' : ''
-                }`}
+                disabled={!pair.enabled}
               />
               {resolvedValue && resolvedValue !== pair.value && (
                 <div className="absolute -bottom-4 left-0 text-[9px] text-accent font-mono truncate max-w-full">

@@ -4,8 +4,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { RequestBuilder } from './RequestBuilder';
 import { GrpcRequestView } from './GrpcRequestView';
 import { ResponseViewer } from '../response/ResponseViewer';
-import { RequestAI } from './RequestAI';
-import { ArrowLeft, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, X, Plus } from 'lucide-react';
 
 function ResizableHandle({ onDrag }: { onDrag: (deltaY: number) => void }) {
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -39,7 +38,7 @@ export function RequestView() {
   const activeTabId = useRequestStore((s) => s.activeTabId);
   const switchTab = useRequestStore((s) => s.switchTab);
   const closeTab = useRequestStore((s) => s.closeTab);
-  const [showAI, setShowAI] = useState(false);
+  const newRequest = useRequestStore((s) => s.newRequest);
   const setActiveView = useUiStore((s) => s.setActiveView);
   const activeProtocol = useUiStore((s) => s.activeProtocol);
   const [topRatio, setTopRatio] = useState(0.45);
@@ -88,24 +87,24 @@ export function RequestView() {
                 {tab.method}
               </span>
               <span className="max-w-40 truncate">{tab.name || tab.url || 'New Request'}</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-bg-active transition-all"
-              >
-                <X size={11} />
-              </button>
+              {openTabs.length > 1 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-bg-active transition-all"
+                >
+                  <X size={11} />
+                </button>
+              )}
             </div>
           ))}
+          <button
+            onClick={() => newRequest()}
+            className="px-2.5 py-2.5 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0"
+            title="New Request"
+          >
+            <Plus size={14} />
+          </button>
         </div>
-        <button
-          onClick={() => setShowAI(!showAI)}
-          className={`px-3 py-2.5 transition-colors border-l border-border ${
-            showAI ? 'text-accent bg-accent/10' : 'text-text-muted hover:text-accent'
-          }`}
-          title="AI Assist"
-        >
-          <Sparkles size={15} />
-        </button>
       </div>
 
       {/* Main content */}
@@ -119,7 +118,6 @@ export function RequestView() {
             <ResponseViewer />
           </div>
         </div>
-        {showAI && <RequestAI onClose={() => setShowAI(false)} />}
       </div>
     </div>
   );

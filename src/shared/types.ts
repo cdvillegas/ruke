@@ -40,6 +40,7 @@ export interface ApiRequest {
   params: KeyValue[];
   body: RequestBody;
   auth: AuthConfig;
+  archived?: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -268,6 +269,7 @@ export interface ChatSession {
   id: string;
   title: string;
   messages: ChatMessage[];
+  archived: boolean;
   createdAt: string;
   updatedAt: string;
 }

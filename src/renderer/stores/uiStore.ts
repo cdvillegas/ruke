@@ -46,7 +46,7 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  activeView: 'chats',
+  activeView: 'requests',
   activeProtocol: 'rest' as ProtocolType,
   sidebarWidth: 260,
   aiPanelOpen: false,

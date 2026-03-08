@@ -1,10 +1,9 @@
 import { useUiStore } from '../../stores/uiStore';
-import { MessageSquare, Zap, Plug, Layers, Settings } from 'lucide-react';
+import { MessageSquare, Send, Plug, Layers, Settings, Sparkles } from 'lucide-react';
 import type { AppView } from '@shared/types';
 
 const MAIN_NAV: { id: AppView; icon: typeof MessageSquare; label: string }[] = [
-  { id: 'chats', icon: MessageSquare, label: 'Chats' },
-  { id: 'requests', icon: Zap, label: 'Requests' },
+  { id: 'requests', icon: Send, label: 'Requests' },
   { id: 'connections', icon: Plug, label: 'APIs' },
   { id: 'environments', icon: Layers, label: 'Environments' },
 ];
@@ -46,6 +45,8 @@ export function NavRail() {
   const activeView = useUiStore((s) => s.activeView);
   const setActiveView = useUiStore((s) => s.setActiveView);
   const viewBadges = useUiStore((s) => s.viewBadges);
+  const aiPanelOpen = useUiStore((s) => s.aiPanelOpen);
+  const toggleAiPanel = useUiStore((s) => s.toggleAiPanel);
 
   return (
     <div className="w-14 flex flex-col items-center py-4 gap-1 border-r border-border bg-bg-secondary shrink-0">
@@ -64,6 +65,23 @@ export function NavRail() {
       ))}
 
       <div className="mt-auto flex flex-col gap-1">
+        <button
+          onClick={() => {
+            if (activeView !== 'requests') setActiveView('requests');
+            toggleAiPanel();
+          }}
+          className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+            aiPanelOpen
+              ? 'bg-accent/15 text-accent'
+              : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
+          }`}
+          title={`AI Chat (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+'}I)`}
+        >
+          <Sparkles size={18} />
+          {aiPanelOpen && (
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-r" />
+          )}
+        </button>
         {BOTTOM_NAV.map((item) => (
           <NavButton
             key={item.id}

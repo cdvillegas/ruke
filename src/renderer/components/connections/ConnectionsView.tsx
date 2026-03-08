@@ -508,6 +508,7 @@ export function ConnectionsView() {
           if (bodyParams.length > 0) {
             const template: Record<string, any> = {};
             for (const bp of bodyParams) {
+              if (!bp.required) continue;
               if (bp.type === 'integer' || bp.type === 'number') template[bp.name] = 0;
               else if (bp.type === 'boolean') template[bp.name] = false;
               else if (bp.type.endsWith('[]')) template[bp.name] = [];
@@ -545,36 +546,47 @@ export function ConnectionsView() {
   return (
     <div className="h-full flex overflow-hidden">
       {/* Connection List */}
-      <div className="w-64 border-r border-border bg-bg-secondary flex flex-col shrink-0">
-        <div className="px-4 py-4 border-b border-border">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Plug size={16} className="text-accent" />
-              <h2 className="text-sm font-semibold text-text-primary">APIs</h2>
-            </div>
+      <div className="w-64 h-full border-r border-border bg-bg-secondary flex flex-col shrink-0">
+        <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">APIs</h2>
             <button
               onClick={() => setActiveConnection(null)}
-              className="p-1.5 rounded-lg hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
+              className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
             >
               <Plus size={14} />
             </button>
           </div>
+          <div className="relative">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search APIs..."
+              className="w-full pl-7 pr-3 py-1.5 text-xs bg-bg-primary border border-border rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/40 transition-colors"
+            />
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-2">
-          {connections.map((conn) => (
+        <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-0">
+          {connections.filter(c =>
+            !searchQuery.trim() ||
+            c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            c.baseUrl.toLowerCase().includes(searchQuery.toLowerCase())
+          ).map((conn) => (
             <button
               key={conn.id}
               onClick={() => setActiveConnection(conn.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left group ${
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left group ${
                 conn.id === activeConnectionId
-                  ? 'bg-bg-active'
-                  : 'hover:bg-bg-hover'
+                  ? 'bg-accent/10 text-text-primary'
+                  : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
               }`}
             >
               <ConnectionIcon conn={conn} size="sm" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-text-primary truncate">{conn.name}</p>
+                <p className="text-xs font-medium truncate">{conn.name}</p>
                 <p className="text-[9px] text-text-muted font-mono truncate">{conn.baseUrl}</p>
               </div>
               <span className="text-[9px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
@@ -584,9 +596,9 @@ export function ConnectionsView() {
           ))}
 
           {connections.length === 0 && (
-            <div className="px-4 py-8 text-center">
-              <Globe size={20} className="mx-auto text-text-muted opacity-30 mb-2" />
-              <p className="text-[10px] text-text-muted">No APIs connected</p>
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <Plug size={20} className="text-text-muted mb-2" />
+              <p className="text-xs text-text-muted">No APIs connected</p>
             </div>
           )}
         </div>

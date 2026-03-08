@@ -103,6 +103,12 @@ export function initDatabase(dbPath: string): Database.Database {
     db.exec("ALTER TABLE environments ADD COLUMN base_url TEXT");
   }
 
+  const reqColumns = db.prepare("PRAGMA table_info(requests)").all() as { name: string }[];
+  const reqColNames = new Set(reqColumns.map(c => c.name));
+  if (!reqColNames.has('archived')) {
+    db.exec("ALTER TABLE requests ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
+  }
+
   const wsCount = db.prepare('SELECT COUNT(*) as count FROM workspaces').get() as { count: number };
   if (wsCount.count === 0) {
     const { nanoid } = require('nanoid') as { nanoid: () => string };

@@ -128,7 +128,7 @@ export const AGENT_TOOLS: ToolDef[] = [
           properties: {
             name: { type: 'string', description: 'Descriptive name for the request' },
             method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] },
-            url: { type: 'string', description: 'Full URL for the request' },
+            url: { type: 'string', description: 'Full URL, or just the path (e.g. /v1/chat/completions) when connection_id is provided' },
             headers: {
               type: 'array',
               items: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] },
@@ -153,41 +153,55 @@ export const AGENT_TOOLS: ToolDef[] = [
       const store = useRequestStore.getState();
       const method = (args.method as string || 'GET') as HttpMethod;
       const collectionId = (args.collection_id as string) || null;
+      const connectionId = args.connection_id as string | undefined;
+      const endpointId = args.endpoint_id as string | undefined;
 
-      const tabId = store.addPendingTab({
-        name: args.name as string,
-        method,
-        collectionId,
-      });
+      let url = args.url as string;
+
+      // When linked to a connection, strip the base URL so only the path is stored
+      if (connectionId) {
+        const conn = useConnectionStore.getState().getConnection(connectionId);
+        if (conn) {
+          const base = conn.baseUrl.replace(/\/+$/, '');
+          if (url.startsWith(base)) {
+            url = url.slice(base.length) || '/';
+          }
+        }
+      }
 
       const bodyRaw = compactJson(args.body_content as string);
-      const resolved = {
+
+      store.newRequest(collectionId);
+      const req = useRequestStore.getState().activeRequest;
+
+      const updates: Partial<typeof req> = {
         method,
-        url: args.url as string,
+        url,
         name: args.name as string,
         headers: kv(args.headers as Array<{ key: string; value: string }>),
         params: kv(args.params as Array<{ key: string; value: string }>),
         body: { type: (args.body_type as string) || 'none', raw: bodyRaw } as any,
         auth: { type: 'none' as const },
-        connectionId: args.connection_id as string | undefined,
-        endpointId: args.endpoint_id as string | undefined,
+        connectionId,
+        endpointId,
         collectionId,
       };
 
-      store.resolvePendingTab(tabId, resolved);
+      store.updateActiveRequest(updates);
+
+      try {
+        const updated = useRequestStore.getState().activeRequest;
+        await window.ruke.db.query('updateRequest', updated.id, updated);
+      } catch {}
 
       if (collectionId) {
-        const savedReq = useRequestStore.getState().openTabs.find(t => t.id === tabId);
-        if (savedReq) {
-          try { await window.ruke.db.query('createRequest', { ...savedReq, collectionId }); } catch {}
-        }
         await useCollectionStore.getState().loadRequests(collectionId);
       }
 
-      store.switchTab(tabId);
+      store.loadUncollectedRequests();
       notifyView('requests');
 
-      return JSON.stringify({ success: true, requestId: tabId, name: args.name, method, url: args.url });
+      return JSON.stringify({ success: true, requestId: req.id, name: args.name, method, url });
     },
   },
 
@@ -425,113 +439,405 @@ export const AGENT_TOOLS: ToolDef[] = [
       type: 'function',
       function: {
         name: 'list_requests',
-        description: 'List all open request tabs with their names, methods, URLs, and IDs. Use this to find requests before editing or renaming them.',
+        description: 'List all requests (uncollected and within collections). Use this to find requests before editing, deleting, or moving them.',
         parameters: { type: 'object', properties: {}, required: [] },
       },
     },
     execute: async () => {
-      const { openTabs } = useRequestStore.getState();
+      const reqStore = useRequestStore.getState();
+      const colStore = useCollectionStore.getState();
+      const uncollected = reqStore.uncollectedRequests;
+      const collectionRequests: Array<Record<string, unknown>> = [];
+      for (const [colId, reqs] of Object.entries(colStore.requests)) {
+        const col = colStore.collections.find(c => c.id === colId);
+        for (const r of reqs) {
+          collectionRequests.push({
+            id: r.id, name: r.name || 'Untitled', method: r.method, url: r.url,
+            collectionId: colId, collectionName: col?.name,
+          });
+        }
+      }
       return JSON.stringify({
-        requests: openTabs.map(t => ({
-          id: t.id,
-          name: t.name || 'Untitled',
-          method: t.method,
-          url: t.url,
-          connectionId: t.connectionId,
-          collectionId: t.collectionId,
+        uncollected: uncollected.map(r => ({
+          id: r.id, name: r.name || 'Untitled', method: r.method, url: r.url,
+          connectionId: r.connectionId,
+        })),
+        inCollections: collectionRequests,
+        archived: reqStore.archivedRequests.map(r => ({
+          id: r.id, name: r.name || 'Untitled', method: r.method, url: r.url,
         })),
       });
     },
   },
 
-  // ── update_requests ──
+  // ── search_requests ──
   {
     schema: {
       type: 'function',
       function: {
-        name: 'update_requests',
-        description: 'Update one or more existing requests by name or ID. Can rename, change method, URL, headers, body, etc. Use list_requests first to find request names/IDs.',
+        name: 'search_requests',
+        description: 'Search requests by name, method, or URL keyword. Searches across uncollected, collection, and archived requests.',
         parameters: {
           type: 'object',
           properties: {
-            updates: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  match: { type: 'string', description: 'Request name or ID to find and update' },
-                  name: { type: 'string', description: 'New name' },
-                  method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] },
-                  url: { type: 'string', description: 'New URL' },
-                  headers: {
-                    type: 'array',
-                    items: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] },
-                  },
-                  body_type: { type: 'string', enum: ['none', 'json', 'form-data', 'raw'] },
-                  body_content: { type: 'string', description: 'Compact single-line JSON string' },
-                },
-                required: ['match'],
-              },
-            },
+            query: { type: 'string', description: 'Search keyword (case-insensitive)' },
           },
-          required: ['updates'],
+          required: ['query'],
+        },
+      },
+    },
+    execute: async (args) => {
+      const q = (args.query as string).toLowerCase();
+      const reqStore = useRequestStore.getState();
+      const colStore = useCollectionStore.getState();
+
+      const all: Array<{ req: any; source: string; collectionName?: string }> = [];
+      for (const r of reqStore.uncollectedRequests) all.push({ req: r, source: 'uncollected' });
+      for (const r of reqStore.archivedRequests) all.push({ req: r, source: 'archived' });
+      for (const [colId, reqs] of Object.entries(colStore.requests)) {
+        const col = colStore.collections.find(c => c.id === colId);
+        for (const r of reqs) all.push({ req: r, source: 'collection', collectionName: col?.name });
+      }
+
+      const matches = all.filter(({ req }) => {
+        const s = `${req.name || ''} ${req.method} ${req.url || ''}`.toLowerCase();
+        return s.includes(q);
+      });
+
+      return JSON.stringify({
+        results: matches.slice(0, 20).map(({ req, source, collectionName }) => ({
+          id: req.id, name: req.name, method: req.method, url: req.url,
+          source, collectionName, collectionId: req.collectionId,
+        })),
+        total: matches.length,
+      });
+    },
+  },
+
+  // ── delete_request ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'delete_request',
+        description: 'Permanently delete a request by name or ID. Searches across all requests (uncollected, collections, archived). Use search_requests first if unsure.',
+        parameters: {
+          type: 'object',
+          properties: {
+            match: { type: 'string', description: 'Request name or ID (case-insensitive partial match)' },
+          },
+          required: ['match'],
+        },
+      },
+    },
+    execute: async (args) => {
+      const matchStr = (args.match as string).toLowerCase();
+      const reqStore = useRequestStore.getState();
+      const colStore = useCollectionStore.getState();
+
+      const all: Array<{ id: string; name: string; collectionId?: string | null }> = [];
+      for (const r of reqStore.uncollectedRequests) all.push({ id: r.id, name: r.name, collectionId: r.collectionId });
+      for (const r of reqStore.archivedRequests) all.push({ id: r.id, name: r.name, collectionId: r.collectionId });
+      for (const [colId, reqs] of Object.entries(colStore.requests)) {
+        for (const r of reqs) all.push({ id: r.id, name: r.name, collectionId: colId });
+      }
+
+      const found = all.find(r =>
+        r.id === args.match ||
+        (r.name || '').toLowerCase() === matchStr ||
+        (r.name || '').toLowerCase().includes(matchStr)
+      );
+
+      if (!found) return JSON.stringify({ success: false, error: `No request matching "${args.match}" found.` });
+
+      await reqStore.deleteRequest(found.id);
+
+      if (found.collectionId) {
+        await colStore.loadRequests(found.collectionId);
+      }
+
+      return JSON.stringify({ success: true, deleted: { id: found.id, name: found.name } });
+    },
+  },
+
+  // ── archive_request ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'archive_request',
+        description: 'Archive a request by name or ID. Archived requests are hidden from the main list but can be restored.',
+        parameters: {
+          type: 'object',
+          properties: {
+            match: { type: 'string', description: 'Request name or ID' },
+          },
+          required: ['match'],
+        },
+      },
+    },
+    execute: async (args) => {
+      const matchStr = (args.match as string).toLowerCase();
+      const reqStore = useRequestStore.getState();
+      const found = reqStore.uncollectedRequests.find(r =>
+        r.id === args.match ||
+        (r.name || '').toLowerCase() === matchStr ||
+        (r.name || '').toLowerCase().includes(matchStr)
+      );
+      if (!found) return JSON.stringify({ success: false, error: `No request matching "${args.match}" found.` });
+
+      await reqStore.archiveRequest(found.id);
+      return JSON.stringify({ success: true, archived: { id: found.id, name: found.name } });
+    },
+  },
+
+  // ── move_request_to_collection ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'move_request_to_collection',
+        description: 'Move a request into a collection. Use list_requests or search_requests to find the request and collection IDs.',
+        parameters: {
+          type: 'object',
+          properties: {
+            request_match: { type: 'string', description: 'Request name or ID' },
+            collection_match: { type: 'string', description: 'Collection name or ID' },
+          },
+          required: ['request_match', 'collection_match'],
+        },
+      },
+    },
+    execute: async (args) => {
+      const reqStr = (args.request_match as string).toLowerCase();
+      const colStr = (args.collection_match as string).toLowerCase();
+      const reqStore = useRequestStore.getState();
+      const colStore = useCollectionStore.getState();
+
+      const allReqs = [...reqStore.uncollectedRequests];
+      for (const reqs of Object.values(colStore.requests)) allReqs.push(...reqs);
+
+      const req = allReqs.find(r =>
+        r.id === args.request_match ||
+        (r.name || '').toLowerCase() === reqStr ||
+        (r.name || '').toLowerCase().includes(reqStr)
+      );
+      if (!req) return JSON.stringify({ success: false, error: `No request matching "${args.request_match}" found.` });
+
+      const col = colStore.collections.find(c =>
+        c.id === args.collection_match ||
+        c.name.toLowerCase() === colStr ||
+        c.name.toLowerCase().includes(colStr)
+      );
+      if (!col) return JSON.stringify({ success: false, error: `No collection matching "${args.collection_match}" found.` });
+
+      await reqStore.moveToCollection(req.id, col.id);
+      return JSON.stringify({ success: true, moved: { requestId: req.id, requestName: req.name, collectionId: col.id, collectionName: col.name } });
+    },
+  },
+
+  // ── list_collections ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'list_collections',
+        description: 'List all collections with their request counts.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    execute: async () => {
+      const colStore = useCollectionStore.getState();
+      return JSON.stringify({
+        collections: colStore.collections.map(c => ({
+          id: c.id,
+          name: c.name,
+          parentId: c.parentId,
+          requestCount: (colStore.requests[c.id] || []).length,
+        })),
+      });
+    },
+  },
+
+  // ── rename_collection ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'rename_collection',
+        description: 'Rename a collection by name or ID.',
+        parameters: {
+          type: 'object',
+          properties: {
+            match: { type: 'string', description: 'Collection name or ID' },
+            new_name: { type: 'string', description: 'New collection name' },
+          },
+          required: ['match', 'new_name'],
+        },
+      },
+    },
+    execute: async (args) => {
+      const colStore = useCollectionStore.getState();
+      const matchStr = (args.match as string).toLowerCase();
+      const col = colStore.collections.find(c =>
+        c.id === args.match || c.name.toLowerCase() === matchStr || c.name.toLowerCase().includes(matchStr)
+      );
+      if (!col) return JSON.stringify({ success: false, error: `No collection matching "${args.match}" found.` });
+
+      await colStore.renameCollection(col.id, args.new_name as string);
+      return JSON.stringify({ success: true, collection: { id: col.id, oldName: col.name, newName: args.new_name } });
+    },
+  },
+
+  // ── delete_collection ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'delete_collection',
+        description: 'Delete a collection by name or ID. This deletes the collection but not the requests inside it (they become uncollected).',
+        parameters: {
+          type: 'object',
+          properties: {
+            match: { type: 'string', description: 'Collection name or ID' },
+          },
+          required: ['match'],
+        },
+      },
+    },
+    execute: async (args) => {
+      const colStore = useCollectionStore.getState();
+      const matchStr = (args.match as string).toLowerCase();
+      const col = colStore.collections.find(c =>
+        c.id === args.match || c.name.toLowerCase() === matchStr || c.name.toLowerCase().includes(matchStr)
+      );
+      if (!col) return JSON.stringify({ success: false, error: `No collection matching "${args.match}" found.` });
+
+      await colStore.deleteCollection(col.id);
+      useRequestStore.getState().loadUncollectedRequests();
+      return JSON.stringify({ success: true, deleted: { id: col.id, name: col.name } });
+    },
+  },
+
+  // ── edit_current_request ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'edit_current_request',
+        description: 'Edit fields of the currently active request. Can change method, URL, name, headers, query params, body, and auth. Only specify the fields you want to change.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'New name for the request' },
+            method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] },
+            url: { type: 'string', description: 'New URL or path' },
+            headers: {
+              type: 'array',
+              items: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] },
+              description: 'Replace all headers',
+            },
+            params: {
+              type: 'array',
+              items: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] },
+              description: 'Replace all query parameters',
+            },
+            body_type: { type: 'string', enum: ['none', 'json', 'form-data', 'raw'] },
+            body_content: { type: 'string', description: 'Body content (compact JSON string for json type)' },
+            connection_id: { type: 'string', description: 'Connection ID to link' },
+            endpoint_id: { type: 'string', description: 'Endpoint ID to link' },
+          },
+          required: [],
         },
       },
     },
     execute: async (args) => {
       const store = useRequestStore.getState();
-      const updates = args.updates as Array<{
-        match: string;
-        name?: string;
-        method?: string;
-        url?: string;
-        headers?: Array<{ key: string; value: string }>;
-        body_type?: string;
-        body_content?: string;
-      }>;
+      const req = store.activeRequest;
+      const changes: Partial<typeof req> = {};
+      const changed: string[] = [];
 
-      const results: Array<{ match: string; success: boolean; error?: string }> = [];
+      if (args.name) { changes.name = args.name as string; changed.push('name'); }
+      if (args.method) { changes.method = args.method as HttpMethod; changed.push('method'); }
+      if (args.url) { changes.url = args.url as string; changed.push('url'); }
+      if (args.headers) { changes.headers = kv(args.headers as Array<{ key: string; value: string }>); changed.push('headers'); }
+      if (args.params) { changes.params = kv(args.params as Array<{ key: string; value: string }>); changed.push('params'); }
+      if (args.body_type || args.body_content) {
+        changes.body = {
+          type: args.body_type || req.body?.type || 'none',
+          raw: compactJson(args.body_content as string) || req.body?.raw || '',
+        } as any;
+        changed.push('body');
+      }
+      if (args.connection_id) { changes.connectionId = args.connection_id as string; changed.push('connection'); }
+      if (args.endpoint_id) { changes.endpointId = args.endpoint_id as string; changed.push('endpoint'); }
 
-      for (const update of updates) {
-        const tab = store.openTabs.find(t =>
-          t.id === update.match ||
-          (t.name || '').toLowerCase() === update.match.toLowerCase() ||
-          (t.name || '').toLowerCase().includes(update.match.toLowerCase())
-        );
+      store.updateActiveRequest(changes);
 
-        if (!tab) {
-          results.push({ match: update.match, success: false, error: 'Request not found' });
-          continue;
-        }
+      try {
+        const updated = useRequestStore.getState().activeRequest;
+        await window.ruke.db.query('updateRequest', updated.id, updated);
+      } catch {}
 
-        const changes: Partial<typeof tab> = {};
-        if (update.name) changes.name = update.name;
-        if (update.method) changes.method = update.method as HttpMethod;
-        if (update.url) changes.url = update.url;
-        if (update.headers) changes.headers = kv(update.headers);
-        if (update.body_type || update.body_content) {
-          changes.body = {
-            type: update.body_type || tab.body?.type || 'none',
-            raw: compactJson(update.body_content) || tab.body?.raw || '',
-          } as any;
-        }
+      store.loadUncollectedRequests();
 
-        const currentActive = store.activeTabId;
-        store.switchTab(tab.id);
-        store.updateActiveRequest({ ...changes, updatedAt: new Date().toISOString() });
-        if (currentActive !== tab.id) store.switchTab(currentActive);
+      return JSON.stringify({
+        success: true,
+        requestId: req.id,
+        changed,
+        current: {
+          name: useRequestStore.getState().activeRequest.name,
+          method: useRequestStore.getState().activeRequest.method,
+          url: useRequestStore.getState().activeRequest.url,
+        },
+      });
+    },
+  },
 
-        try {
-          const updated = useRequestStore.getState().openTabs.find(t => t.id === tab.id);
-          if (updated && tab.collectionId) {
-            await window.ruke.db.query('updateRequest', updated.id, updated);
-          }
-        } catch {}
+  // ── select_request ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'select_request',
+        description: 'Select and switch to a different request by name or ID. Searches across uncollected requests and collection requests.',
+        parameters: {
+          type: 'object',
+          properties: {
+            match: { type: 'string', description: 'Request name or ID to search for (case-insensitive partial match)' },
+          },
+          required: ['match'],
+        },
+      },
+    },
+    execute: async (args) => {
+      const store = useRequestStore.getState();
+      const colStore = useCollectionStore.getState();
+      const matchStr = (args.match as string).toLowerCase();
 
-        results.push({ match: update.match, success: true });
+      const allRequests = [...store.uncollectedRequests, ...store.archivedRequests];
+      for (const reqs of Object.values(colStore.requests)) allRequests.push(...reqs);
+
+      const found = allRequests.find(r =>
+        r.id === args.match ||
+        (r.name || '').toLowerCase() === matchStr ||
+        (r.name || '').toLowerCase().includes(matchStr)
+      );
+
+      if (!found) {
+        return JSON.stringify({ success: false, error: `No request matching "${args.match}" found.` });
       }
 
-      return JSON.stringify({ results, updated: results.filter(r => r.success).length });
+      store.selectRequest(found);
+      notifyView('requests');
+
+      return JSON.stringify({
+        success: true,
+        requestId: found.id,
+        name: found.name,
+        method: found.method,
+        url: found.url,
+      });
     },
   },
 ];
@@ -553,5 +859,13 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   create_environment: 'Creating environment',
   list_environments: 'Listing environments',
   list_requests: 'Listing requests',
-  update_requests: 'Updating requests',
+  search_requests: 'Searching requests',
+  delete_request: 'Deleting request',
+  archive_request: 'Archiving request',
+  move_request_to_collection: 'Moving request',
+  list_collections: 'Listing collections',
+  rename_collection: 'Renaming collection',
+  delete_collection: 'Deleting collection',
+  edit_current_request: 'Editing request',
+  select_request: 'Selecting request',
 };

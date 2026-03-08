@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useEnvironmentStore } from '../../stores/environmentStore';
 import { useUiStore } from '../../stores/uiStore';
 import { KeyValueEditor } from './KeyValueEditor';
@@ -7,7 +7,7 @@ import { GRPC_STATUS_CODES, GRPC_STATUS_COLORS } from '@shared/constants';
 import type { GrpcRequest, GrpcResponse, GrpcMethodType, ProtoDefinition, ProtoMethod, KeyValue } from '@shared/types';
 import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
-import { oneDark } from '@codemirror/theme-one-dark';
+import { appEditorTheme, blockEditorExtensions } from '../shared/editorTheme';
 import {
   Send, Loader2, Save, FileUp, Server, Zap,
   ArrowUpDown, ArrowDown, ArrowUp, Radio,
@@ -51,6 +51,33 @@ export function GrpcRequestBuilder({
 
   const resolvedUrl = resolveString(request.serverUrl);
   const hasVariables = request.serverUrl !== resolvedUrl && request.serverUrl.includes('{{');
+
+  const lastPrettifiedMsg = useRef<string | null>(null);
+
+  const prettifyMessage = useCallback(() => {
+    const trimmed = (request.message || '').trim();
+    if (!trimmed) return;
+    try {
+      const parsed = JSON.parse(trimmed);
+      const pretty = JSON.stringify(parsed, null, 2);
+      if (pretty !== trimmed) onUpdate({ message: pretty });
+    } catch {}
+  }, [request.message, onUpdate]);
+
+  useEffect(() => {
+    if (lastPrettifiedMsg.current === request.message) return;
+    lastPrettifiedMsg.current = request.message;
+    const trimmed = (request.message || '').trim();
+    if (!trimmed) return;
+    try {
+      const parsed = JSON.parse(trimmed);
+      const pretty = JSON.stringify(parsed, null, 2);
+      if (pretty !== trimmed) {
+        lastPrettifiedMsg.current = pretty;
+        onUpdate({ message: pretty });
+      }
+    } catch {}
+  }, [request.message]);
 
   const generateSkeleton = useCallback((method: ProtoMethod): string => {
     if (!method.inputFields || method.inputFields.length === 0) return '{}';
@@ -118,7 +145,7 @@ export function GrpcRequestBuilder({
               onChange={(e) => onUpdate({ serverUrl: e.target.value })}
               onKeyDown={(e) => e.key === 'Enter' && onSend()}
               placeholder="localhost:50051"
-              className="w-full px-4 py-2.5 rounded-lg bg-bg-tertiary border border-border text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+              className="w-full px-4 py-2.5 rounded-xl bg-bg-secondary border border-border text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/40 transition-colors"
             />
             {hasVariables && (
               <div className="absolute -bottom-5 left-0 text-[10px] text-text-muted font-mono truncate max-w-full">
@@ -295,21 +322,29 @@ export function GrpcRequestBuilder({
                 <label className="text-xs text-text-secondary font-medium">
                   Request Message (JSON)
                 </label>
-                {currentMethod && (
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => onUpdate({ message: generateSkeleton(currentMethod) })}
-                    className="text-[10px] text-accent hover:text-accent-hover transition-colors"
+                    onClick={prettifyMessage}
+                    className="text-[10px] font-mono text-text-muted/50 hover:text-text-secondary transition-colors px-1.5 py-0.5 rounded hover:bg-bg-hover/50"
                   >
-                    Reset to skeleton
+                    prettify
                   </button>
-                )}
+                  {currentMethod && (
+                    <button
+                      onClick={() => onUpdate({ message: generateSkeleton(currentMethod) })}
+                      className="text-[10px] text-accent hover:text-accent-hover transition-colors"
+                    >
+                      Reset to skeleton
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="rounded-lg border border-border overflow-hidden">
+              <div className="rounded-xl bg-bg-secondary border border-border overflow-hidden focus-within:border-accent/40 transition-colors">
                 <CodeMirror
                   value={request.message}
                   onChange={(val) => onUpdate({ message: val })}
-                  extensions={[json()]}
-                  theme={oneDark}
+                  extensions={[json(), blockEditorExtensions]}
+                  theme={appEditorTheme}
                   height="240px"
                   basicSetup={{
                     lineNumbers: true,

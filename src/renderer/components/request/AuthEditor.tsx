@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { useRequestStore } from '../../stores/requestStore';
 import type { AuthType } from '@shared/types';
-import { Shield, Key, User, Lock } from 'lucide-react';
+import { Shield, Key, User, Lock, Eye, EyeOff } from 'lucide-react';
+import { VariableInput } from '../shared/VariableInput';
 
 const AUTH_TYPES: { id: AuthType; label: string; icon: typeof Shield }[] = [
   { id: 'none', label: 'No Auth', icon: Shield },
@@ -9,22 +11,37 @@ const AUTH_TYPES: { id: AuthType; label: string; icon: typeof Shield }[] = [
   { id: 'api-key', label: 'API Key', icon: Lock },
 ];
 
+const INPUT_CLASS =
+  'w-full px-3 py-2.5 text-sm rounded-lg bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 transition-all';
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <label className="block text-xs font-medium text-text-secondary mb-1.5">
+      {children}
+    </label>
+  );
+}
+
 export function AuthEditor() {
   const activeRequest = useRequestStore((s) => s.activeRequest);
   const setAuth = useRequestStore((s) => s.setAuth);
   const auth = activeRequest.auth;
+  const [showPassword, setShowPassword] = useState(false);
+  const [showToken, setShowToken] = useState(false);
+  const [showApiValue, setShowApiValue] = useState(false);
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1">
+      {/* Auth type selector */}
+      <div className="flex gap-1.5 flex-wrap">
         {AUTH_TYPES.map((t) => (
           <button
             key={t.id}
             onClick={() => setAuth({ ...auth, type: t.id })}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
               auth.type === t.id
-                ? 'bg-accent text-white'
-                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                ? 'bg-accent text-white shadow-sm shadow-accent/25'
+                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-hover hover:text-text-primary border border-transparent hover:border-border'
             }`}
           >
             <t.icon size={13} />
@@ -34,94 +51,134 @@ export function AuthEditor() {
       </div>
 
       {auth.type === 'none' && (
-        <p className="text-xs text-text-muted py-4 text-center">
-          This request does not use authentication
-        </p>
+        <div className="flex flex-col items-center justify-center py-6 text-center">
+          <Shield size={20} className="text-text-muted/40 mb-2" />
+          <p className="text-xs text-text-muted">
+            This request does not use authentication
+          </p>
+        </div>
       )}
 
       {auth.type === 'bearer' && (
-        <div className="space-y-2">
-          <label className="text-xs text-text-secondary font-medium">Token</label>
-          <input
-            type="text"
-            value={auth.bearer?.token || ''}
-            onChange={(e) => setAuth({ ...auth, bearer: { token: e.target.value } })}
-            placeholder="Enter bearer token or {{variable}}"
-            className="w-full px-3 py-2 text-xs rounded-lg bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-          />
+        <div>
+          <FieldLabel>Token</FieldLabel>
+          <div className="relative">
+            <VariableInput
+              value={auth.bearer?.token || ''}
+              onChange={(v) => setAuth({ ...auth, bearer: { token: v } })}
+              placeholder="Enter bearer token or {{variable}}"
+              type={showToken ? 'text' : 'password'}
+              className={INPUT_CLASS + ' pr-9'}
+            />
+            <button
+              type="button"
+              onClick={() => setShowToken(!showToken)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+              tabIndex={-1}
+            >
+              {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+          <p className="text-[10px] text-text-muted mt-1.5">
+            Sent as <code className="text-accent/70 bg-accent/8 px-1 rounded">Authorization: Bearer &lt;token&gt;</code>
+          </p>
         </div>
       )}
 
       {auth.type === 'basic' && (
-        <div className="space-y-3">
-          <div className="space-y-2">
-            <label className="text-xs text-text-secondary font-medium">Username</label>
-            <input
-              type="text"
+        <div className="space-y-4">
+          <div>
+            <FieldLabel>Username</FieldLabel>
+            <VariableInput
               value={auth.basic?.username || ''}
-              onChange={(e) =>
+              onChange={(v) =>
                 setAuth({
                   ...auth,
-                  basic: { username: e.target.value, password: auth.basic?.password || '' },
+                  basic: { username: v, password: auth.basic?.password || '' },
                 })
               }
-              placeholder="Username"
-              className="w-full px-3 py-2 text-xs rounded-lg bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+              placeholder="Username or {{variable}}"
+              className={INPUT_CLASS}
             />
           </div>
-          <div className="space-y-2">
-            <label className="text-xs text-text-secondary font-medium">Password</label>
-            <input
-              type="password"
-              value={auth.basic?.password || ''}
-              onChange={(e) =>
-                setAuth({
-                  ...auth,
-                  basic: { username: auth.basic?.username || '', password: e.target.value },
-                })
-              }
-              placeholder="Password"
-              className="w-full px-3 py-2 text-xs rounded-lg bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-            />
+          <div>
+            <FieldLabel>Password</FieldLabel>
+            <div className="relative">
+              <VariableInput
+                value={auth.basic?.password || ''}
+                onChange={(v) =>
+                  setAuth({
+                    ...auth,
+                    basic: { username: auth.basic?.username || '', password: v },
+                  })
+                }
+                placeholder="Password or {{variable}}"
+                type={showPassword ? 'text' : 'password'}
+                className={INPUT_CLASS + ' pr-9'}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
           </div>
+          <p className="text-[10px] text-text-muted">
+            Sent as <code className="text-accent/70 bg-accent/8 px-1 rounded">Authorization: Basic base64(username:password)</code>
+          </p>
         </div>
       )}
 
       {auth.type === 'api-key' && (
-        <div className="space-y-3">
-          <div className="space-y-2">
-            <label className="text-xs text-text-secondary font-medium">Key</label>
-            <input
-              type="text"
-              value={auth.apiKey?.key || ''}
-              onChange={(e) =>
-                setAuth({
-                  ...auth,
-                  apiKey: { key: e.target.value, value: auth.apiKey?.value || '', addTo: auth.apiKey?.addTo || 'header' },
-                })
-              }
-              placeholder="e.g. X-API-Key"
-              className="w-full px-3 py-2 text-xs rounded-lg bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-            />
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <FieldLabel>Key Name</FieldLabel>
+              <VariableInput
+                value={auth.apiKey?.key || ''}
+                onChange={(v) =>
+                  setAuth({
+                    ...auth,
+                    apiKey: { key: v, value: auth.apiKey?.value || '', addTo: auth.apiKey?.addTo || 'header' },
+                  })
+                }
+                placeholder="e.g. X-API-Key"
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div>
+              <FieldLabel>Value</FieldLabel>
+              <div className="relative">
+                <VariableInput
+                  value={auth.apiKey?.value || ''}
+                  onChange={(v) =>
+                    setAuth({
+                      ...auth,
+                      apiKey: { key: auth.apiKey?.key || '', value: v, addTo: auth.apiKey?.addTo || 'header' },
+                    })
+                  }
+                  placeholder="API key value or {{variable}}"
+                  type={showApiValue ? 'text' : 'password'}
+                  className={INPUT_CLASS + ' pr-9'}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiValue(!showApiValue)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+                  tabIndex={-1}
+                >
+                  {showApiValue ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-xs text-text-secondary font-medium">Value</label>
-            <input
-              type="text"
-              value={auth.apiKey?.value || ''}
-              onChange={(e) =>
-                setAuth({
-                  ...auth,
-                  apiKey: { key: auth.apiKey?.key || '', value: e.target.value, addTo: auth.apiKey?.addTo || 'header' },
-                })
-              }
-              placeholder="API key value"
-              className="w-full px-3 py-2 text-xs rounded-lg bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs text-text-secondary font-medium">Add to</label>
-            <div className="flex gap-2">
+
+          <div>
+            <FieldLabel>Add to</FieldLabel>
+            <div className="inline-flex rounded-lg bg-bg-tertiary border border-border p-0.5">
               {(['header', 'query'] as const).map((loc) => (
                 <button
                   key={loc}
@@ -131,10 +188,10 @@ export function AuthEditor() {
                       apiKey: { ...auth.apiKey!, addTo: loc },
                     })
                   }
-                  className={`px-3 py-1.5 text-xs rounded-md capitalize transition-colors ${
+                  className={`px-3.5 py-1.5 text-xs font-medium rounded-md capitalize transition-all ${
                     auth.apiKey?.addTo === loc
-                      ? 'bg-accent text-white'
-                      : 'bg-bg-tertiary text-text-secondary hover:bg-bg-hover'
+                      ? 'bg-bg-primary text-text-primary shadow-sm'
+                      : 'text-text-muted hover:text-text-secondary'
                   }`}
                 >
                   {loc}

@@ -194,18 +194,12 @@ export interface AgentCallbacks {
 
 // --- Agent runner ---
 
-export async function runAgent(
-  sessionMessages: ChatMessage[],
-  callbacks: AgentCallbacks,
-): Promise<void> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    callbacks.onError('No API key configured. Add your OpenAI API key in Settings.');
-    callbacks.onDone();
-    return;
-  }
+export interface AgentRunOptions {
+  systemPrompt?: string;
+  extraContext?: string;
+}
 
-  const agentInstructions = `You are Rüke, an expert API development assistant. You help users create, organize, and manage API requests through natural conversation.
+const DEFAULT_AGENT_INSTRUCTIONS = `You are Rüke, an expert API development assistant. You help users create, organize, and manage API requests through natural conversation.
 
 CRITICAL RULE: ALWAYS ACT. When the user asks you to do something, DO IT immediately by calling tools. NEVER just describe what you would do — actually call the tools. If the user says "create requests", call create_request for each one. Do not stop after creating a collection — populate it with requests by calling create_request multiple times.
 
@@ -221,9 +215,28 @@ Key behaviors:
 - Group related requests into collections.
 - When asked to create "a bunch" or "several" requests, create at least 5-8 varied examples.`;
 
+export async function runAgent(
+  sessionMessages: ChatMessage[],
+  callbacks: AgentCallbacks,
+  options?: AgentRunOptions,
+): Promise<void> {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    callbacks.onError('No API key configured. Add your OpenAI API key in Settings.');
+    callbacks.onDone();
+    return;
+  }
+
+  const systemPrompt = options?.systemPrompt || DEFAULT_AGENT_INSTRUCTIONS;
+
+  let contextBlock = buildContextMessage();
+  if (options?.extraContext) {
+    contextBlock += `\n\n${options.extraContext}`;
+  }
+
   const openaiMessages: OpenAIMessage[] = [
-    { role: 'system', content: agentInstructions },
-    { role: 'system', content: `Current workspace context:\n${buildContextMessage()}` },
+    { role: 'system', content: systemPrompt },
+    { role: 'system', content: `Current workspace context:\n${contextBlock}` },
     ...chatToOpenAI(sessionMessages),
   ];
 

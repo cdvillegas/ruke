@@ -298,3 +298,80 @@ body {
   75% { content: '...'; }
   100% { content: ''; }
 }
+
+/* ─── Spinner (explicit for inline style usage) ─── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Alive / Waiting glow for input areas ─── */
+
+@keyframes glow-border {
+  0%, 100% {
+    border-color: rgba(99, 102, 241, 0.25);
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.08), inset 0 0 8px rgba(99, 102, 241, 0.03);
+  }
+  50% {
+    border-color: rgba(99, 102, 241, 0.55);
+    box-shadow: 0 0 16px rgba(99, 102, 241, 0.18), inset 0 0 12px rgba(99, 102, 241, 0.06);
+  }
+}
+
+@keyframes glow-send {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.5), 0 0 40px rgba(99, 102, 241, 0.15);
+  }
+}
+
+@keyframes shimmer-sweep {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.input-glow-waiting {
+  animation: glow-border 2s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+.input-glow-waiting::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(99, 102, 241, 0.04) 30%,
+    rgba(99, 102, 241, 0.08) 50%,
+    rgba(99, 102, 241, 0.04) 70%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 2.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.send-btn-waiting {
+  animation: glow-send 2s ease-in-out infinite;
+}
+
+/* ─── Parameter Editor ─── */
+
+.param-field-row {
+  padding: 2px 0;
+  border-radius: 6px;
+  transition: background-color 0.1s ease;
+}
+
+.param-field-row:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+[data-theme="light"] .param-field-row:hover {
+  background: rgba(0, 0, 0, 0.02);
+}

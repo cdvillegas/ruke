@@ -1,15 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useUiStore } from '../../stores/uiStore';
 import {
-  Send, Plus, Loader2, Check, AlertCircle, ChevronDown, ChevronRight,
-  Plug, Sparkles, Key, ArrowRight, FileUp, File, X,
+  Send, Plus, Loader2, AlertCircle,
+  Plug, Sparkles, Key, ArrowRight, FileUp, PanelLeftClose, PanelLeft,
 } from 'lucide-react';
-import { TOOL_DISPLAY_NAMES } from '../../lib/agentTools';
-import type { ChatMessage, ChatToolCall, ChatAttachment } from '@shared/types';
+import { ChatSidebar } from './ChatSidebar';
+import { ToolCallCard } from '../shared/ToolCallCard';
+import { AssistantMessage } from '../shared/markdownComponents';
+import { AttachmentChip } from '../shared/AttachmentChip';
+import type { ChatMessage, ChatAttachment } from '@shared/types';
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
 function hasAiKey(): boolean {
@@ -22,153 +23,6 @@ const SUGGESTIONS = [
   { label: 'Create a collection', prompt: 'Create a collection of common REST API requests for testing' },
   { label: 'Set up environments', prompt: 'Help me set up dev and production environments with different API keys' },
 ];
-
-function ToolCallCard({ toolCall }: { toolCall: ChatToolCall }) {
-  const [expanded, setExpanded] = useState(false);
-  const displayName = TOOL_DISPLAY_NAMES[toolCall.name] || toolCall.name;
-
-  let parsedResult: any = null;
-  if (toolCall.result) {
-    try { parsedResult = JSON.parse(toolCall.result); } catch {}
-  }
-
-  const resultSummary = parsedResult
-    ? parsedResult.error
-      ? `Error: ${parsedResult.error}`
-      : parsedResult.name
-        ? `${parsedResult.name}${parsedResult.endpointCount != null ? ` (${parsedResult.endpointCount} endpoints)` : ''}`
-        : parsedResult.connections
-          ? `${parsedResult.connections.length} API${parsedResult.connections.length !== 1 ? 's' : ''} connected`
-          : parsedResult.results
-            ? `${parsedResult.results.length} result${parsedResult.results.length !== 1 ? 's' : ''} found`
-            : parsedResult.environmentId
-              ? `Created "${parsedResult.name}"`
-              : parsedResult.collectionId
-                ? `Created "${parsedResult.name}"`
-                : parsedResult.success
-                  ? 'Done'
-                  : null
-    : null;
-
-  return (
-    <div className="rounded-lg border border-border/60 bg-bg-tertiary/40 overflow-hidden">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-bg-hover/50 transition-colors"
-      >
-        {toolCall.status === 'running' || toolCall.status === 'pending' ? (
-          <Loader2 size={12} className="text-accent animate-spin shrink-0" />
-        ) : toolCall.status === 'error' ? (
-          <AlertCircle size={12} className="text-red-400 shrink-0" />
-        ) : (
-          <Check size={12} className="text-green-400 shrink-0" />
-        )}
-        <span className="text-text-secondary font-medium">{displayName}</span>
-        {resultSummary && toolCall.status === 'done' && (
-          <span className="text-text-muted truncate flex-1 text-left">{resultSummary}</span>
-        )}
-        <span className="text-text-muted shrink-0 ml-auto">
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </span>
-      </button>
-      {expanded && toolCall.result && (
-        <div className="px-3 py-2 border-t border-border/40 max-h-48 overflow-auto">
-          <pre className="text-[10px] text-text-muted font-mono whitespace-pre-wrap break-all">
-            {JSON.stringify(parsedResult || toolCall.result, null, 2)}
-          </pre>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const markdownComponents: Record<string, React.ComponentType<any>> = {
-  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-  strong: ({ children }) => <strong className="font-semibold text-text-primary">{children}</strong>,
-  em: ({ children }) => <em className="italic text-text-secondary">{children}</em>,
-  h1: ({ children }) => <h1 className="text-lg font-bold text-text-primary mt-4 mb-2 first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-base font-semibold text-text-primary mt-3 mb-1.5 first:mt-0">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-sm font-semibold text-text-primary mt-2.5 mb-1 first:mt-0">{children}</h3>,
-  ul: ({ children }) => <ul className="list-disc list-outside pl-5 mb-2 space-y-0.5">{children}</ul>,
-  ol: ({ children }) => <ol className="list-decimal list-outside pl-5 mb-2 space-y-0.5">{children}</ol>,
-  li: ({ children }) => <li className="text-sm text-text-primary pl-0.5">{children}</li>,
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
-      {children}
-    </a>
-  ),
-  code: ({ className, children, ...props }) => {
-    const isBlock = className?.includes('language-');
-    if (isBlock) {
-      return (
-        <code className="text-[13px] font-mono text-text-primary" {...props}>
-          {children}
-        </code>
-      );
-    }
-    return (
-      <code className="bg-bg-tertiary px-1.5 py-0.5 rounded text-[13px] font-mono text-accent" {...props}>
-        {children}
-      </code>
-    );
-  },
-  pre: ({ children }) => (
-    <pre className="bg-bg-tertiary rounded-lg p-3 text-xs font-mono overflow-x-auto mb-2 border border-border/40">
-      {children}
-    </pre>
-  ),
-  blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-accent/40 pl-3 text-text-secondary italic mb-2">
-      {children}
-    </blockquote>
-  ),
-  hr: () => <hr className="border-border my-3" />,
-  table: ({ children }) => (
-    <div className="overflow-x-auto mb-2 rounded-lg border border-border/60">
-      <table className="w-full text-xs">{children}</table>
-    </div>
-  ),
-  thead: ({ children }) => <thead className="bg-bg-tertiary/60">{children}</thead>,
-  th: ({ children }) => (
-    <th className="text-left px-3 py-1.5 text-text-secondary font-medium border-b border-border/40">{children}</th>
-  ),
-  td: ({ children }) => (
-    <td className="px-3 py-1.5 text-text-primary border-b border-border/20">{children}</td>
-  ),
-};
-
-function AssistantMessage({ content }: { content: string }) {
-  return (
-    <div className="text-sm text-text-primary leading-relaxed">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-function AttachmentChip({ attachment, removable, onRemove }: {
-  attachment: ChatAttachment;
-  removable?: boolean;
-  onRemove?: () => void;
-}) {
-  const sizeLabel = attachment.size >= 1024 * 1024
-    ? `${(attachment.size / (1024 * 1024)).toFixed(1)} MB`
-    : `${(attachment.size / 1024).toFixed(1)} KB`;
-
-  return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-bg-tertiary/60 border border-border/40 text-xs">
-      <File size={12} className="text-accent shrink-0" />
-      <span className="text-text-primary font-medium truncate max-w-[160px]">{attachment.name}</span>
-      <span className="text-text-muted">{sizeLabel}</span>
-      {removable && onRemove && (
-        <button onClick={onRemove} className="text-text-muted hover:text-text-primary transition-colors ml-0.5">
-          <X size={12} />
-        </button>
-      )}
-    </span>
-  );
-}
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'tool') return null;
@@ -269,8 +123,9 @@ function EmptyState({ onSuggestion }: { onSuggestion: (prompt: string) => void }
   );
 }
 
-export function ChatView() {
-  const { session, isRunning, error, sendMessage, newChat } = useChatStore();
+function ChatPanel() {
+  const session = useChatStore(s => s.getActiveSession());
+  const { isRunning, error, sendMessage, newChat, activeSessionId } = useChatStore();
   const connections = useConnectionStore(s => s.connections);
   const [input, setInput] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
@@ -291,7 +146,7 @@ export function ChatView() {
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+  }, [activeSessionId]);
 
   const handleSend = useCallback(async () => {
     if (!canSend) return;
@@ -386,7 +241,7 @@ export function ChatView() {
 
   return (
     <div
-      className="h-full flex flex-col bg-bg-primary relative"
+      className="h-full flex flex-col bg-bg-primary relative flex-1 min-w-0"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -465,7 +320,11 @@ export function ChatView() {
       {/* Input Bar */}
       <div className="shrink-0 border-t border-border p-3">
         <div className="max-w-2xl mx-auto">
-          <div className="bg-bg-secondary rounded-2xl border border-border focus-within:border-accent/40 transition-colors px-4 py-2">
+          <div className={`bg-bg-secondary rounded-2xl border transition-colors px-4 py-2 ${
+            isRunning
+              ? 'input-glow-waiting border-accent/30'
+              : 'border-border focus-within:border-accent/40'
+          }`}>
             {attachedFiles.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pb-2">
                 {attachedFiles.map(f => (
@@ -481,14 +340,14 @@ export function ChatView() {
                 onKeyDown={handleKeyDown}
                 placeholder={
                   isRunning
-                    ? 'Waiting for response...'
+                    ? 'Thinking...'
                     : attachedFiles.length > 0
                       ? 'Add a message or press Enter to send...'
                       : 'Ask Ruke anything about APIs...'
                 }
                 disabled={isRunning}
                 rows={1}
-                className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-32 py-1 disabled:opacity-50"
+                className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-32 py-1 disabled:opacity-60"
                 style={{ height: 'auto', overflow: 'hidden' }}
                 onInput={(e) => {
                   const t = e.target as HTMLTextAreaElement;
@@ -500,9 +359,11 @@ export function ChatView() {
                 onClick={handleSend}
                 disabled={!canSend}
                 className={`shrink-0 p-2 rounded-xl transition-all ${
-                  canSend
-                    ? 'bg-accent hover:bg-accent-hover text-white shadow-[0_0_12px_rgba(59,130,246,0.3)]'
-                    : 'bg-accent/20 text-white/30 cursor-not-allowed'
+                  isRunning
+                    ? 'bg-accent text-white send-btn-waiting'
+                    : canSend
+                      ? 'bg-accent hover:bg-accent-hover text-white shadow-[0_0_12px_rgba(59,130,246,0.3)]'
+                      : 'bg-accent/20 text-white/30 cursor-not-allowed'
                 }`}
               >
                 {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
@@ -513,6 +374,39 @@ export function ChatView() {
             Ruke can make mistakes. Verify important API configurations.
           </p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+const SIDEBAR_PREF_KEY = 'ruke:chat_sidebar_open';
+
+export function ChatView() {
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const stored = localStorage.getItem(SIDEBAR_PREF_KEY);
+    return stored !== null ? stored === 'true' : true;
+  });
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen(prev => {
+      const next = !prev;
+      localStorage.setItem(SIDEBAR_PREF_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  return (
+    <div className="h-full flex overflow-hidden">
+      {sidebarOpen && <ChatSidebar />}
+      <div className="flex-1 flex flex-col min-w-0 relative">
+        <button
+          onClick={toggleSidebar}
+          className="absolute top-2.5 left-1.5 z-10 p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+          title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+        >
+          {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
+        </button>
+        <ChatPanel />
       </div>
     </div>
   );

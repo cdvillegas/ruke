@@ -208,6 +208,24 @@ const localRepo: Record<string, (...args: any[]) => any> = {
   deleteRequest: (id: string) => {
     setStore('requests', getStore('requests').filter((r: any) => r.id !== id));
   },
+  getUncollectedRequests: () => {
+    return getStore('requests')
+      .filter((r: any) => !r.collectionId && !r.archived)
+      .sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+  },
+  getArchivedRequests: () => {
+    return getStore('requests')
+      .filter((r: any) => r.archived)
+      .sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+  },
+  archiveRequest: (id: string) => {
+    const reqs = getStore('requests').map((r: any) => r.id === id ? { ...r, archived: true, collectionId: null, updatedAt: new Date().toISOString() } : r);
+    setStore('requests', reqs);
+  },
+  unarchiveRequest: (id: string) => {
+    const reqs = getStore('requests').map((r: any) => r.id === id ? { ...r, archived: false, updatedAt: new Date().toISOString() } : r);
+    setStore('requests', reqs);
+  },
 
   getEnvironments: (workspaceId: string) =>
     getStore('environments').filter((e: any) => e.workspaceId === workspaceId).sort((a: any, b: any) => a.sortOrder - b.sortOrder),

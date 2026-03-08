@@ -1,62 +1,62 @@
 import { useState, useMemo, useCallback } from 'react';
+import * as Tooltip from '@radix-ui/react-tooltip';
 import { useRequestStore } from '../../stores/requestStore';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useEnvironmentStore } from '../../stores/environmentStore';
-import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Info, X } from 'lucide-react';
+import { InlineEditor } from '../shared/InlineEditor';
 import type { KeyValue, EndpointParam } from '@shared/types';
 
 interface ParamRow {
   key: string;
   value: string;
   enabled: boolean;
-  source: 'path' | 'query' | 'header' | 'body' | 'custom';
+  source: 'path' | 'query' | 'header' | 'custom';
   required: boolean;
   type: string;
   description?: string;
   enumValues?: string[];
 }
 
+function isComplexType(type: string): boolean {
+  return type === 'object' || type === 'array' || type.endsWith('[]') || type.startsWith('object');
+}
+
+function tryPrettifyJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+function isJsonLike(value: string): boolean {
+  const t = value.trim();
+  return (t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'));
+}
+
 function buildParamRows(
   params: KeyValue[],
-  body: { type: string; raw?: string },
   endpointParams?: EndpointParam[]
 ): ParamRow[] {
   const rows: ParamRow[] = [];
   const usedKeys = new Set<string>();
 
-  let bodyObj: Record<string, any> = {};
-  if (body.type === 'json' && body.raw) {
-    try { bodyObj = JSON.parse(body.raw); } catch {}
-  }
-
   if (endpointParams) {
     for (const ep of endpointParams) {
+      if (ep.in === 'body') continue;
       usedKeys.add(ep.name);
-      if (ep.in === 'body') {
-        const bodyVal = bodyObj[ep.name];
-        rows.push({
-          key: ep.name,
-          value: bodyVal !== undefined ? (typeof bodyVal === 'object' ? JSON.stringify(bodyVal) : String(bodyVal)) : '',
-          enabled: true,
-          source: 'body',
-          required: ep.required,
-          type: ep.type || 'string',
-          description: ep.description,
-          enumValues: ep.enumValues,
-        });
-      } else {
-        const existing = params.find((p) => p.key === ep.name);
-        rows.push({
-          key: ep.name,
-          value: existing?.value || '',
-          enabled: existing?.enabled ?? true,
-          source: ep.in === 'path' ? 'path' : ep.in === 'header' ? 'header' : 'query',
-          required: ep.required,
-          type: ep.type || 'string',
-          description: ep.description,
-          enumValues: ep.enumValues,
-        });
-      }
+      const existing = params.find((p) => p.key === ep.name);
+      rows.push({
+        key: ep.name,
+        value: existing?.value || '',
+        enabled: existing?.enabled ?? true,
+        source: ep.in === 'path' ? 'path' : ep.in === 'header' ? 'header' : 'query',
+        required: ep.required,
+        type: ep.type || 'string',
+        description: ep.description,
+        enumValues: ep.enumValues,
+      });
     }
   }
 
@@ -76,15 +76,37 @@ function buildParamRows(
   return rows;
 }
 
-function FieldInput({ row, onUpdate }: { row: ParamRow; onUpdate: (value: string) => void }) {
+function typeColor(type: string): string {
+  switch (type) {
+    case 'string': return 'text-emerald-400/70';
+    case 'integer': case 'number': return 'text-orange-400/70';
+    case 'boolean': return 'text-purple-400/70';
+    case 'object': return 'text-blue-400/70';
+    case 'array': return 'text-cyan-400/70';
+    default:
+      if (type.endsWith('[]')) return 'text-cyan-400/70';
+      return 'text-text-muted/50';
+  }
+}
+
+function ValueInput({
+  row,
+  onUpdate,
+}: {
+  row: ParamRow;
+  onUpdate: (value: string) => void;
+}) {
   const isEnum = row.enumValues && row.enumValues.length > 0;
+  const complex = isComplexType(row.type);
+  const jsonLike = isJsonLike(row.value);
+  const isMultiline = complex || jsonLike;
 
   if (isEnum) {
     return (
       <select
         value={row.value}
         onChange={(e) => onUpdate(e.target.value)}
-        className="w-full px-2.5 py-1.5 text-xs rounded-md bg-bg-tertiary border border-border font-mono text-text-primary focus:outline-none focus:border-accent transition-colors cursor-pointer"
+        className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-bg-secondary border border-border font-mono text-text-primary focus:outline-none focus:border-accent/40 transition-colors cursor-pointer"
       >
         <option value="">Select...</option>
         {row.enumValues!.map((v) => (
@@ -99,7 +121,7 @@ function FieldInput({ row, onUpdate }: { row: ParamRow; onUpdate: (value: string
       <select
         value={row.value}
         onChange={(e) => onUpdate(e.target.value)}
-        className="w-full px-2.5 py-1.5 text-xs rounded-md bg-bg-tertiary border border-border font-mono text-text-primary focus:outline-none focus:border-accent transition-colors cursor-pointer"
+        className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-bg-secondary border border-border font-mono text-text-primary focus:outline-none focus:border-accent/40 transition-colors cursor-pointer"
       >
         <option value="">—</option>
         <option value="true">true</option>
@@ -108,18 +130,19 @@ function FieldInput({ row, onUpdate }: { row: ParamRow; onUpdate: (value: string
     );
   }
 
+  const displayValue = isMultiline && row.value ? tryPrettifyJson(row.value) : row.value;
+  const placeholder =
+    row.source === 'path' ? row.key :
+    row.type === 'integer' || row.type === 'number' ? '0' :
+    '';
+
   return (
-    <input
-      type="text"
-      value={row.value}
-      onChange={(e) => onUpdate(e.target.value)}
-      placeholder={
-        row.type === 'integer' || row.type === 'number' ? '0' :
-        row.type.endsWith('[]') ? '[]' :
-        row.type === 'object' ? '{}' :
-        ''
-      }
-      className="w-full px-2.5 py-1.5 text-xs rounded-md bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-accent transition-colors"
+    <InlineEditor
+      value={displayValue}
+      onChange={onUpdate}
+      multiline={isMultiline}
+      jsonMode={isMultiline}
+      placeholder={placeholder}
     />
   );
 }
@@ -137,88 +160,91 @@ function FieldRow({
   onKeyChange?: (key: string) => void;
   resolveString: (s: string) => string;
 }) {
-  const [showDesc, setShowDesc] = useState(false);
   const resolvedValue = row.value.includes('{{') ? resolveString(row.value) : null;
   const isCustom = row.source === 'custom';
 
   return (
-    <div className="group">
-      <div className="flex items-center gap-2">
-        {/* Name + type */}
-        <div className="w-[140px] shrink-0">
+    <div className="group param-field-row">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-1.5 min-w-0">
           {isCustom ? (
             <input
               type="text"
               value={row.key}
               onChange={(e) => onKeyChange?.(e.target.value)}
               placeholder="key"
-              className="w-full px-2.5 py-1.5 text-xs rounded-md bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+              spellCheck={false}
+              className="text-xs font-mono font-medium text-text-primary bg-transparent border-none outline-none placeholder:text-text-muted/30 border-b border-b-transparent focus:border-b-accent/40 pb-px"
             />
           ) : (
-            <button
-              onClick={() => row.description && setShowDesc(!showDesc)}
-              className={`flex items-center gap-1.5 w-full text-left min-w-0 ${row.description ? 'cursor-pointer' : 'cursor-default'}`}
-            >
+            <>
               <span className="text-xs font-mono font-medium text-text-primary truncate">{row.key}</span>
               {row.required && <span className="text-[9px] font-bold text-error shrink-0">*</span>}
+            </>
+          )}
+          {!isCustom && (
+            <>
+              <span className={`text-[10px] font-mono leading-none ${typeColor(row.type)}`}>{row.type}</span>
               {row.description && (
-                <span className="shrink-0 text-text-muted">
-                  {showDesc ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                </span>
+                <Tooltip.Provider delayDuration={150}>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <button className="text-text-muted/30 hover:text-text-muted transition-colors">
+                        <Info size={10} />
+                      </button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Portal>
+                      <Tooltip.Content
+                        side="top"
+                        align="start"
+                        sideOffset={4}
+                        className="max-w-sm px-3 py-2 rounded-lg bg-bg-secondary border border-border text-[11px] text-text-secondary leading-relaxed shadow-xl z-[100]"
+                      >
+                        {row.description.slice(0, 500)}{row.description.length > 500 ? '...' : ''}
+                        <Tooltip.Arrow className="fill-border" />
+                      </Tooltip.Content>
+                    </Tooltip.Portal>
+                  </Tooltip.Root>
+                </Tooltip.Provider>
               )}
-            </button>
+            </>
           )}
         </div>
-
-        {/* Type badge */}
-        {!isCustom && (
-          <span className="text-[10px] text-text-muted font-mono shrink-0 w-[60px] truncate" title={row.type}>
-            {row.type}
-          </span>
-        )}
-
-        {/* Value input */}
-        <div className="flex-1 min-w-0 relative">
-          <FieldInput row={row} onUpdate={(v) => onUpdate(v, row.enabled)} />
-          {resolvedValue && resolvedValue !== row.value && (
-            <div className="absolute -bottom-3 left-0 text-[8px] text-accent font-mono truncate max-w-full">
-              = {resolvedValue}
-            </div>
-          )}
-        </div>
-
-        {/* Remove button for custom params */}
-        <div className="w-5 shrink-0">
-          {isCustom && (
+        <div className="w-5 shrink-0 flex items-center justify-center">
+          {onRemove && (
             <button
               onClick={onRemove}
-              className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-error/15 text-text-muted hover:text-error transition-all"
+              className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-error/10 text-text-muted/30 hover:text-error transition-all"
             >
-              <Trash2 size={12} />
+              {isCustom ? <Trash2 size={12} /> : <X size={12} />}
             </button>
           )}
         </div>
       </div>
-
-      {/* Expanded description */}
-      {showDesc && row.description && (
-        <div className="ml-[140px] pl-2 mt-1 mb-1 text-[11px] text-text-muted leading-relaxed border-l-2 border-border">
-          {row.description.replace(/\n{2,}/g, ' ').slice(0, 300)}
-          {row.description.length > 300 && '...'}
+      <ValueInput
+        row={row}
+        onUpdate={(v) => onUpdate(v, row.enabled)}
+      />
+      {resolvedValue && resolvedValue !== row.value && (
+        <div className="mt-0.5 text-[10px] text-accent/70 font-mono">
+          = {resolvedValue}
         </div>
       )}
     </div>
   );
 }
 
-export function ParameterEditor() {
+interface ParameterEditorProps {
+  paramRefs?: React.MutableRefObject<Record<string, HTMLElement | null>>;
+  simpleMode?: boolean;
+}
+
+export function ParameterEditor({ paramRefs, simpleMode }: ParameterEditorProps) {
   const activeRequest = useRequestStore((s) => s.activeRequest);
   const setParams = useRequestStore((s) => s.setParams);
   const setHeaders = useRequestStore((s) => s.setHeaders);
-  const setBody = useRequestStore((s) => s.setBody);
   const connections = useConnectionStore((s) => s.connections);
   const resolveString = useEnvironmentStore((s) => s.resolveString);
-  const [showOptional, setShowOptional] = useState(false);
 
   const linkedEndpoint = useMemo(() => {
     if (!activeRequest.connectionId || !activeRequest.endpointId) return null;
@@ -228,42 +254,11 @@ export function ParameterEditor() {
   }, [activeRequest.connectionId, activeRequest.endpointId, connections]);
 
   const rows = useMemo(
-    () => buildParamRows(activeRequest.params, activeRequest.body, linkedEndpoint?.parameters),
-    [activeRequest.params, activeRequest.body, linkedEndpoint]
+    () => buildParamRows(activeRequest.params, linkedEndpoint?.parameters),
+    [activeRequest.params, linkedEndpoint]
   );
 
-  const updateBodyFromParams = useCallback((key: string, rawValue: string) => {
-    let currentBody: Record<string, any> = {};
-    if (activeRequest.body.type === 'json' && activeRequest.body.raw) {
-      try { currentBody = JSON.parse(activeRequest.body.raw); } catch {}
-    }
-
-    const paramDef = linkedEndpoint?.parameters?.find(p => p.name === key);
-    const paramType = paramDef?.type || 'string';
-
-    if (rawValue === '') {
-      delete currentBody[key];
-    } else if (paramType === 'integer' || paramType === 'number') {
-      const num = Number(rawValue);
-      currentBody[key] = isNaN(num) ? rawValue : num;
-    } else if (paramType === 'boolean') {
-      currentBody[key] = rawValue === 'true';
-    } else if (paramType.endsWith('[]') || paramType === 'array') {
-      try { currentBody[key] = JSON.parse(rawValue); } catch { currentBody[key] = rawValue; }
-    } else if (paramType === 'object') {
-      try { currentBody[key] = JSON.parse(rawValue); } catch { currentBody[key] = rawValue; }
-    } else {
-      currentBody[key] = rawValue;
-    }
-
-    setBody({ ...activeRequest.body, type: 'json', raw: JSON.stringify(currentBody, null, 2) });
-  }, [activeRequest.body, linkedEndpoint, setBody]);
-
-  const updateParam = (key: string, value: string, enabled: boolean, source: string) => {
-    if (source === 'body') {
-      updateBodyFromParams(key, value);
-      return;
-    }
+  const updateParam = useCallback((key: string, value: string, enabled: boolean, source: string) => {
     if (source === 'header') {
       const updated = activeRequest.headers.map((h) =>
         h.key === key ? { ...h, value, enabled } : h
@@ -281,7 +276,7 @@ export function ParameterEditor() {
       }
       setParams(updated);
     }
-  };
+  }, [activeRequest.headers, activeRequest.params, setHeaders, setParams]);
 
   const addCustomParam = () => {
     setParams([...activeRequest.params, { key: '', value: '', enabled: true }]);
@@ -303,107 +298,58 @@ export function ParameterEditor() {
     }
   };
 
-  const bodyRows = rows.filter(r => r.source === 'body');
-  const pathQueryRows = rows.filter(r => r.source === 'path' || r.source === 'query');
+  const pathRows = rows.filter(r => r.source === 'path');
+  const allQueryRows = rows.filter(r => r.source === 'query');
   const customRows = rows.filter(r => r.source === 'custom');
-  const headerRows = rows.filter(r => r.source === 'header');
 
-  const requiredBodyRows = bodyRows.filter(r => r.required);
-  const optionalBodyRows = bodyRows.filter(r => !r.required);
-  const filledOptionalBody = optionalBodyRows.filter(r => r.value !== '');
-  const emptyOptionalBody = optionalBodyRows.filter(r => r.value === '');
+  const requiredQueryRows = allQueryRows.filter(r => r.required);
+  const optionalQueryRows = allQueryRows.filter(r => !r.required);
 
-  const visibleOptionalBody = showOptional ? optionalBodyRows : filledOptionalBody;
+  const visibleQueryRows = simpleMode
+    ? requiredQueryRows
+    : allQueryRows;
 
-  const hasPathQuery = pathQueryRows.length > 0;
-  const hasCustom = customRows.length > 0;
+  const hasAnyContent = pathRows.length > 0 || allQueryRows.length > 0 || customRows.length > 0;
+
+  if (!hasAnyContent && !linkedEndpoint) return null;
 
   let customIndex = -1;
 
-  const renderFieldRow = (row: ParamRow) => {
+  const renderRow = (row: ParamRow, idx?: number) => {
     const isCustom = row.source === 'custom';
     if (isCustom) customIndex++;
-    const idx = customIndex;
+    const cidx = customIndex;
 
     return (
       <FieldRow
-        key={`${row.source}-${row.key}-${idx}`}
+        key={`${row.source}-${row.key}-${idx ?? cidx}`}
         row={row}
         onUpdate={(value, enabled) => updateParam(row.key, value, enabled, row.source)}
         onRemove={isCustom ? () => removeParam(row.key) : undefined}
-        onKeyChange={isCustom ? (k) => updateCustomKey(idx, k) : undefined}
+        onKeyChange={isCustom ? (k) => updateCustomKey(cidx, k) : undefined}
         resolveString={resolveString}
       />
     );
   };
 
-  const hasAnyContent = bodyRows.length > 0 || pathQueryRows.length > 0 || customRows.length > 0;
-
-  if (!hasAnyContent && !linkedEndpoint) return null;
+  const hasAnyRows = pathRows.length > 0 || visibleQueryRows.length > 0 || customRows.length > 0;
 
   return (
-    <div className="space-y-4">
-      {/* Path + query params (only shown when they exist) */}
-      {(hasPathQuery || hasCustom) && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">Parameters</h3>
-            <button
-              onClick={addCustomParam}
-              className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-            >
-              <Plus size={10} />
-              Add
-            </button>
-          </div>
-          <div className="space-y-1.5">
-            {pathQueryRows.map(renderFieldRow)}
-            {customRows.map(renderFieldRow)}
-          </div>
-        </div>
-      )}
+    <div className="space-y-1.5">
+      {pathRows.map((r, i) => renderRow(r, i))}
+      {visibleQueryRows.map((r, i) => renderRow(r, i))}
+      {customRows.map((r, i) => renderRow(r, i))}
 
-      {/* Body fields */}
-      {bodyRows.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <h3 className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">Body Fields</h3>
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-method-post/10 text-method-post/70 font-mono">JSON</span>
-          </div>
-
-          {/* Required fields -- always shown */}
-          {requiredBodyRows.length > 0 && (
-            <div className="space-y-1.5">
-              {requiredBodyRows.map(renderFieldRow)}
-            </div>
-          )}
-
-          {/* Filled optional fields + optionally all optional */}
-          {visibleOptionalBody.length > 0 && (
-            <div className={`space-y-1.5 ${requiredBodyRows.length > 0 ? 'mt-1.5' : ''}`}>
-              {visibleOptionalBody.map(renderFieldRow)}
-            </div>
-          )}
-
-          {/* Toggle for remaining optional fields */}
-          {emptyOptionalBody.length > 0 && (
-            <button
-              onClick={() => setShowOptional(!showOptional)}
-              className="flex items-center gap-1.5 mt-2 px-1 py-1 text-[10px] text-text-muted hover:text-text-primary transition-colors"
-            >
-              {showOptional ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-              <span>
-                {showOptional
-                  ? 'Hide optional fields'
-                  : `${emptyOptionalBody.length} more optional field${emptyOptionalBody.length !== 1 ? 's' : ''}`
-                }
-              </span>
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Headers from endpoint spec go in advanced -- not shown here */}
+      <button
+        onClick={addCustomParam}
+        className="flex items-center gap-1 px-1.5 py-1 text-[10px] rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+      >
+        <Plus size={10} />
+        {hasAnyRows ? 'Add parameter' : 'Add parameter'}
+      </button>
     </div>
   );
 }
+
+export { typeColor, type ParamRow };
+export type { ParameterEditorProps };

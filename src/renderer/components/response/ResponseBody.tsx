@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
-import { oneDark } from '@codemirror/theme-one-dark';
+import { appEditorTheme, blockEditorExtensions } from '../shared/editorTheme';
 import { Copy, Check, WrapText } from 'lucide-react';
 
 interface Props {
@@ -61,8 +61,8 @@ export function ResponseBody({ body }: Props) {
       <div className="flex-1 overflow-auto">
         <CodeMirror
           value={formatted}
-          extensions={isJson ? [json()] : []}
-          theme={oneDark}
+          extensions={isJson ? [json(), blockEditorExtensions] : [blockEditorExtensions]}
+          theme={appEditorTheme}
           readOnly
           basicSetup={{
             lineNumbers: true,

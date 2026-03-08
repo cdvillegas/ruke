@@ -1,16 +1,21 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { useCollectionStore } from '../../stores/collectionStore';
-import { useRequestStore } from '../../stores/requestStore';
+import { useState, useRef, useCallback } from 'react';
 import { useUiStore } from '../../stores/uiStore';
 import { RequestBuilder } from '../request/RequestBuilder';
 import { GrpcRequestView } from '../request/GrpcRequestView';
 import { ResponseViewer } from '../response/ResponseViewer';
-import {
-  Search, Plus, FolderPlus, ChevronRight, ChevronDown,
-  MoreHorizontal, Send, Trash2, Pencil, X, FolderOpen, Loader2,
-} from 'lucide-react';
-import { METHOD_COLORS } from '@shared/constants';
-import type { ApiRequest, CollectionTreeNode } from '@shared/types';
+import { RequestSidebar } from './RequestSidebar';
+import { AgentPanel } from './AgentPanel';
+import { Sparkles } from 'lucide-react';
+
+const AGENT_WIDTH_KEY = 'ruke:agent_panel_width';
+const DEFAULT_AGENT_WIDTH = 380;
+const MIN_AGENT_WIDTH = 280;
+const MAX_AGENT_WIDTH = 700;
+
+const SIDEBAR_WIDTH_KEY = 'ruke:sidebar_width';
+const DEFAULT_SIDEBAR_WIDTH = 256;
+const MIN_SIDEBAR_WIDTH = 180;
+const MAX_SIDEBAR_WIDTH = 480;
 
 function ResizableSplit() {
   const [topRatio, setTopRatio] = useState(0.45);
@@ -60,476 +65,116 @@ function ResizableSplit() {
   );
 }
 
-function RequestRow({
-  req,
-  depth,
-  isSelected,
-  onSelect,
-  onDelete,
-}: {
-  req: ApiRequest;
-  depth: number;
-  isSelected: boolean;
-  onSelect: (req: ApiRequest) => void;
-  onDelete: (id: string) => void;
-}) {
-  const newRequestIds = useRequestStore((s) => s.newRequestIds);
-  const markSeen = useRequestStore((s) => s.markSeen);
-  const isNew = newRequestIds.includes(req.id);
-  const [showMenu, setShowMenu] = useState(false);
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(req.name || '');
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showMenu) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showMenu]);
-
-  const handleRename = async () => {
-    const trimmed = renameValue.trim();
-    if (trimmed && trimmed !== req.name) {
-      await window.ruke.db.query('updateRequest', req.id, { ...req, name: trimmed });
-      const { openTabs, activeTabId } = useRequestStore.getState();
-      const updatedTabs = openTabs.map(t => t.id === req.id ? { ...t, name: trimmed } : t);
-      useRequestStore.setState({ openTabs: updatedTabs });
-      if (activeTabId === req.id) {
-        useRequestStore.setState(s => ({ activeRequest: { ...s.activeRequest, name: trimmed } }));
-      }
-    }
-    setIsRenaming(false);
-  };
-
-  const handleClick = () => {
-    onSelect(req);
-    if (isNew) markSeen(req.id);
-  };
-
-  return (
-    <div
-      onClick={handleClick}
-      className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
-        isSelected
-          ? 'bg-accent/10 text-text-primary cursor-pointer'
-          : 'hover:bg-bg-hover text-text-secondary cursor-pointer'
-      }`}
-      style={{ paddingLeft: `${24 + depth * 16}px` }}
-    >
-      <span
-        className="font-mono font-bold text-[9px] w-8 shrink-0"
-        style={{ color: METHOD_COLORS[req.method] || '#6b7280' }}
-      >
-        {req.method}
-      </span>
-      {isRenaming ? (
-        <input
-          autoFocus
-          value={renameValue}
-          onChange={(e) => setRenameValue(e.target.value)}
-          onBlur={handleRename}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleRename();
-            if (e.key === 'Escape') setIsRenaming(false);
-          }}
-          onClick={(e) => e.stopPropagation()}
-          className="flex-1 text-xs bg-bg-tertiary border border-accent px-1.5 py-0.5 rounded text-text-primary focus:outline-none"
-        />
-      ) : (
-        <span className="text-xs truncate flex-1">{req.name || 'Untitled'}</span>
-      )}
-      {isNew && !isSelected && (
-        <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" title="New" />
-      )}
-      <div className="relative" ref={menuRef}>
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
-          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-bg-active text-text-muted transition-all"
-        >
-          <MoreHorizontal size={12} />
-        </button>
-        {showMenu && (
-          <div className="absolute right-0 top-full mt-1 w-36 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 py-1 animate-fade-in">
-            <button
-              onClick={(e) => { e.stopPropagation(); setIsRenaming(true); setRenameValue(req.name || ''); setShowMenu(false); }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
-            >
-              <Pencil size={12} /> Rename
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(req.id); setShowMenu(false); }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-error hover:bg-error/10 transition-colors"
-            >
-              <Trash2 size={12} /> Delete
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CollectionNode({
-  node,
-  depth,
-  selectedRequestId,
-  onSelectRequest,
-  onNewRequest,
-}: {
-  node: CollectionTreeNode;
-  depth: number;
-  selectedRequestId: string | null;
-  onSelectRequest: (req: ApiRequest) => void;
-  onNewRequest: (collectionId: string) => void;
-}) {
-  const toggleExpanded = useCollectionStore((s) => s.toggleExpanded);
-  const expandedIds = useCollectionStore((s) => s.expandedIds);
-  const deleteCollection = useCollectionStore((s) => s.deleteCollection);
-  const renameCollection = useCollectionStore((s) => s.renameCollection);
-  const deleteRequest = useRequestStore((s) => s.deleteRequest);
-  const isExpanded = expandedIds.includes(node.collection.id);
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(node.collection.name);
-  const [showMenu, setShowMenu] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showMenu) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showMenu]);
-
-  const handleRename = () => {
-    if (renameValue.trim()) {
-      renameCollection(node.collection.id, renameValue.trim());
-    }
-    setIsRenaming(false);
-  };
-
-  const openTabs = useRequestStore((s) => s.openTabs);
-  const pendingTabIds = useRequestStore((s) => s.pendingTabIds);
-  const pendingForCollection = useMemo(() => {
-    return openTabs.filter(
-      t => pendingTabIds.includes(t.id) && t.collectionId === node.collection.id &&
-        !node.requests.some(r => r.id === t.id)
-    );
-  }, [openTabs, pendingTabIds, node.collection.id, node.requests]);
-
-  return (
-    <div>
-      <div
-        className="group flex items-center gap-1.5 px-2 py-1.5 hover:bg-bg-hover rounded-lg transition-colors cursor-pointer"
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-        onClick={() => toggleExpanded(node.collection.id)}
-      >
-        <span className="text-text-muted shrink-0">
-          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </span>
-        <FolderOpen size={13} className="text-text-muted shrink-0" />
-        {isRenaming ? (
-          <input
-            autoFocus
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={handleRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleRename();
-              if (e.key === 'Escape') setIsRenaming(false);
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="flex-1 text-xs bg-bg-tertiary border border-accent px-1.5 py-0.5 rounded text-text-primary focus:outline-none"
-          />
-        ) : (
-          <span className="text-xs font-medium text-text-primary truncate flex-1">{node.collection.name}</span>
-        )}
-        <span className="text-[9px] text-text-muted shrink-0">{node.requests.length}</span>
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
-            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-bg-active text-text-muted transition-all"
-          >
-            <MoreHorizontal size={12} />
-          </button>
-          {showMenu && (
-            <div className="absolute right-0 top-full mt-1 w-36 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 py-1 animate-fade-in">
-              <button
-                onClick={(e) => { e.stopPropagation(); onNewRequest(node.collection.id); setShowMenu(false); }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
-              >
-                <Plus size={12} /> New Request
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); setIsRenaming(true); setShowMenu(false); }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
-              >
-                <Pencil size={12} /> Rename
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); deleteCollection(node.collection.id); setShowMenu(false); }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-error hover:bg-error/10 transition-colors"
-              >
-                <Trash2 size={12} /> Delete
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div>
-          {node.requests.map((req) => (
-            <RequestRow
-              key={req.id}
-              req={req}
-              depth={depth}
-              isSelected={selectedRequestId === req.id}
-              onSelect={onSelectRequest}
-              onDelete={deleteRequest}
-            />
-          ))}
-          {pendingForCollection.map((tab) => (
-            <div
-              key={tab.id}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg opacity-50 ghost-tab-shimmer cursor-wait"
-              style={{ paddingLeft: `${24 + depth * 16}px` }}
-            >
-              <Loader2 size={10} className="text-accent animate-spin shrink-0 w-8" />
-              <span className="text-xs truncate flex-1">{tab.name || 'Creating...'}</span>
-            </div>
-          ))}
-          {node.children.map((child) => (
-            <CollectionNode
-              key={child.collection.id}
-              node={child}
-              depth={depth + 1}
-              selectedRequestId={selectedRequestId}
-              onSelectRequest={onSelectRequest}
-              onNewRequest={onNewRequest}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function RequestsView() {
-  const collections = useCollectionStore((s) => s.collections);
-  const requests = useCollectionStore((s) => s.requests);
-  const createCollection = useCollectionStore((s) => s.createCollection);
-  const loadRequests = useCollectionStore((s) => s.loadRequests);
-  const activeRequest = useRequestStore((s) => s.activeRequest);
-  const openTab = useRequestStore((s) => s.openTab);
-  const newRequest = useRequestStore((s) => s.newRequest);
-  const saveRequest = useRequestStore((s) => s.saveRequest);
-  const openTabs = useRequestStore((s) => s.openTabs);
-  const pendingTabIds = useRequestStore((s) => s.pendingTabIds);
   const activeProtocol = useUiStore((s) => s.activeProtocol);
-  const [search, setSearch] = useState('');
-  const [selectedReqId, setSelectedReqId] = useState<string | null>(null);
+  const showAgent = useUiStore((s) => s.aiPanelOpen);
+  const toggleAgent = useUiStore((s) => s.toggleAiPanel);
 
-  const pendingUncollectedTabs = useMemo(
-    () => openTabs.filter(t => pendingTabIds.includes(t.id) && !t.collectionId),
-    [openTabs, pendingTabIds]
-  );
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    return stored ? Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, Number(stored))) : DEFAULT_SIDEBAR_WIDTH;
+  });
 
-  useEffect(() => {
-    if (activeRequest?.id) {
-      setSelectedReqId(activeRequest.id);
-    }
-  }, [activeRequest?.id]);
+  const [agentWidth, setAgentWidth] = useState(() => {
+    const stored = localStorage.getItem(AGENT_WIDTH_KEY);
+    return stored ? Math.max(MIN_AGENT_WIDTH, Math.min(MAX_AGENT_WIDTH, Number(stored))) : DEFAULT_AGENT_WIDTH;
+  });
 
-  const [isCreatingCollection, setIsCreatingCollection] = useState(false);
-  const [newCollectionName, setNewCollectionName] = useState('');
-
-  const tree = useMemo(() => {
-    const buildNode = (col: typeof collections[number]): CollectionTreeNode => ({
-      collection: col,
-      children: collections
-        .filter((c) => c.parentId === col.id)
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map(buildNode),
-      requests: requests[col.id] || [],
-    });
-    return collections
-      .filter((c) => !c.parentId)
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map(buildNode);
-  }, [collections, requests]);
-
-  const handleSelectRequest = useCallback((req: ApiRequest) => {
-    openTab(req);
-    setSelectedReqId(req.id);
-  }, [openTab]);
-
-  const handleNewRequest = useCallback(async (collectionId: string) => {
-    newRequest(collectionId);
-    const req = useRequestStore.getState().activeRequest;
-    await saveRequest();
-    setSelectedReqId(req.id);
-    loadRequests(collectionId);
-  }, [newRequest, saveRequest, loadRequests]);
-
-  const handleCreateCollection = useCallback(async () => {
-    if (newCollectionName.trim()) {
-      await createCollection(newCollectionName.trim());
-      setNewCollectionName('');
-      setIsCreatingCollection(false);
-    }
-  }, [newCollectionName, createCollection]);
-
-  const handleNewFreeRequest = useCallback(() => {
-    newRequest();
-    const req = useRequestStore.getState().activeRequest;
-    setSelectedReqId(req.id);
-  }, [newRequest]);
-
-  const filteredTree = useMemo(() => {
-    if (!search.trim()) return tree;
-    const q = search.toLowerCase();
-    const filterNode = (node: CollectionTreeNode): CollectionTreeNode | null => {
-      const matchingRequests = node.requests.filter(
-        (r) => r.name.toLowerCase().includes(q) || r.url.toLowerCase().includes(q) || r.method.toLowerCase().includes(q)
-      );
-      const matchingChildren = node.children.map(filterNode).filter(Boolean) as CollectionTreeNode[];
-      if (matchingRequests.length > 0 || matchingChildren.length > 0 || node.collection.name.toLowerCase().includes(q)) {
-        return { ...node, requests: matchingRequests, children: matchingChildren };
-      }
-      return null;
+  const handleSidebarResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    let lastX = e.clientX;
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - lastX;
+      lastX = ev.clientX;
+      setSidebarWidth(prev => Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, prev + delta)));
     };
-    return tree.map(filterNode).filter(Boolean) as CollectionTreeNode[];
-  }, [tree, search]);
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setSidebarWidth(prev => {
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(prev));
+        return prev;
+      });
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
+
+  const handleAgentResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    let lastX = e.clientX;
+    const onMove = (ev: MouseEvent) => {
+      const delta = lastX - ev.clientX;
+      lastX = ev.clientX;
+      setAgentWidth(prev => {
+        const next = Math.max(MIN_AGENT_WIDTH, Math.min(MAX_AGENT_WIDTH, prev + delta));
+        return next;
+      });
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setAgentWidth(prev => {
+        localStorage.setItem(AGENT_WIDTH_KEY, String(prev));
+        return prev;
+      });
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
 
   return (
     <div className="h-full flex overflow-hidden">
-      {/* Sidebar */}
-      <div className="w-72 border-r border-border bg-bg-secondary flex flex-col shrink-0">
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-3 border-b border-border">
-          <h2 className="text-sm font-semibold text-text-primary">Requests</h2>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleNewFreeRequest}
-              className="p-1.5 rounded-lg hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
-              title="New Request"
-            >
-              <Plus size={14} />
-            </button>
-            <button
-              onClick={() => setIsCreatingCollection(true)}
-              className="p-1.5 rounded-lg hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
-              title="New Collection"
-            >
-              <FolderPlus size={14} />
-            </button>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="px-3 py-2">
-          <div className="relative">
-            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter requests..."
-              className="w-full pl-7 pr-2 py-1.5 text-xs rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* Tree */}
-        <div className="flex-1 overflow-y-auto px-1 py-1">
-          {isCreatingCollection && (
-            <div className="flex items-center gap-1.5 px-2 py-1.5 mb-1">
-              <FolderPlus size={13} className="text-accent shrink-0" />
-              <input
-                autoFocus
-                value={newCollectionName}
-                onChange={(e) => setNewCollectionName(e.target.value)}
-                onBlur={handleCreateCollection}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleCreateCollection();
-                  if (e.key === 'Escape') setIsCreatingCollection(false);
-                }}
-                placeholder="Collection name..."
-                className="flex-1 text-xs bg-bg-tertiary border border-accent px-2 py-1 rounded text-text-primary placeholder:text-text-muted focus:outline-none"
-              />
-            </div>
-          )}
-
-          {filteredTree.length === 0 && !isCreatingCollection && (
-            <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-              <FolderOpen size={24} className="text-text-muted opacity-30 mb-3" />
-              <p className="text-xs text-text-muted mb-1">No collections yet</p>
-              <p className="text-[10px] text-text-muted mb-4">Create a collection to organize your requests</p>
-              <button
-                onClick={() => setIsCreatingCollection(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors"
-              >
-                <FolderPlus size={12} />
-                New Collection
-              </button>
-            </div>
-          )}
-
-          {pendingUncollectedTabs.map((tab) => (
-            <div
-              key={tab.id}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg opacity-50 ghost-tab-shimmer cursor-wait"
-              style={{ paddingLeft: '24px' }}
-            >
-              <Loader2 size={10} className="text-accent animate-spin shrink-0 w-8" />
-              <span className="text-xs truncate flex-1">{tab.name || 'Creating...'}</span>
-            </div>
-          ))}
-
-          {filteredTree.map((node) => (
-            <CollectionNode
-              key={node.collection.id}
-              node={node}
-              depth={0}
-              selectedRequestId={selectedReqId}
-              onSelectRequest={handleSelectRequest}
-              onNewRequest={handleNewRequest}
-            />
-          ))}
+      <div className="flex shrink-0" style={{ width: sidebarWidth }}>
+        <RequestSidebar />
+        <div
+          onMouseDown={handleSidebarResize}
+          className="w-1 bg-border hover:bg-accent/40 cursor-col-resize shrink-0 group flex items-center justify-center transition-colors"
+        >
+          <div className="h-8 w-0.5 rounded-full bg-text-muted/20 group-hover:bg-accent/60 transition-colors" />
         </div>
       </div>
 
-      {/* Detail panel */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {selectedReqId && activeProtocol === 'grpc' ? (
-          <GrpcRequestView />
-        ) : selectedReqId ? (
-          <ResizableSplit />
-        ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-3 text-text-muted">
-              <Send size={32} className="opacity-20" />
-              <p className="text-sm">Select a request or create a new one</p>
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  onClick={handleNewFreeRequest}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors"
-                >
-                  <Plus size={12} />
-                  New Request
-                </button>
-              </div>
+      <div className="flex-1 flex overflow-hidden relative">
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {activeProtocol === 'grpc' ? (
+            <GrpcRequestView />
+          ) : (
+            <ResizableSplit />
+          )}
+        </div>
+
+        {showAgent && (
+          <div className="flex shrink-0" style={{ width: agentWidth }}>
+            {/* Drag handle */}
+            <div
+              onMouseDown={handleAgentResize}
+              className="w-1 bg-border hover:bg-accent/40 cursor-col-resize shrink-0 group flex items-center justify-center transition-colors"
+            >
+              <div className="h-8 w-0.5 rounded-full bg-text-muted/20 group-hover:bg-accent/60 transition-colors" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <AgentPanel />
             </div>
           </div>
+        )}
+
+        {!showAgent && (
+          <button
+            onClick={toggleAgent}
+            className="absolute bottom-4 right-4 z-10 flex items-center gap-2 px-4 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white shadow-lg shadow-accent/25 hover:shadow-accent/40 transition-all text-xs font-medium"
+          >
+            <Sparkles size={14} />
+            AI Assist
+          </button>
         )}
       </div>
     </div>
