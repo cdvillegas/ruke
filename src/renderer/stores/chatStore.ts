@@ -169,6 +169,7 @@ interface ChatState {
   error: string | null;
   streamingMessageId: string | null;
   streamTick: number;
+  abortController: AbortController | null;
 
   getActiveSession: () => ChatSession;
   setActiveSession: (id: string) => void;
@@ -177,6 +178,7 @@ interface ChatState {
   archiveSession: (id: string) => void;
   unarchiveSession: (id: string) => void;
   sendMessage: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
+  stopGeneration: () => void;
   appendMessage: (msg: ChatMessage) => void;
   updateMessageContent: (messageId: string, delta: string) => void;
   upsertToolCall: (messageId: string, toolCall: ChatToolCall) => void;
@@ -194,6 +196,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
   streamingMessageId: null,
   streamTick: 0,
+  abortController: null,
 
   getActiveSession: () => {
     const { sessions, activeSessionId } = get();
@@ -290,7 +293,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     const updatedSessions = sessions.map(s => s.id === activeSessionId ? updatedSession : s);
-    set({ sessions: updatedSessions, isRunning: true, error: null });
+    const controller = new AbortController();
+    set({ sessions: updatedSessions, isRunning: true, error: null, abortController: controller });
     saveSessions(updatedSessions);
 
     await runAgent(
@@ -308,9 +312,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         onToolCallDelta: (messageId, toolCall) => {
           get().upsertToolCall(messageId, toolCall);
         },
-        onToolStart: (messageId, toolCall) => {
-          get().setStreamingMessage(null);
-          get().updateToolCall(messageId, toolCall.id, { status: 'running' });
+        onToolStart: (_messageId, toolCall) => {
+          get().upsertToolCall(_messageId, toolCall);
         },
         onToolEnd: (messageId, toolCallId, result) => {
           get().updateToolCall(messageId, toolCallId, { status: 'done', result });
@@ -320,15 +323,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
         },
         onDone: () => {
           get().setStreamingMessage(null);
-          set({ isRunning: false });
+          set({ isRunning: false, abortController: null });
           saveSessions(get().sessions);
         },
       },
       {
         systemPrompt: AGENT_SYSTEM_PROMPT,
         extraContext: buildRequestContext(),
+        abortSignal: controller.signal,
       },
     );
+  },
+
+  stopGeneration: () => {
+    const { abortController } = get();
+    if (abortController) {
+      abortController.abort();
+    }
   },
 
   appendMessage: (msg) => {
@@ -392,7 +403,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
         return { ...sess, messages, updatedAt: new Date().toISOString() };
       });
-      saveSessions(sessions);
       return { sessions, streamTick: s.streamTick + 1 };
     });
   },

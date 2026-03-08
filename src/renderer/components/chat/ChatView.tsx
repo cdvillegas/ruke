@@ -1,16 +1,16 @@
-import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useUiStore } from '../../stores/uiStore';
 import {
   Send, Plus, Loader2, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, PanelLeftClose, PanelLeft,
+  Square,
 } from 'lucide-react';
 import { ChatSidebar } from './ChatSidebar';
-import { ToolCallCard } from '../shared/ToolCallCard';
-import { AssistantMessage } from '../shared/markdownComponents';
+import { MessageBubble } from '../shared/MessageBubble';
 import { AttachmentChip } from '../shared/AttachmentChip';
-import type { ChatMessage, ChatAttachment } from '@shared/types';
+import type { ChatAttachment } from '@shared/types';
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
 function hasAiKey(): boolean {
@@ -23,57 +23,6 @@ const SUGGESTIONS = [
   { label: 'Create a collection', prompt: 'Create a collection of common REST API requests for testing' },
   { label: 'Set up environments', prompt: 'Help me set up dev and production environments with different API keys' },
 ];
-
-function StreamingText({ content }: { content: string }) {
-  return (
-    <div className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
-      {content}
-      <span className="inline-block w-[2px] h-[1em] bg-accent/70 align-text-bottom ml-0.5 animate-pulse" />
-    </div>
-  );
-}
-
-function MessageBubble({ message, isStreaming }: { message: ChatMessage; isStreaming: boolean }) {
-  if (message.role === 'tool') return null;
-
-  if (message.role === 'user') {
-    const displayContent = message.attachments?.length
-      ? (message.content || '').replace(/<file[\s\S]*?<\/file>/g, '').trim()
-      : message.content;
-
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] overflow-hidden bg-accent/15 border border-accent/20 rounded-2xl rounded-br-md px-4 py-2.5 space-y-2">
-          {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {message.attachments.map((a, i) => (
-                <AttachmentChip key={i} attachment={a} />
-              ))}
-            </div>
-          )}
-          {displayContent && (
-            <p className="text-sm text-text-primary whitespace-pre-wrap break-words">{displayContent}</p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex justify-start">
-      <div className="max-w-[85%] space-y-2">
-        {message.content && (
-          isStreaming
-            ? <StreamingText content={message.content} />
-            : <AssistantMessage content={message.content} />
-        )}
-        {message.toolCalls?.map(tc => (
-          <ToolCallCard key={tc.id} toolCall={tc} />
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function EmptyState({ onSuggestion }: { onSuggestion: (prompt: string) => void }) {
   const connections = useConnectionStore(s => s.connections);
@@ -138,7 +87,12 @@ function EmptyState({ onSuggestion }: { onSuggestion: (prompt: string) => void }
 
 function ChatPanel() {
   const session = useChatStore(s => s.getActiveSession());
-  const { isRunning, error, sendMessage, newChat, activeSessionId } = useChatStore();
+  const isRunning = useChatStore(s => s.isRunning);
+  const error = useChatStore(s => s.error);
+  const sendMessage = useChatStore(s => s.sendMessage);
+  const stopGeneration = useChatStore(s => s.stopGeneration);
+  const newChat = useChatStore(s => s.newChat);
+  const activeSessionId = useChatStore(s => s.activeSessionId);
   const streamingMessageId = useChatStore(s => s.streamingMessageId);
   const streamTick = useChatStore(s => s.streamTick);
   const connections = useConnectionStore(s => s.connections);
@@ -148,16 +102,39 @@ function ChatPanel() {
   const dragCounter = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
 
-  const visibleMessages = session.messages.filter(m => m.role !== 'tool');
+  const visibleMessages = useMemo(
+    () => session.messages.filter(m => m.role !== 'tool'),
+    [session.messages]
+  );
   const isEmpty = visibleMessages.length === 0 && !isRunning;
   const canSend = (!isRunning) && (input.trim() || attachedFiles.length > 0);
 
+  const hasToolsRunning = useMemo(() => {
+    const last = visibleMessages[visibleMessages.length - 1];
+    if (!last || last.role !== 'assistant') return false;
+    return last.toolCalls?.some(tc => tc.status === 'pending' || tc.status === 'running') ?? false;
+  }, [visibleMessages]);
+
+  const showThinking = isRunning && !streamingMessageId && !hasToolsRunning &&
+    visibleMessages[visibleMessages.length - 1]?.role !== 'assistant';
+
   useLayoutEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
   }, [session.messages, isRunning, streamTick]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -315,7 +292,7 @@ function ChatPanel() {
               />
             ))}
 
-            {isRunning && !streamingMessageId && visibleMessages[visibleMessages.length - 1]?.role !== 'assistant' && (
+            {showThinking && (
               <div className="flex justify-start">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <Loader2 size={14} className="text-accent animate-spin" />
@@ -352,41 +329,53 @@ function ChatPanel() {
               </div>
             )}
             <div className="flex items-end gap-2">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  isRunning
-                    ? 'Thinking...'
-                    : attachedFiles.length > 0
+              {isRunning ? (
+                <div className="flex items-center gap-2 flex-1 py-1">
+                  <Loader2 size={14} className="text-accent animate-spin shrink-0" />
+                  <span className="text-sm text-text-muted">Thinking...</span>
+                </div>
+              ) : (
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    attachedFiles.length > 0
                       ? 'Add a message or press Enter to send...'
                       : 'Ask Ruke anything about APIs...'
-                }
-                disabled={isRunning}
-                rows={1}
-                className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-32 py-1 disabled:opacity-60"
-                style={{ height: 'auto', overflow: 'hidden' }}
-                onInput={(e) => {
-                  const t = e.target as HTMLTextAreaElement;
-                  t.style.height = 'auto';
-                  t.style.height = Math.min(t.scrollHeight, 128) + 'px';
-                }}
-              />
-              <button
-                onClick={handleSend}
-                disabled={!canSend}
-                className={`shrink-0 p-2 rounded-xl transition-all ${
-                  isRunning
-                    ? 'bg-accent text-white send-btn-waiting'
-                    : canSend
+                  }
+                  rows={1}
+                  className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-32 py-1"
+                  style={{ height: 'auto', overflow: 'hidden' }}
+                  onInput={(e) => {
+                    const t = e.target as HTMLTextAreaElement;
+                    t.style.height = 'auto';
+                    t.style.height = Math.min(t.scrollHeight, 128) + 'px';
+                  }}
+                />
+              )}
+              {isRunning ? (
+                <button
+                  onClick={stopGeneration}
+                  className="shrink-0 p-2 rounded-xl transition-all bg-bg-tertiary hover:bg-bg-hover text-text-secondary hover:text-text-primary border border-border"
+                  title="Stop generation"
+                >
+                  <Square size={16} />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={!canSend}
+                  className={`shrink-0 p-2 rounded-xl transition-all ${
+                    canSend
                       ? 'bg-accent hover:bg-accent-hover text-white shadow-[0_0_12px_rgba(59,130,246,0.3)]'
                       : 'bg-accent/20 text-white/30 cursor-not-allowed'
-                }`}
-              >
-                {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-              </button>
+                  }`}
+                >
+                  <Send size={16} />
+                </button>
+              )}
             </div>
           </div>
           <p className="text-[10px] text-text-muted text-center mt-2 opacity-60">

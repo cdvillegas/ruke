@@ -100,6 +100,7 @@ export interface AgentCallbacks {
 export interface AgentRunOptions {
   systemPrompt?: string;
   extraContext?: string;
+  abortSignal?: AbortSignal;
 }
 
 const DEFAULT_AGENT_INSTRUCTIONS = `You are Rüke, an expert API development assistant. You help users create, organize, and manage API requests through natural conversation.
@@ -121,10 +122,7 @@ Key behaviors:
 - When asked to create "a bunch" or "several" requests, create at least 5-8 varied examples.
 - ALWAYS use create_requests (plural) to create multiple requests in a single tool call. NEVER call create_request multiple times in a row — batch them into one create_requests call.`;
 
-// Yield to the browser so React can flush state updates to the DOM.
-// Uses rAF + setTimeout to guarantee we cross a paint boundary.
-const yieldToPaint = () =>
-  new Promise<void>(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+const DELTA_BATCH_MS = 40;
 
 export async function runAgent(
   sessionMessages: ChatMessage[],
@@ -152,13 +150,33 @@ export async function runAgent(
   let currentMsgEmitted = false;
   let stepHasContent = false;
 
-  const emitMessage = () => {
+  let pendingDelta = '';
+  let batchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const flushDelta = () => {
+    if (batchTimer !== null) {
+      clearTimeout(batchTimer);
+      batchTimer = null;
+    }
+    if (!pendingDelta) return;
+    const delta = pendingDelta;
+    pendingDelta = '';
+    callbacks.onContentDelta(currentMsgId, delta);
+  };
+
+  const scheduleDeltaFlush = () => {
+    if (batchTimer === null) {
+      batchTimer = setTimeout(flushDelta, DELTA_BATCH_MS);
+    }
+  };
+
+  const emitMessage = (initialContent?: string) => {
     if (currentMsgEmitted) return;
     currentMsgEmitted = true;
     callbacks.onMessage({
       id: currentMsgId,
       role: 'assistant',
-      content: '',
+      content: initialContent || '',
       toolCalls: [],
       timestamp: new Date().toISOString(),
     });
@@ -173,8 +191,10 @@ export async function runAgent(
       toolChoice: 'auto',
       stopWhen: stepCountIs(MAX_STEPS),
       maxOutputTokens: 4096,
+      abortSignal: options?.abortSignal,
 
       experimental_onToolCallStart(event) {
+        flushDelta();
         callbacks.onToolStart(currentMsgId, {
           id: event.toolCall.toolCallId,
           name: event.toolCall.toolName as string,
@@ -202,12 +222,12 @@ export async function runAgent(
       },
     });
 
-    // Process the stream chunk by chunk, yielding to the browser between
-    // UI-visible events so React can paint each update individually.
-    // This is what makes text appear token-by-token instead of in bursts.
     for await (const part of result.fullStream) {
+      if (options?.abortSignal?.aborted) break;
+
       switch (part.type) {
         case 'start-step':
+          flushDelta();
           if (stepHasContent) {
             currentMsgId = nanoid();
             currentMsgEmitted = false;
@@ -217,14 +237,18 @@ export async function runAgent(
 
         case 'text-delta':
           if (part.text) {
-            emitMessage();
             stepHasContent = true;
-            callbacks.onContentDelta(currentMsgId, part.text);
-            await yieldToPaint();
+            if (!currentMsgEmitted) {
+              emitMessage(part.text);
+            } else {
+              pendingDelta += part.text;
+              scheduleDeltaFlush();
+            }
           }
           break;
 
         case 'tool-input-start':
+          flushDelta();
           emitMessage();
           stepHasContent = true;
           callbacks.onToolCallDelta(currentMsgId, {
@@ -233,10 +257,10 @@ export async function runAgent(
             arguments: '',
             status: 'pending',
           });
-          await yieldToPaint();
           break;
 
         case 'tool-call':
+          flushDelta();
           emitMessage();
           stepHasContent = true;
           callbacks.onToolCallDelta(currentMsgId, {
@@ -245,10 +269,11 @@ export async function runAgent(
             arguments: JSON.stringify(part.input),
             status: 'pending',
           });
-          await yieldToPaint();
           break;
       }
     }
+
+    flushDelta();
 
     if (!currentMsgEmitted && !stepHasContent) {
       const text = await result.text;
@@ -262,7 +287,12 @@ export async function runAgent(
       }
     }
   } catch (e: any) {
-    callbacks.onError(e.message || 'Agent error');
+    if (batchTimer !== null) clearTimeout(batchTimer);
+    if (options?.abortSignal?.aborted) {
+      // Aborted by user -- not an error
+    } else {
+      callbacks.onError(e.message || 'Agent error');
+    }
   }
 
   callbacks.onDone();

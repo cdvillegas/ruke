@@ -3,15 +3,14 @@ import {
   Send, Plus, Loader2, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, X,
   Archive, Trash2, ArchiveRestore, PanelRightClose,
-  MessageSquare,
+  MessageSquare, Square,
 } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useUiStore } from '../../stores/uiStore';
-import { ToolCallCard } from '../shared/ToolCallCard';
-import { AssistantMessage } from '../shared/markdownComponents';
+import { MessageBubble } from '../shared/MessageBubble';
 import { AttachmentChip } from '../shared/AttachmentChip';
-import type { ChatMessage, ChatAttachment } from '@shared/types';
+import type { ChatAttachment } from '@shared/types';
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
 
@@ -25,57 +24,6 @@ const SUGGESTIONS = [
   { label: 'Import requests', prompt: 'I have some curl commands I want to convert to requests' },
   { label: 'Organize requests', prompt: 'Help me organize my requests into collections' },
 ];
-
-function StreamingText({ content }: { content: string }) {
-  return (
-    <div className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
-      {content}
-      <span className="inline-block w-[2px] h-[1em] bg-accent/70 align-text-bottom ml-0.5 animate-pulse" />
-    </div>
-  );
-}
-
-function MessageBubble({ message, isStreaming }: { message: ChatMessage; isStreaming: boolean }) {
-  if (message.role === 'tool') return null;
-
-  if (message.role === 'user') {
-    const displayContent = message.attachments?.length
-      ? (message.content || '').replace(/<file[\s\S]*?<\/file>/g, '').trim()
-      : message.content;
-
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] overflow-hidden bg-accent/15 border border-accent/20 rounded-2xl rounded-br-md px-4 py-2.5 space-y-2">
-          {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {message.attachments.map((a, i) => (
-                <AttachmentChip key={i} attachment={a} />
-              ))}
-            </div>
-          )}
-          {displayContent && (
-            <p className="text-sm text-text-primary whitespace-pre-wrap break-words">{displayContent}</p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex justify-start">
-      <div className="max-w-[90%] space-y-2">
-        {message.content && (
-          isStreaming
-            ? <StreamingText content={message.content} />
-            : <AssistantMessage content={message.content} />
-        )}
-        {message.toolCalls?.map(tc => (
-          <ToolCallCard key={tc.id} toolCall={tc} />
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function SessionTab({ id, title, isActive, onClick, onClose }: {
   id: string;
@@ -117,6 +65,7 @@ export function AgentPanel() {
   const unarchiveSession = useChatStore(s => s.unarchiveSession);
   const deleteSession = useChatStore(s => s.deleteSession);
   const sendMessage = useChatStore(s => s.sendMessage);
+  const stopGeneration = useChatStore(s => s.stopGeneration);
   const setError = useChatStore(s => s.setError);
   const closePanel = useUiStore(s => s.toggleAiPanel);
 
@@ -127,6 +76,7 @@ export function AgentPanel() {
   const dragCounter = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
 
   const streamingMessageId = useChatStore(s => s.streamingMessageId);
   const streamTick = useChatStore(s => s.streamTick);
@@ -146,11 +96,30 @@ export function AgentPanel() {
   const isEmpty = visibleMessages.length === 0 && !isRunning;
   const canSend = !isRunning && (input.trim() || attachedFiles.length > 0);
 
+  const hasToolsRunning = useMemo(() => {
+    const last = visibleMessages[visibleMessages.length - 1];
+    if (!last || last.role !== 'assistant') return false;
+    return last.toolCalls?.some(tc => tc.status === 'pending' || tc.status === 'running') ?? false;
+  }, [visibleMessages]);
+
+  const showThinking = isRunning && !streamingMessageId && !hasToolsRunning &&
+    visibleMessages[visibleMessages.length - 1]?.role !== 'assistant';
+
   useLayoutEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
   }, [activeSession.messages, isRunning, streamTick]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -405,9 +374,11 @@ export function AgentPanel() {
                 key={msg.id}
                 message={msg}
                 isStreaming={msg.id === streamingMessageId}
+                maxWidth="max-w-[90%]"
+                userMaxWidth="max-w-[85%]"
               />
             ))}
-            {isRunning && !streamingMessageId && visibleMessages[visibleMessages.length - 1]?.role !== 'assistant' && (
+            {showThinking && (
               <div className="flex justify-start">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <Loader2 size={14} className="text-accent animate-spin" />
@@ -445,6 +416,7 @@ export function AgentPanel() {
             <div className="flex items-end gap-2">
               {isRunning ? (
                 <div className="flex items-center gap-2 flex-1 py-1">
+                  <Loader2 size={14} className="text-accent animate-spin shrink-0" />
                   <span className="text-sm text-text-muted">Thinking...</span>
                 </div>
               ) : (
@@ -464,19 +436,27 @@ export function AgentPanel() {
                   }}
                 />
               )}
-              <button
-                onClick={handleSend}
-                disabled={!canSend}
-                className={`shrink-0 p-1.5 rounded-lg transition-all ${
-                  isRunning
-                    ? 'bg-accent text-white send-btn-waiting'
-                    : canSend
+              {isRunning ? (
+                <button
+                  onClick={stopGeneration}
+                  className="shrink-0 p-1.5 rounded-lg transition-all bg-bg-tertiary hover:bg-bg-hover text-text-secondary hover:text-text-primary border border-border"
+                  title="Stop generation"
+                >
+                  <Square size={14} />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={!canSend}
+                  className={`shrink-0 p-1.5 rounded-lg transition-all ${
+                    canSend
                       ? 'bg-accent hover:bg-accent-hover text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]'
                       : 'bg-accent/20 text-white/30 cursor-not-allowed'
-                }`}
-              >
-                {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-              </button>
+                  }`}
+                >
+                  <Send size={14} />
+                </button>
+              )}
             </div>
           </div>
         </div>

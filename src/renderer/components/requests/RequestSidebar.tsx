@@ -42,27 +42,24 @@ function RequestItemMenu({
       className="absolute right-0 top-full mt-1 z-50 w-44 py-1 rounded-lg bg-bg-secondary border border-border shadow-xl"
     >
       {!isArchived && collections.length > 0 && (
-        <div className="relative">
+        <>
           <button
             onClick={(e) => { e.stopPropagation(); setShowMoveMenu(!showMoveMenu); }}
             className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
           >
             <FolderInput size={12} /> Move to Collection
+            <ChevronRight size={10} className={`ml-auto transition-transform ${showMoveMenu ? 'rotate-90' : ''}`} />
           </button>
-          {showMoveMenu && (
-            <div className="absolute left-full top-0 ml-1 w-40 py-1 rounded-lg bg-bg-secondary border border-border shadow-xl z-50">
-              {collections.map(c => (
-                <button
-                  key={c.id}
-                  onClick={(e) => { e.stopPropagation(); moveToCollection(req.id, c.id); onClose(); }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors truncate"
-                >
-                  <FolderOpen size={11} className="shrink-0" /> {c.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+          {showMoveMenu && collections.map(c => (
+            <button
+              key={c.id}
+              onClick={(e) => { e.stopPropagation(); moveToCollection(req.id, c.id); onClose(); }}
+              className="flex items-center gap-2 w-full pl-7 pr-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors truncate"
+            >
+              <FolderOpen size={11} className="shrink-0" /> {c.name}
+            </button>
+          ))}
+        </>
       )}
       {isArchived ? (
         <button
