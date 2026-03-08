@@ -245,6 +245,8 @@ interface ChatState {
   newChat: () => void;
   closeTab: (id: string) => void;
   deleteSession: (id: string) => void;
+  archiveSession: (id: string) => void;
+  unarchiveSession: (id: string) => void;
   loadFromHistory: (id: string) => void;
   sendMessage: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
   stopGeneration: () => void;
@@ -356,6 +358,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
     saveTabState(newTabs, newActive);
   },
 
+  archiveSession: (id) => {
+    const { sessions, openTabIds, activeSessionId, runningSessionId, abortController } = get();
+    if (id === runningSessionId && abortController) {
+      abortController.abort();
+    }
+    const updated = sessions.map(s => s.id === id ? { ...s, archived: true } : s);
+    const newTabs = openTabIds.filter(tid => tid !== id);
+    let newActive = activeSessionId;
+    if (id === activeSessionId) {
+      const closedIdx = openTabIds.indexOf(id);
+      newActive = newTabs[Math.min(closedIdx, newTabs.length - 1)] || '';
+    }
+    const nowRunning = id === runningSessionId ? null : runningSessionId;
+    set({
+      sessions: updated,
+      openTabIds: newTabs,
+      activeSessionId: newActive,
+      error: null,
+      runningSessionId: nowRunning,
+      isRunning: nowRunning === newActive,
+      abortController: id === runningSessionId ? null : abortController,
+      streamingMessageId: id === runningSessionId ? null : get().streamingMessageId,
+    });
+    saveSessions(updated);
+    saveTabState(newTabs, newActive);
+  },
+
+  unarchiveSession: (id) => {
+    const { sessions } = get();
+    const updated = sessions.map(s => s.id === id ? { ...s, archived: false } : s);
+    set({ sessions: updated });
+    saveSessions(updated);
+  },
+
   loadFromHistory: (id) => {
     const { openTabIds, sessions, runningSessionId } = get();
     const session = sessions.find(s => s.id === id);
@@ -377,6 +413,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const session = sessions.find(s => s.id === activeSessionId);
     if (!session) return;
+
+    const apiKey = localStorage.getItem(AI_KEY_STORAGE);
+    if (!apiKey || apiKey.length < 10) {
+      set({ error: 'No API key found. Add your OpenAI API key in Settings.' });
+      return;
+    }
 
     const targetSessionId = activeSessionId;
 

@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } fr
 import {
   Send, Plus, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, X,
-  Clock, Trash2, Square,
-  SlidersHorizontal, Layers, Terminal, FolderOpen,
+  Clock, Trash2, Square, Search, Archive, ArchiveRestore,
+  SlidersHorizontal, Layers, Terminal, FolderOpen, ChevronRight, MessageSquare, CheckCircle2,
 } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
@@ -107,6 +107,243 @@ function SessionTab({ id, title, isActive, onClick, onClose }: {
   );
 }
 
+function getDateGroup(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+  const startOf7Days = new Date(startOfToday);
+  startOf7Days.setDate(startOf7Days.getDate() - 7);
+  const startOf30Days = new Date(startOfToday);
+  startOf30Days.setDate(startOf30Days.getDate() - 30);
+
+  if (date >= startOfToday) return 'Today';
+  if (date >= startOfYesterday) return 'Yesterday';
+  if (date >= startOf7Days) return 'Previous 7 Days';
+  if (date >= startOf30Days) return 'Previous 30 Days';
+  return 'Older';
+}
+
+type ChatSession = {
+  id: string;
+  title: string;
+  messages: { role: string }[];
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function HistoryPopover({ onClose }: { onClose: () => void }) {
+  const sessions = useChatStore(s => s.sessions);
+  const openTabIds = useChatStore(s => s.openTabIds);
+  const loadFromHistory = useChatStore(s => s.loadFromHistory);
+  const deleteSession = useChatStore(s => s.deleteSession);
+  const archiveSession = useChatStore(s => s.archiveSession);
+  const unarchiveSession = useChatStore(s => s.unarchiveSession);
+  const [search, setSearch] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    searchRef.current?.focus();
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    const handleClickOutside = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKey);
+    setTimeout(() => document.addEventListener('mousedown', handleClickOutside), 0);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [onClose]);
+
+  const activeSessions = useMemo(() => {
+    return sessions
+      .filter(s => s.messages.length > 0 && !s.archived)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }, [sessions]);
+
+  const archivedSessions = useMemo(() => {
+    return sessions
+      .filter(s => s.messages.length > 0 && s.archived)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }, [sessions]);
+
+  const filteredActive = useMemo(() => {
+    if (!search.trim()) return activeSessions;
+    const q = search.toLowerCase();
+    return activeSessions.filter(s => s.title.toLowerCase().includes(q));
+  }, [activeSessions, search]);
+
+  const filteredArchived = useMemo(() => {
+    if (!search.trim()) return archivedSessions;
+    const q = search.toLowerCase();
+    return archivedSessions.filter(s => s.title.toLowerCase().includes(q));
+  }, [archivedSessions, search]);
+
+  const grouped = useMemo(() => {
+    const groups: { label: string; sessions: ChatSession[] }[] = [];
+    const order = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'];
+    const map = new Map<string, ChatSession[]>();
+    for (const s of filteredActive) {
+      const group = getDateGroup(s.updatedAt);
+      if (!map.has(group)) map.set(group, []);
+      map.get(group)!.push(s);
+    }
+    for (const label of order) {
+      const items = map.get(label);
+      if (items && items.length > 0) groups.push({ label, sessions: items });
+    }
+    return groups;
+  }, [filteredActive]);
+
+  const handleSelect = useCallback((id: string) => {
+    loadFromHistory(id);
+    onClose();
+  }, [loadFromHistory, onClose]);
+
+  const isOpen = (id: string) => openTabIds.includes(id);
+
+  return (
+    <div
+      ref={popoverRef}
+      className="absolute top-full right-0 mt-1 w-72 max-h-[420px] flex flex-col bg-bg-primary rounded-xl border border-border shadow-xl shadow-black/20 z-50 overflow-hidden"
+      style={{ animation: 'popover-in 150ms ease-out' }}
+    >
+      <style>{`
+        @keyframes popover-in {
+          from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
+
+      {/* Search */}
+      <div className="px-2.5 pt-2.5 pb-1.5 shrink-0">
+        <div className="relative">
+          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted/40" />
+          <input
+            ref={searchRef}
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search chats..."
+            className="w-full bg-bg-secondary/80 border border-border/60 rounded-lg pl-7 pr-2.5 py-1.5 text-[11px] text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-accent/40 transition-colors"
+          />
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto px-1.5 pb-1.5 scrollbar-none">
+        {grouped.length === 0 && filteredArchived.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-8 text-text-muted/40">
+            <MessageSquare size={16} className="mb-1.5" />
+            <p className="text-[11px]">{search ? 'No matching chats' : 'No chat history'}</p>
+          </div>
+        )}
+
+        {grouped.map(group => (
+          <div key={group.label}>
+            <p className="text-[9px] text-text-muted/50 font-semibold uppercase tracking-wider px-2 pt-2 pb-0.5">
+              {group.label}
+            </p>
+            {group.sessions.map(s => (
+              <HistoryItem
+                key={s.id}
+                session={s}
+                isOpen={isOpen(s.id)}
+                onSelect={() => handleSelect(s.id)}
+                onArchive={() => archiveSession(s.id)}
+                onDelete={() => deleteSession(s.id)}
+              />
+            ))}
+          </div>
+        ))}
+
+        {archivedSessions.length > 0 && (
+          <div className="mt-0.5">
+            <button
+              onClick={() => setShowArchived(!showArchived)}
+              className="flex items-center gap-1 w-full text-[9px] text-text-muted/50 font-semibold uppercase tracking-wider px-2 pt-2 pb-0.5 hover:text-text-muted transition-colors"
+            >
+              <ChevronRight
+                size={9}
+                className={`transition-transform ${showArchived ? 'rotate-90' : ''}`}
+              />
+              Archived ({archivedSessions.length})
+            </button>
+            {showArchived && filteredArchived.map(s => (
+              <HistoryItem
+                key={s.id}
+                session={s}
+                isOpen={isOpen(s.id)}
+                onSelect={() => handleSelect(s.id)}
+                onUnarchive={() => unarchiveSession(s.id)}
+                onDelete={() => deleteSession(s.id)}
+                archived
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HistoryItem({ session, isOpen, onSelect, onArchive, onUnarchive, onDelete, archived }: {
+  session: ChatSession;
+  isOpen: boolean;
+  onSelect: () => void;
+  onArchive?: () => void;
+  onUnarchive?: () => void;
+  onDelete: () => void;
+  archived?: boolean;
+}) {
+  return (
+    <div
+      onClick={onSelect}
+      className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
+        isOpen ? 'bg-accent/8 text-text-primary' : 'text-text-secondary hover:bg-bg-hover'
+      }`}
+    >
+      <CheckCircle2 size={13} className={`shrink-0 ${isOpen ? 'text-accent' : 'text-text-muted/30'}`} />
+      <span className="flex-1 text-xs truncate min-w-0">{session.title}</span>
+      <span className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        {archived && onUnarchive ? (
+          <button
+            onClick={e => { e.stopPropagation(); onUnarchive(); }}
+            className="p-1 rounded text-text-muted hover:text-accent hover:bg-accent/10 transition-colors"
+            title="Unarchive"
+          >
+            <ArchiveRestore size={12} />
+          </button>
+        ) : onArchive ? (
+          <button
+            onClick={e => { e.stopPropagation(); onArchive(); }}
+            className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-active transition-colors"
+            title="Archive"
+          >
+            <Archive size={12} />
+          </button>
+        ) : null}
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(); }}
+          className="p-1 rounded text-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors"
+          title="Delete"
+        >
+          <Trash2 size={12} />
+        </button>
+      </span>
+    </div>
+  );
+}
+
 export function AgentPanel() {
   const sessions = useChatStore(s => s.sessions);
   const activeSessionId = useChatStore(s => s.activeSessionId);
@@ -116,8 +353,6 @@ export function AgentPanel() {
   const setActiveSession = useChatStore(s => s.setActiveSession);
   const newChat = useChatStore(s => s.newChat);
   const closeTab = useChatStore(s => s.closeTab);
-  const deleteSession = useChatStore(s => s.deleteSession);
-  const loadFromHistory = useChatStore(s => s.loadFromHistory);
   const sendMessage = useChatStore(s => s.sendMessage);
   const stopGeneration = useChatStore(s => s.stopGeneration);
   const setError = useChatStore(s => s.setError);
@@ -147,11 +382,9 @@ export function AgentPanel() {
     [sessions, activeSessionId]
   );
 
-  const historySessions = useMemo(
-    () => sessions
-      .filter(s => s.messages.length > 0 && !openTabIds.includes(s.id))
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [sessions, openTabIds]
+  const hasHistory = useMemo(
+    () => sessions.some(s => s.messages.length > 0),
+    [sessions]
   );
 
   const visibleMessages = useMemo(
@@ -317,68 +550,27 @@ export function AgentPanel() {
           >
             <Plus size={13} />
           </button>
-          {historySessions.length > 0 && (
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className={`p-1 rounded-md transition-colors ${
-                showHistory
-                  ? 'text-accent bg-accent/10'
-                  : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
-              }`}
-              title="Chat history"
-            >
-              <Clock size={13} />
-            </button>
+          {hasHistory && (
+            <div className="relative">
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className={`p-1 rounded-md transition-colors ${
+                  showHistory
+                    ? 'text-accent bg-accent/10'
+                    : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
+                }`}
+                title="Chat history"
+              >
+                <Clock size={13} />
+              </button>
+              {showHistory && <HistoryPopover onClose={() => setShowHistory(false)} />}
+            </div>
           )}
         </div>
       </div>
 
-      {/* History dropdown */}
-      {showHistory && historySessions.length > 0 && (
-        <div className="border-b border-border bg-bg-secondary/30 px-2 py-1.5 max-h-48 overflow-y-auto">
-          <p className="text-[10px] text-text-muted font-medium uppercase tracking-wider px-1 mb-1">
-            History ({historySessions.length})
-          </p>
-          {historySessions.map(s => (
-            <div
-              key={s.id}
-              onClick={() => { loadFromHistory(s.id); setShowHistory(false); }}
-              className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-bg-hover transition-colors group cursor-pointer"
-            >
-              <div className="flex-1 min-w-0">
-                <span className="text-xs text-text-secondary truncate block">{s.title}</span>
-                <span className="text-[10px] text-text-muted">{s.messages.length} messages</span>
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
-                className="p-1 rounded text-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100 shrink-0"
-                title="Delete"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Content */}
-      {!hasKey ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-6">
-          <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center mb-3">
-            <Key size={20} className="text-accent" />
-          </div>
-          <h2 className="text-sm font-semibold text-text-primary mb-1">Set up AI</h2>
-          <p className="text-xs text-text-muted text-center max-w-xs mb-3">
-            Add your OpenAI API key in Settings to start using the AI assistant.
-          </p>
-          <button
-            onClick={() => useUiStore.getState().setActiveView('settings')}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors"
-          >
-            <ArrowRight size={12} /> Settings
-          </button>
-        </div>
-      ) : !hasActiveTab ? (
+      {!hasActiveTab ? (
         <div className="flex-1 flex flex-col items-center justify-center px-4">
           <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
             <Sparkles size={18} className="text-text-muted" />
@@ -392,6 +584,22 @@ export function AgentPanel() {
             className="flex items-center gap-2 px-3.5 py-2 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white transition-colors font-medium"
           >
             <Plus size={13} /> New Chat
+          </button>
+        </div>
+      ) : isEmpty && !hasKey ? (
+        <div className="flex-1 flex flex-col items-center justify-center px-6">
+          <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center mb-3">
+            <Key size={20} className="text-accent" />
+          </div>
+          <h2 className="text-sm font-semibold text-text-primary mb-1">Set up AI</h2>
+          <p className="text-xs text-text-muted text-center max-w-xs mb-3">
+            Add your OpenAI API key in Settings to start using the AI assistant.
+          </p>
+          <button
+            onClick={() => useUiStore.getState().setActiveView('settings')}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors"
+          >
+            <ArrowRight size={12} /> Settings
           </button>
         </div>
       ) : isEmpty ? (
@@ -466,7 +674,7 @@ export function AgentPanel() {
       )}
 
       {/* Input */}
-      {hasKey && hasActiveTab && (
+      {hasActiveTab && (
         <div className="shrink-0 border-t border-border p-2.5">
           <div className={`bg-bg-secondary rounded-xl border transition-colors px-3 py-1.5 ${
             isRunning
