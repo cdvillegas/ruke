@@ -17,6 +17,9 @@ interface CollectionState {
   renameCollection: (id: string, name: string) => Promise<void>;
   deleteCollection: (id: string) => Promise<void>;
   moveCollection: (id: string, newParentId: string | null) => Promise<void>;
+  reorderCollections: (orderedIds: string[]) => Promise<void>;
+  reorderRequests: (collectionId: string, orderedIds: string[]) => Promise<void>;
+  moveRequestToCollection: (requestId: string, collectionId: string, insertIndex?: number) => Promise<void>;
   toggleExpanded: (id: string) => void;
   getTree: () => CollectionTreeNode[];
 }
@@ -100,6 +103,52 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         c.id === id ? { ...c, parentId: newParentId } : c
       ),
     }));
+  },
+
+  reorderCollections: async (orderedIds) => {
+    const updates = orderedIds.map((id, i) =>
+      window.ruke.db.query('updateCollection', id, { sortOrder: i })
+    );
+    await Promise.all(updates);
+    set((s) => ({
+      collections: s.collections.map((c) => {
+        const idx = orderedIds.indexOf(c.id);
+        return idx >= 0 ? { ...c, sortOrder: idx } : c;
+      }),
+    }));
+  },
+
+  reorderRequests: async (collectionId, orderedIds) => {
+    const updates = orderedIds.map((id, i) =>
+      window.ruke.db.query('updateRequest', id, { sortOrder: i })
+    );
+    await Promise.all(updates);
+    set((s) => {
+      const reqs = s.requests[collectionId] || [];
+      const sorted = orderedIds
+        .map((id) => reqs.find((r) => r.id === id))
+        .filter(Boolean) as ApiRequest[];
+      return { requests: { ...s.requests, [collectionId]: sorted } };
+    });
+  },
+
+  moveRequestToCollection: async (requestId, collectionId, insertIndex) => {
+    const reqs = get().requests[collectionId] || [];
+    const idx = insertIndex ?? reqs.length;
+    const sortOrder = idx;
+    await window.ruke.db.query('updateRequest', requestId, { collectionId, sortOrder });
+    const shifted = reqs.map((r, i) => {
+      const newOrder = i >= idx ? i + 1 : i;
+      return { ...r, sortOrder: newOrder };
+    });
+    for (const r of shifted) {
+      if (r.sortOrder !== reqs.find((o) => o.id === r.id)?.sortOrder) {
+        await window.ruke.db.query('updateRequest', r.id, { sortOrder: r.sortOrder });
+      }
+    }
+    get().loadRequests(collectionId);
+    const { useRequestStore } = await import('./requestStore');
+    useRequestStore.getState().loadUncollectedRequests();
   },
 
   toggleExpanded: (id) => {

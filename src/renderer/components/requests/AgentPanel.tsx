@@ -4,14 +4,25 @@ import {
   Plug, Sparkles, Key, ArrowRight, FileUp, X,
   Clock, Trash2, Square, Search, Archive, ArchiveRestore,
   SlidersHorizontal, Layers, Terminal, FolderOpen, ChevronRight, MessageSquare, CheckCircle2,
+  ChevronUp, ChevronDown, Check, Bot, Eye, Infinity, Circle, Pencil, ArrowUp, Paperclip,
+  ListChecks, Loader2, XCircle, SkipForward,
 } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
+import { useEnvironmentStore } from '../../stores/environmentStore';
+import { useCollectionStore } from '../../stores/collectionStore';
+import { useRequestStore } from '../../stores/requestStore';
 import { useUiStore } from '../../stores/uiStore';
+import { usePlanStore } from '../../stores/planStore';
 import { MessageBubble } from '../shared/MessageBubble';
 import { ThinkingIndicator } from '../shared/ThinkingIndicator';
 import { AttachmentChip } from '../shared/AttachmentChip';
-import type { ChatAttachment } from '@shared/types';
+import {
+  getModelConfig, selectModel, getConfiguredProviders,
+  MANAGED_PROVIDERS, PROVIDER_META, PROVIDER_MODELS,
+  type ManagedProvider, type AgentMode,
+} from '../../lib/agentRunner';
+import type { ChatAttachment, ContextMention, ContextMentionType, Plan } from '@shared/types';
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
 
@@ -344,6 +355,159 @@ function HistoryItem({ session, isOpen, onSelect, onArchive, onUnarchive, onDele
   );
 }
 
+function PlanStepIcon({ status }: { status: string }) {
+  switch (status) {
+    case 'done': return <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />;
+    case 'in_progress': return <Loader2 size={13} className="text-amber-400 shrink-0 animate-spin" />;
+    case 'failed': return <XCircle size={13} className="text-red-400 shrink-0" />;
+    case 'skipped': return <SkipForward size={13} className="text-text-muted shrink-0" />;
+    default: return <Circle size={13} className="text-text-muted/40 shrink-0" />;
+  }
+}
+
+function planStatusColor(status: string): string {
+  switch (status) {
+    case 'in_progress': return 'bg-amber-400';
+    case 'completed': return 'bg-emerald-400';
+    case 'failed': return 'bg-red-400';
+    default: return 'bg-text-muted/30';
+  }
+}
+
+function PlansPopover({ onClose }: { onClose: () => void }) {
+  const plans = usePlanStore(s => s.plans);
+  const setActivePlan = usePlanStore(s => s.setActivePlan);
+  const deletePlan = usePlanStore(s => s.deletePlan);
+  const loadFromHistory = useChatStore(s => s.loadFromHistory);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const handleClick = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    setTimeout(() => document.addEventListener('mousedown', handleClick), 0);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [onClose]);
+
+  const handleSelect = useCallback((plan: Plan) => {
+    setActivePlan(plan.id);
+    loadFromHistory(plan.chatSessionId);
+    onClose();
+  }, [setActivePlan, loadFromHistory, onClose]);
+
+  const inProgress = plans.filter(p => p.status === 'in_progress');
+  const completed = plans.filter(p => p.status === 'completed');
+  const other = plans.filter(p => p.status === 'draft' || p.status === 'failed');
+
+  const groups = [
+    { label: 'In Progress', items: inProgress },
+    { label: 'Completed', items: completed },
+    { label: 'Draft / Failed', items: other },
+  ].filter(g => g.items.length > 0);
+
+  return (
+    <div
+      ref={popoverRef}
+      className="absolute top-full right-0 mt-1 w-72 max-h-[380px] flex flex-col bg-bg-primary rounded-xl border border-border shadow-xl shadow-black/20 z-50 overflow-hidden"
+      style={{ animation: 'popover-in 150ms ease-out' }}
+    >
+      <div className="px-3 pt-2.5 pb-1.5 shrink-0 border-b border-border">
+        <span className="text-xs font-semibold text-text-primary">Plans</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-1.5 pb-1.5 scrollbar-none">
+        {plans.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+            <ListChecks size={24} className="text-text-muted/30 mb-2" />
+            <p className="text-xs text-text-muted">No plans yet</p>
+            <p className="text-[10px] text-text-muted/60 mt-0.5">Ask the agent to plan a multi-step task</p>
+          </div>
+        ) : (
+          groups.map(group => (
+            <div key={group.label}>
+              <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                {group.label}
+              </div>
+              {group.items.map(plan => {
+                const done = plan.steps.filter(s => s.status === 'done' || s.status === 'skipped').length;
+                const total = plan.steps.length;
+                return (
+                  <div
+                    key={plan.id}
+                    onClick={() => handleSelect(plan)}
+                    className="group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover transition-colors"
+                  >
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${planStatusColor(plan.status)}`} />
+                    <span className="flex-1 text-xs truncate min-w-0 text-text-secondary group-hover:text-text-primary">{plan.title}</span>
+                    <span className="text-[10px] text-text-muted shrink-0">{done}/{total}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); deletePlan(plan.id); }}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-bg-active text-text-muted hover:text-red-400 transition-all shrink-0"
+                      title="Delete plan"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InlinePlanView({ plan }: { plan: Plan }) {
+  const [collapsed, setCollapsed] = useState(plan.status === 'completed');
+  const done = plan.steps.filter(s => s.status === 'done' || s.status === 'skipped').length;
+  const total = plan.steps.length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  useEffect(() => {
+    if (plan.status === 'completed') setCollapsed(true);
+  }, [plan.status]);
+
+  return (
+    <div className="mx-3 mt-2 mb-1 rounded-xl border border-border bg-bg-secondary/50 overflow-hidden">
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-bg-hover/50 transition-colors"
+      >
+        <ListChecks size={13} className="text-accent shrink-0" />
+        <span className="text-xs font-medium text-text-primary flex-1 text-left truncate">{plan.title}</span>
+        <span className="text-[10px] text-text-muted shrink-0">{done}/{total}</span>
+        <div className="w-12 h-1 rounded-full bg-bg-tertiary overflow-hidden shrink-0">
+          <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <ChevronRight size={12} className={`text-text-muted shrink-0 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
+      </button>
+
+      {!collapsed && (
+        <div className="px-3 pb-2 space-y-0.5">
+          {plan.steps.map(step => (
+            <div key={step.id} className="flex items-start gap-2 py-1">
+              <PlanStepIcon status={step.status} />
+              <span className={`text-xs leading-snug ${
+                step.status === 'done' ? 'text-text-muted line-through' :
+                step.status === 'in_progress' ? 'text-text-primary' :
+                step.status === 'failed' ? 'text-red-400' :
+                step.status === 'skipped' ? 'text-text-muted' :
+                'text-text-secondary'
+              }`}>{step.description}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AgentPanel() {
   const sessions = useChatStore(s => s.sessions);
   const activeSessionId = useChatStore(s => s.activeSessionId);
@@ -356,21 +520,44 @@ export function AgentPanel() {
   const sendMessage = useChatStore(s => s.sendMessage);
   const stopGeneration = useChatStore(s => s.stopGeneration);
   const setError = useChatStore(s => s.setError);
+  const messageQueue = useChatStore(s => s.messageQueue);
+  const removeQueuedMessage = useChatStore(s => s.removeQueuedMessage);
   const setAiPanelOpen = useUiStore(s => s.setAiPanelOpen);
+
+  const plans = usePlanStore(s => s.plans);
+  const activePlanId = usePlanStore(s => s.activePlanId);
+  const setActivePlan = usePlanStore(s => s.setActivePlan);
 
   const [input, setInput] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
+  const [mentions, setMentions] = useState<ContextMention[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showPlans, setShowPlans] = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [showModePicker, setShowModePicker] = useState(false);
+  const [showMentionMenu, setShowMentionMenu] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [modelTick, setModelTick] = useState(0);
+  const [agentMode, setAgentMode] = useState<AgentMode>('agent');
+  const [queueExpanded, setQueueExpanded] = useState(true);
+  const [filesExpanded, setFilesExpanded] = useState(false);
   const dragCounter = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRafRef = useRef<number | null>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
+  const modePickerRef = useRef<HTMLDivElement>(null);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
 
   const streamingMessageId = useChatStore(s => s.streamingMessageId);
   const streamTick = useChatStore(s => s.streamTick);
   const connections = useConnectionStore(s => s.connections);
+  const environments = useEnvironmentStore(s => s.environments);
+  const collections = useCollectionStore(s => s.collections);
+  const uncollectedRequests = useRequestStore(s => s.uncollectedRequests);
+  const collectionRequests = useCollectionStore(s => s.requests);
 
   const openTabs = useMemo(
     () => openTabIds.map(id => sessions.find(s => s.id === id)).filter(Boolean) as typeof sessions,
@@ -381,6 +568,14 @@ export function AgentPanel() {
     () => sessions.find(s => s.id === activeSessionId),
     [sessions, activeSessionId]
   );
+
+  const activePlan = useMemo(() => {
+    if (activePlanId) {
+      const p = plans.find(pl => pl.id === activePlanId);
+      if (p && p.chatSessionId === activeSessionId) return p;
+    }
+    return plans.find(p => p.chatSessionId === activeSessionId && (p.status === 'in_progress' || p.status === 'draft')) || null;
+  }, [activePlanId, plans, activeSessionId]);
 
   const hasHistory = useMemo(
     () => sessions.some(s => s.messages.length > 0),
@@ -393,9 +588,106 @@ export function AgentPanel() {
   );
   const hasActiveTab = !!activeSession && openTabIds.includes(activeSessionId);
   const isEmpty = visibleMessages.length === 0 && !isRunning;
-  const canSend = hasActiveTab && !isRunning && (input.trim() || attachedFiles.length > 0);
+  const canSend = hasActiveTab && (input.trim() || attachedFiles.length > 0);
+
+  const mentionItems = useMemo(() => {
+    const items: { type: ContextMentionType; id: string; label: string; meta?: string }[] = [];
+    const seenRequestIds = new Set<string>();
+    for (const r of uncollectedRequests) {
+      seenRequestIds.add(r.id);
+      items.push({ type: 'request', id: r.id, label: r.name || r.url || 'Untitled', meta: r.method });
+    }
+    for (const reqs of Object.values(collectionRequests)) {
+      for (const r of reqs) {
+        if (seenRequestIds.has(r.id)) continue;
+        seenRequestIds.add(r.id);
+        items.push({ type: 'request', id: r.id, label: r.name || r.url || 'Untitled', meta: r.method });
+      }
+    }
+    for (const c of collections) {
+      items.push({ type: 'collection', id: c.id, label: c.name });
+    }
+    for (const e of environments) {
+      items.push({ type: 'environment', id: e.id, label: e.name });
+    }
+    for (const c of connections) {
+      items.push({ type: 'connection', id: c.id, label: c.name, meta: c.baseUrl });
+    }
+    if (!mentionQuery) return items;
+    const q = mentionQuery.toLowerCase();
+    return items.filter(i => i.label.toLowerCase().includes(q) || i.meta?.toLowerCase().includes(q) || i.type.includes(q));
+  }, [uncollectedRequests, collectionRequests, collections, environments, connections, mentionQuery]);
 
   const showThinking = isRunning && !streamingMessageId;
+
+  const currentConfig = useMemo(() => {
+    void modelTick;
+    return getModelConfig();
+  }, [modelTick]);
+
+  const configuredProviders = useMemo(() => {
+    void modelTick;
+    return getConfiguredProviders();
+  }, [modelTick]);
+
+  const activeProviderLabel = useMemo(() => {
+    if (!currentConfig) return 'No AI';
+    const managed = MANAGED_PROVIDERS.find(p => p === currentConfig.provider);
+    if (managed) return PROVIDER_META[managed].label;
+    return currentConfig.provider;
+  }, [currentConfig]);
+
+  const activeModelShort = useMemo(() => {
+    if (!currentConfig) return '';
+    const provider = MANAGED_PROVIDERS.find(p => p === currentConfig.provider);
+    if (provider) {
+      const models = PROVIDER_MODELS[provider];
+      const match = models.find(m => m.id === currentConfig.model);
+      if (match) return match.label;
+    }
+    const m = currentConfig.model;
+    if (m.length > 16) return m.slice(0, 14) + '…';
+    return m;
+  }, [currentConfig]);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
+        setShowModelPicker(false);
+      }
+      if (modePickerRef.current && !modePickerRef.current.contains(e.target as Node)) {
+        setShowModePicker(false);
+      }
+      if (mentionMenuRef.current && !mentionMenuRef.current.contains(e.target as Node)) {
+        setShowMentionMenu(false);
+        setMentionQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setInput(val);
+
+    const cursor = e.target.selectionStart;
+    const textBefore = val.slice(0, cursor);
+    const atMatch = textBefore.match(/@(\w*)$/);
+    if (atMatch) {
+      setShowMentionMenu(true);
+      setMentionQuery(atMatch[1]);
+    } else {
+      setShowMentionMenu(false);
+      setMentionQuery('');
+    }
+  }, []);
+
+  const handleSelectModel = useCallback((provider: ManagedProvider, modelId: string) => {
+    selectModel(provider, modelId);
+    setModelTick(t => t + 1);
+    setShowModelPicker(false);
+  }, []);
 
   useEffect(() => {
     if (openTabIds.length === 0) {
@@ -433,8 +725,10 @@ export function AgentPanel() {
     if (!canSend) return;
     const text = input.trim();
     const files = [...attachedFiles];
+    const currentMentions = [...mentions];
     setInput('');
     setAttachedFiles([]);
+    setMentions([]);
 
     let messageContent = text;
     if (files.length > 0) {
@@ -444,20 +738,56 @@ export function AgentPanel() {
       messageContent = text ? `${text}\n\n${fileParts.join('\n\n')}` : fileParts.join('\n\n');
     }
 
-    await sendMessage(messageContent, files.length > 0 ? files : undefined);
+    await sendMessage(
+      messageContent,
+      files.length > 0 ? files : undefined,
+      agentMode,
+      currentMentions.length > 0 ? currentMentions : undefined,
+    );
     inputRef.current?.focus();
-  }, [canSend, input, attachedFiles, sendMessage]);
+  }, [canSend, input, attachedFiles, mentions, sendMessage, agentMode]);
 
   const handleSuggestion = useCallback((prompt: string) => {
-    sendMessage(prompt);
-  }, [sendMessage]);
+    sendMessage(prompt, undefined, agentMode);
+  }, [sendMessage, agentMode]);
+
+  const addMention = useCallback((item: { type: ContextMentionType; id: string; label: string; meta?: string }) => {
+    if (mentions.some(m => m.id === item.id && m.type === item.type)) return;
+    setMentions(prev => [...prev, { type: item.type, id: item.id, label: item.label, meta: item.meta }]);
+    setShowMentionMenu(false);
+    setMentionQuery('');
+
+    if (inputRef.current) {
+      const val = inputRef.current.value;
+      const atIdx = val.lastIndexOf('@');
+      if (atIdx >= 0) {
+        const before = val.slice(0, atIdx);
+        setInput(before);
+      }
+    }
+    inputRef.current?.focus();
+  }, [mentions]);
+
+  const removeMention = useCallback((id: string) => {
+    setMentions(prev => prev.filter(m => m.id !== id));
+  }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && showMentionMenu) {
+      setShowMentionMenu(false);
+      setMentionQuery('');
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
+      if (showMentionMenu) {
+        setShowMentionMenu(false);
+        setMentionQuery('');
+        return;
+      }
       e.preventDefault();
       handleSend();
     }
-  }, [handleSend]);
+  }, [handleSend, showMentionMenu]);
 
   const addFiles = useCallback(async (fileList: FileList | File[]) => {
     const files = Array.from(fileList);
@@ -483,14 +813,31 @@ export function AgentPanel() {
     e.preventDefault();
     dragCounter.current = 0;
     setIsDragging(false);
+
+    const contextData = e.dataTransfer.getData('application/ruke-context');
+    if (contextData) {
+      try {
+        const ctx = JSON.parse(contextData);
+        if (ctx.type && ctx.id && ctx.label) {
+          if (!mentions.some(m => m.id === ctx.id && m.type === ctx.type)) {
+            setMentions(prev => [...prev, { type: ctx.type, id: ctx.id, label: ctx.label, meta: ctx.meta }]);
+          }
+          inputRef.current?.focus();
+          return;
+        }
+      } catch {}
+    }
+
     if (isRunning) return;
     await addFiles(e.dataTransfer.files);
-  }, [isRunning, addFiles]);
+  }, [isRunning, addFiles, mentions]);
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     dragCounter.current++;
-    if (e.dataTransfer.types.includes('Files')) setIsDragging(true);
+    if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/ruke-context')) {
+      setIsDragging(true);
+    }
   }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
@@ -501,7 +848,11 @@ export function AgentPanel() {
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
+    if (e.dataTransfer.types.includes('application/ruke-context')) {
+      e.dataTransfer.dropEffect = 'move';
+    } else {
+      e.dataTransfer.dropEffect = 'copy';
+    }
   }, []);
 
   const handleCloseTab = useCallback((e: React.MouseEvent, id: string) => {
@@ -512,24 +863,11 @@ export function AgentPanel() {
   const hasKey = hasAiKey();
 
   return (
-    <div
-      className="h-full flex flex-col bg-bg-secondary relative"
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDragOver={handleDragOver}
-      onDrop={handleFileDrop}
+    <div className="h-full flex flex-col bg-bg-secondary relative"
     >
-      {isDragging && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-secondary/80 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-3 p-8 rounded-2xl border-2 border-dashed border-accent/50 bg-accent/5">
-            <FileUp size={32} className="text-accent" />
-            <p className="text-sm font-medium text-text-primary">Drop files here</p>
-          </div>
-        </div>
-      )}
 
       {/* Session tabs */}
-      <div className="flex items-center gap-1 px-1.5 py-1 border-b border-border shrink-0 bg-bg-secondary/40">
+      <div className="flex items-center gap-1 px-1.5 py-1.5 border-b border-border shrink-0 bg-bg-secondary/40">
         <div ref={tabsRef} className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none">
           {openTabs.map(s => (
             <SessionTab
@@ -542,26 +880,42 @@ export function AgentPanel() {
             />
           ))}
         </div>
-        <div className="flex items-center shrink-0 gap-0.5 ml-1">
+        <div className="flex items-center shrink-0 gap-1 ml-1.5">
           <button
             onClick={newChat}
-            className="p-1 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+            className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
             title="New Chat"
           >
-            <Plus size={13} />
+            <Plus size={15} />
           </button>
+          {plans.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => { setShowPlans(!showPlans); setShowHistory(false); }}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  showPlans
+                    ? 'text-accent bg-accent/10'
+                    : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
+                }`}
+                title="Plans"
+              >
+                <ListChecks size={15} />
+              </button>
+              {showPlans && <PlansPopover onClose={() => setShowPlans(false)} />}
+            </div>
+          )}
           {hasHistory && (
             <div className="relative">
               <button
-                onClick={() => setShowHistory(!showHistory)}
-                className={`p-1 rounded-md transition-colors ${
+                onClick={() => { setShowHistory(!showHistory); setShowPlans(false); }}
+                className={`p-1.5 rounded-lg transition-colors ${
                   showHistory
                     ? 'text-accent bg-accent/10'
                     : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
                 }`}
                 title="Chat history"
               >
-                <Clock size={13} />
+                <Clock size={15} />
               </button>
               {showHistory && <HistoryPopover onClose={() => setShowHistory(false)} />}
             </div>
@@ -639,8 +993,9 @@ export function AgentPanel() {
           </div>
         </div>
       ) : (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3">
-          <div className="space-y-3">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto py-3">
+          {activePlan && <InlinePlanView plan={activePlan} />}
+          <div className="space-y-3 px-3">
             {visibleMessages.map(msg => (
               <MessageBubble
                 key={msg.id}
@@ -675,62 +1030,307 @@ export function AgentPanel() {
 
       {/* Input */}
       {hasActiveTab && (
-        <div className="shrink-0 border-t border-border p-2.5">
-          <div className={`bg-bg-secondary rounded-xl border transition-colors px-3 py-1.5 ${
+        <div
+          className="shrink-0 border-t border-border p-2.5 relative"
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleFileDrop}
+        >
+          {isDragging && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center rounded-xl bg-bg-secondary/90 backdrop-blur-sm m-1">
+              <div className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-accent/50 bg-accent/5">
+                <FileUp size={16} className="text-accent" />
+                <p className="text-xs font-medium text-text-primary">Drop to add as context</p>
+              </div>
+            </div>
+          )}
+          <div className={`bg-bg-secondary rounded-xl border transition-colors px-3 ${
             isRunning
               ? 'input-glow-waiting border-accent/30'
               : 'border-border focus-within:border-accent/40'
           }`}>
-            {!isRunning && attachedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pb-1.5">
-                {attachedFiles.map(f => (
-                  <AttachmentChip key={f.name} attachment={f} removable onRemove={() => removeFile(f.name)} />
-                ))}
+            {/* Queued messages — inside the input card */}
+            {messageQueue.length > 0 && (
+              <div className="pt-2">
+                <button
+                  onClick={() => setQueueExpanded(!queueExpanded)}
+                  className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-primary transition-colors w-full mb-1"
+                >
+                  {queueExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                  <span className="font-medium">{messageQueue.length} Queued</span>
+                </button>
+                {queueExpanded && (
+                  <div className="space-y-0.5 mb-1">
+                    {messageQueue.map((q, i) => (
+                      <div key={i} className="group/q flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-bg-hover/50 text-xs transition-colors">
+                        <Circle size={8} className="text-text-muted/40 shrink-0" />
+                        <span className="flex-1 truncate text-text-secondary">{q.content.slice(0, 80)}{q.content.length > 80 ? '…' : ''}</span>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover/q:opacity-100 transition-opacity shrink-0">
+                          <button
+                            onClick={() => { removeQueuedMessage(i); setInput(q.content); }}
+                            className="p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
+                            title="Edit"
+                          >
+                            <Pencil size={10} />
+                          </button>
+                          {i > 0 && (
+                            <button
+                              onClick={() => {
+                                const queue = [...messageQueue];
+                                [queue[i - 1], queue[i]] = [queue[i], queue[i - 1]];
+                                useChatStore.getState().reorderQueue(queue);
+                              }}
+                              className="p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
+                              title="Move up"
+                            >
+                              <ArrowUp size={10} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeQueuedMessage(i)}
+                            className="p-0.5 rounded text-text-muted hover:text-error transition-colors"
+                            title="Remove"
+                          >
+                            <Trash2 size={10} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-            <div className={`flex gap-2 ${isRunning ? 'items-center' : 'items-end'}`}>
-              {isRunning ? (
-                <div className="flex-1">
-                  <ThinkingIndicator />
+
+            {/* Attachments & context mentions */}
+            {(attachedFiles.length > 0 || mentions.length > 0) && (
+              <div className={messageQueue.length > 0 ? '' : 'pt-2'}>
+                {attachedFiles.length > 0 && (
+                  <button
+                    onClick={() => setFilesExpanded(!filesExpanded)}
+                    className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-primary transition-colors w-full mb-1"
+                  >
+                    {filesExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                    <span className="font-medium">{attachedFiles.length} File{attachedFiles.length !== 1 ? 's' : ''}</span>
+                  </button>
+                )}
+                {(filesExpanded || attachedFiles.length === 0) && attachedFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pb-0.5">
+                    {attachedFiles.map(f => (
+                      <AttachmentChip key={f.name} attachment={f} removable onRemove={() => removeFile(f.name)} />
+                    ))}
+                  </div>
+                )}
+                {mentions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pb-0.5 pt-1">
+                    {mentions.map(m => (
+                      <span key={`${m.type}-${m.id}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent/10 border border-accent/20 text-[11px] text-accent font-medium">
+                        {m.type === 'request' && <ArrowRight size={10} />}
+                        {m.type === 'connection' && <Plug size={10} />}
+                        {m.type === 'environment' && <Layers size={10} />}
+                        {m.type === 'collection' && <FolderOpen size={10} />}
+                        <span className="max-w-[120px] truncate">{m.label}</span>
+                        <button onClick={() => removeMention(m.id)} className="text-accent/60 hover:text-accent transition-colors">
+                          <X size={10} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Textarea */}
+            <div className="py-1.5 relative">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  isRunning
+                    ? 'Add a follow-up...'
+                    : agentMode === 'ask'
+                      ? 'Ask a question... (@ to add context)'
+                      : agentMode === 'plan'
+                        ? 'Describe what you want to plan... (@ to add context)'
+                        : 'Ask anything... (@ to add context)'
+                }
+                rows={1}
+                className="w-full bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-28"
+                style={{ height: 'auto', overflow: 'hidden' }}
+                onInput={e => {
+                  const t = e.target as HTMLTextAreaElement;
+                  t.style.height = 'auto';
+                  t.style.height = Math.min(t.scrollHeight, 112) + 'px';
+                }}
+              />
+
+              {/* @ Mention popup */}
+              {showMentionMenu && mentionItems.length > 0 && (
+                <div ref={mentionMenuRef} className="absolute bottom-full left-0 mb-1.5 w-64 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in max-h-56 overflow-y-auto">
+                  {['request', 'connection', 'environment', 'collection'].map(type => {
+                    const typeItems = mentionItems.filter(i => i.type === type);
+                    if (typeItems.length === 0) return null;
+                    const typeLabel = type === 'request' ? 'Requests' : type === 'connection' ? 'APIs' : type === 'environment' ? 'Environments' : 'Collections';
+                    return (
+                      <div key={type}>
+                        <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                          {typeLabel}
+                        </div>
+                        {typeItems.slice(0, 8).map(item => (
+                          <button
+                            key={`${item.type}-${item.id}`}
+                            onClick={() => addMention(item)}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+                          >
+                            {item.type === 'request' && <ArrowRight size={11} className="text-text-muted shrink-0" />}
+                            {item.type === 'connection' && <Plug size={11} className="text-text-muted shrink-0" />}
+                            {item.type === 'environment' && <Layers size={11} className="text-text-muted shrink-0" />}
+                            {item.type === 'collection' && <FolderOpen size={11} className="text-text-muted shrink-0" />}
+                            <span className="font-medium truncate">{item.label}</span>
+                            {item.meta && <span className="text-[10px] text-text-muted ml-auto shrink-0">{item.meta}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
-              ) : (
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Ask anything about your request..."
-                  rows={1}
-                  className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-28 py-1"
-                  style={{ height: 'auto', overflow: 'hidden' }}
-                  onInput={e => {
-                    const t = e.target as HTMLTextAreaElement;
-                    t.style.height = 'auto';
-                    t.style.height = Math.min(t.scrollHeight, 112) + 'px';
-                  }}
-                />
               )}
-              {isRunning ? (
-                <button
-                  onClick={stopGeneration}
-                  className="shrink-0 p-1.5 rounded-lg transition-all bg-bg-tertiary hover:bg-bg-hover text-text-secondary hover:text-text-primary border border-border"
-                  title="Stop generation"
-                >
-                  <Square size={14} />
-                </button>
-              ) : (
-                <button
-                  onClick={handleSend}
-                  disabled={!canSend}
-                  className={`shrink-0 p-1.5 rounded-lg transition-all ${
-                    canSend
-                      ? 'bg-accent hover:bg-accent-hover text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]'
-                      : 'bg-accent/20 text-white/30 cursor-not-allowed'
-                  }`}
-                >
-                  <Send size={14} />
-                </button>
-              )}
+            </div>
+
+            {/* Toolbar: mode picker, model picker, send/stop */}
+            <div className="flex items-center justify-between pb-2.5 pt-1.5">
+              {/* Left: mode picker + model picker */}
+              <div className="flex items-center gap-1">
+                <div ref={modePickerRef} className="relative">
+                  <button
+                    onClick={() => { setShowModePicker(!showModePicker); setShowModelPicker(false); }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-bg-tertiary text-xs font-medium transition-all text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+                    title={agentMode === 'agent' ? 'Agent mode — can read and modify' : agentMode === 'plan' ? 'Plan mode — creates plans' : 'Ask mode — read-only'}
+                  >
+                    <Infinity size={12} className="shrink-0" />
+                    <span>{agentMode === 'agent' ? 'Agent' : agentMode === 'plan' ? 'Plan' : 'Ask'}</span>
+                    <ChevronDown size={10} className="shrink-0" />
+                  </button>
+
+                  {showModePicker && (
+                    <div className="absolute bottom-full left-0 mb-1.5 w-48 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in">
+                      {([
+                        { mode: 'agent' as const, icon: Bot, label: 'Agent', desc: 'Can modify your workspace' },
+                        { mode: 'ask' as const, icon: Eye, label: 'Ask', desc: 'Read-only, answers questions' },
+                        { mode: 'plan' as const, icon: ListChecks, label: 'Plan', desc: 'Creates plans, no execution' },
+                      ]).map(opt => (
+                        <button
+                          key={opt.mode}
+                          onClick={() => { setAgentMode(opt.mode); setShowModePicker(false); }}
+                          className={`w-full flex items-center justify-between px-3 py-1.5 text-xs transition-colors ${
+                            agentMode === opt.mode ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <opt.icon size={12} />
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">{opt.label}</span>
+                              <span className="text-[10px] text-text-muted">{opt.desc}</span>
+                            </div>
+                          </div>
+                          {agentMode === opt.mode && <Check size={11} className="shrink-0" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div ref={modelPickerRef} className="relative">
+                  <button
+                    onClick={() => { setShowModelPicker(!showModelPicker); setShowModePicker(false); }}
+                    className="flex items-center gap-1 px-1.5 py-1 text-xs font-medium transition-all text-text-muted hover:text-text-primary"
+                    title={currentConfig ? `${activeProviderLabel} · ${currentConfig.model}` : 'Select AI model'}
+                  >
+                    <span className="max-w-[100px] truncate">{activeModelShort || 'Model'}</span>
+                    <ChevronDown size={10} className="shrink-0" />
+                  </button>
+
+                  {showModelPicker && (
+                    <div className="absolute bottom-full left-0 mb-1.5 w-56 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in max-h-72 overflow-y-auto">
+                      {configuredProviders.length === 0 ? (
+                        <div className="px-3 py-2.5 text-xs text-text-muted">
+                          No API keys configured. Add keys in Settings.
+                        </div>
+                      ) : (
+                        configuredProviders.map((provider, idx) => {
+                          const meta = PROVIDER_META[provider];
+                          const models = PROVIDER_MODELS[provider];
+                          return (
+                            <div key={provider}>
+                              {idx > 0 && <div className="border-t border-border my-1" />}
+                              <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                                {meta.label}
+                              </div>
+                              {models.map(model => {
+                                const isActive = currentConfig?.provider === provider && currentConfig?.model === model.id;
+                                return (
+                                  <button
+                                    key={model.id}
+                                    onClick={() => handleSelectModel(provider, model.id)}
+                                    className={`w-full flex items-center justify-between px-3 py-1.5 text-xs transition-colors ${
+                                      isActive ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium">{model.label}</span>
+                                      {model.description && (
+                                        <span className="text-[10px] text-text-muted">{model.description}</span>
+                                      )}
+                                    </div>
+                                    {isActive && <Check size={11} className="shrink-0" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: send/stop */}
+              <div className="flex items-center gap-1.5">
+                {isRunning ? (
+                  <>
+                    <button
+                      onClick={stopGeneration}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-all text-text-muted hover:text-text-primary hover:bg-bg-hover"
+                      title="Stop generation (⌃C)"
+                    >
+                      Stop <kbd className="text-[10px] text-text-muted/60 ml-0.5">⌃c</kbd>
+                    </button>
+                    {messageQueue.length > 0 && (
+                      <button
+                        onClick={() => { stopGeneration(); }}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-bg-tertiary hover:bg-bg-hover text-text-primary border border-border transition-all"
+                      >
+                        Review
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <button
+                    onClick={handleSend}
+                    disabled={!canSend}
+                    className={`shrink-0 p-1 rounded-lg transition-all ${
+                      canSend
+                        ? 'bg-accent hover:bg-accent-hover text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]'
+                        : 'bg-accent/20 text-white/30 cursor-not-allowed'
+                    }`}
+                  >
+                    <Send size={12} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -50,6 +50,7 @@ interface ConnectionState {
   importGraphQLEndpoint: (url: string, name?: string) => Promise<ApiConnection | null>;
   importGrpcProto: (serverUrl: string, filePath: string, name?: string) => Promise<ApiConnection | null>;
   importGrpcReflection: (serverUrl: string, tlsEnabled: boolean, name?: string) => Promise<ApiConnection | null>;
+  reorderConnections: (orderedIds: string[]) => void;
   getConnection: (id: string) => ApiConnection | undefined;
 }
 
@@ -110,6 +111,17 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   },
 
   setActiveConnection: (id) => set({ activeConnectionId: id }),
+
+  reorderConnections: (orderedIds) => {
+    const conns = get().connections;
+    const sorted = orderedIds
+      .map((id) => conns.find((c) => c.id === id))
+      .filter(Boolean) as ApiConnection[];
+    const remaining = conns.filter((c) => !orderedIds.includes(c.id));
+    const updated = [...sorted, ...remaining];
+    set({ connections: updated });
+    saveConnections(updated);
+  },
 
   addEndpoints: (connectionId, endpoints) => {
     const updated = get().connections.map(c =>

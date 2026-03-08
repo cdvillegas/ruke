@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useEnvironmentStore } from '../../stores/environmentStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -12,6 +12,7 @@ export function EnvironmentsSidebar() {
   const {
     environments, activeEnvironmentId, createEnvironment,
     deleteEnvironment, duplicateEnvironment, renameEnvironment,
+    reorderEnvironments,
   } = useEnvironmentStore();
   const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
 
@@ -20,6 +21,9 @@ export function EnvironmentsSidebar() {
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editNameValue, setEditNameValue] = useState('');
   const [sidebarSearch, setSidebarSearch] = useState('');
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
 
   useEffect(() => {
     if (activeEnvironmentId && !selectedEnvId) {
@@ -30,6 +34,8 @@ export function EnvironmentsSidebar() {
   const filtered = sidebarSearch.trim()
     ? environments.filter((e) => e.name.toLowerCase().includes(sidebarSearch.toLowerCase()))
     : environments;
+
+  const isSearching = sidebarSearch.trim().length > 0;
 
   const handleCreate = async () => {
     if (!activeWorkspaceId) return;
@@ -55,6 +61,56 @@ export function EnvironmentsSidebar() {
     setEditingName(newEnv.id);
     setEditNameValue(newEnv.name);
   };
+
+  const handleDragStart = useCallback((envId: string) => {
+    setDraggedId(envId);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, targetId: string) => {
+    if (!draggedId || draggedId === targetId || isSearching) return;
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    setDropTargetId(targetId);
+    setDropPosition(e.clientY < midY ? 'above' : 'below');
+  }, [draggedId, isSearching]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+      setDropTargetId(null);
+      setDropPosition(null);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (!draggedId || !dropTargetId || !dropPosition || isSearching) {
+      setDraggedId(null);
+      setDropTargetId(null);
+      setDropPosition(null);
+      return;
+    }
+
+    const ordered = environments.map((env) => env.id);
+    const fromIdx = ordered.indexOf(draggedId);
+    const toIdx = ordered.indexOf(dropTargetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+
+    ordered.splice(fromIdx, 1);
+    const insertIdx = ordered.indexOf(dropTargetId);
+    ordered.splice(dropPosition === 'above' ? insertIdx : insertIdx + 1, 0, draggedId);
+
+    reorderEnvironments(ordered);
+    setDraggedId(null);
+    setDropTargetId(null);
+    setDropPosition(null);
+  }, [draggedId, dropTargetId, dropPosition, environments, reorderEnvironments, isSearching]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedId(null);
+    setDropTargetId(null);
+    setDropPosition(null);
+  }, []);
 
   return (
     <>
@@ -97,6 +153,15 @@ export function EnvironmentsSidebar() {
             onCancelRename={() => setEditingName(null)}
             onDuplicate={() => handleDuplicate(env.id)}
             onDelete={() => deleteEnvironment(env.id)}
+            isDragging={draggedId === env.id}
+            isDropTarget={dropTargetId === env.id}
+            dropPosition={dropTargetId === env.id ? dropPosition : null}
+            onDragStart={() => handleDragStart(env.id)}
+            onDragOver={(e) => handleDragOver(e, env.id)}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onDragEnd={handleDragEnd}
+            draggable={!isSearching && editingName !== env.id}
           />
         ))}
         {filtered.length === 0 && !sidebarSearch.trim() && (
@@ -316,7 +381,7 @@ export function EnvironmentsView() {
   );
 }
 
-function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSelect, onStartRename, onEditNameChange, onCommitRename, onCancelRename, onDuplicate, onDelete }: {
+function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSelect, onStartRename, onEditNameChange, onCommitRename, onCancelRename, onDuplicate, onDelete, isDragging, isDropTarget, dropPosition, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, draggable }: {
   env: Environment;
   isSelected: boolean;
   isActive: boolean;
@@ -329,6 +394,15 @@ function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSe
   onCancelRename: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  isDragging: boolean;
+  isDropTarget: boolean;
+  dropPosition: 'above' | 'below' | null;
+  onDragStart: () => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  draggable: boolean;
 }) {
   const isAiCreated = useUiStore(s => s.aiCreatedItems.includes(env.id));
   const clearAiCreated = useUiStore(s => s.clearAiCreated);
@@ -350,12 +424,30 @@ function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSe
     onSelect();
   };
 
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('application/ruke-env-id', env.id);
+    e.dataTransfer.setData('application/ruke-context', JSON.stringify({ type: 'environment', id: env.id, label: env.name, meta: subtitle }));
+    e.dataTransfer.effectAllowed = 'move';
+    onDragStart();
+  };
+
   const subtitle = varCount > 0 ? `${varCount} variable${varCount !== 1 ? 's' : ''}` : 'No variables';
 
   return (
-    <div className="relative group">
+    <div
+      className={`relative group ${isDragging ? 'opacity-30' : ''}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {isDropTarget && dropPosition === 'above' && (
+        <div className="absolute top-0 left-2 right-2 h-0.5 bg-accent rounded-full z-10" />
+      )}
       <button
         onClick={handleSelect}
+        draggable={draggable}
+        onDragStart={handleDragStart}
+        onDragEnd={onDragEnd}
         className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
           isSelected
             ? 'bg-accent/10 text-text-primary'
@@ -391,6 +483,9 @@ function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSe
           </div>
         </div>
       </button>
+      {isDropTarget && dropPosition === 'below' && (
+        <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-accent rounded-full z-10" />
+      )}
       <button
         onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
         className={`absolute right-1.5 top-1.5 p-1 rounded-md transition-all ${

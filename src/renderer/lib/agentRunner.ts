@@ -2,7 +2,9 @@ import { streamText, stepCountIs, type ModelMessage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { nanoid } from 'nanoid';
 import type { ChatMessage, ChatToolCall } from '@shared/types';
-import { AGENT_TOOLS } from './agentTools';
+import { AGENT_TOOLS, ASK_TOOLS, PLAN_TOOLS } from './agentTools';
+
+export type AgentMode = 'agent' | 'ask' | 'plan';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 
@@ -28,6 +30,33 @@ export const DEFAULT_MODELS: Record<ManagedProvider, string> = {
   openai: 'gpt-4o',
   anthropic: 'claude-sonnet-4-20250514',
   google: 'gemini-2.0-flash',
+};
+
+export interface ModelOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export const PROVIDER_MODELS: Record<ManagedProvider, ModelOption[]> = {
+  openai: [
+    { id: 'gpt-4o', label: 'GPT-4o', description: 'Fast & capable' },
+    { id: 'gpt-4o-mini', label: 'GPT-4o Mini', description: 'Lightweight & fast' },
+    { id: 'gpt-4.5-preview', label: 'GPT-4.5', description: 'Most creative' },
+    { id: 'o3', label: 'o3', description: 'Deep reasoning' },
+    { id: 'o3-mini', label: 'o3 Mini', description: 'Fast reasoning' },
+    { id: 'o4-mini', label: 'o4 Mini', description: 'Latest reasoning' },
+  ],
+  anthropic: [
+    { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', description: 'Balanced' },
+    { id: 'claude-opus-4-20250514', label: 'Claude Opus 4', description: 'Most capable' },
+    { id: 'claude-3-5-haiku-20241022', label: 'Claude Haiku 3.5', description: 'Fast & light' },
+  ],
+  google: [
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', description: 'Fast & efficient' },
+    { id: 'gemini-2.5-pro-preview-05-06', label: 'Gemini 2.5 Pro', description: 'Most capable' },
+    { id: 'gemini-2.5-flash-preview-04-17', label: 'Gemini 2.5 Flash', description: 'Latest flash' },
+  ],
 };
 
 export const PROVIDER_META: Record<ManagedProvider, { label: string; description: string; placeholder: string }> = {
@@ -85,14 +114,18 @@ export function getConfiguredProviders(): ManagedProvider[] {
   });
 }
 
-export function activateProvider(provider: ManagedProvider) {
+export function activateProvider(provider: ManagedProvider, model?: string) {
   const key = getProviderKey(provider);
   if (!key) return;
   localStorage.setItem(AI_PROVIDER_STORAGE, provider);
-  localStorage.setItem(AI_MODEL_STORAGE, DEFAULT_MODELS[provider]);
+  localStorage.setItem(AI_MODEL_STORAGE, model || DEFAULT_MODELS[provider]);
   localStorage.setItem(AI_KEY_STORAGE, key);
   localStorage.removeItem(AI_BASE_URL_STORAGE);
   window.ruke?.ai?.setKey?.(key);
+}
+
+export function selectModel(provider: ManagedProvider, modelId: string) {
+  activateProvider(provider, modelId);
 }
 
 export function getModelConfig(): AiModelConfig | null {
@@ -261,6 +294,7 @@ export interface AgentRunOptions {
   systemPrompt?: string;
   extraContext?: string;
   abortSignal?: AbortSignal;
+  mode?: AgentMode;
 }
 
 const DEFAULT_AGENT_INSTRUCTIONS = `You are Rüke, an expert API development assistant. You help users build, test, debug, and automate API workflows through natural conversation.
@@ -313,7 +347,32 @@ Documentation:
 
 Connections:
 - Use import_graphql for GraphQL APIs, import_grpc_proto/import_grpc_reflection for gRPC.
-- Use update_connection, delete_connection, reimport_spec for connection management.`;
+- Use update_connection, delete_connection, reimport_spec for connection management.
+
+Plans:
+- When the user asks to plan something or the task has 3+ distinct steps, use create_plan to create a structured plan first.
+- As you execute each step, call update_plan_step to mark it in_progress, then done (or failed/skipped).
+- Plans appear in the UI so the user can track your progress in real time.
+- Always create a plan before starting multi-step work — it helps the user understand what you're doing.`;
+
+const ASK_INSTRUCTIONS = `You are Rüke, an expert API development assistant in read-only mode. You can explore, analyze, and answer questions about the user's workspace, requests, collections, environments, history, and connections — but you CANNOT make any changes.
+
+You have access to read-only tools: listing, searching, inspecting responses, analyzing the workspace, and exporting cURL. Use these tools to give thorough, well-informed answers.
+
+If the user asks you to create, edit, delete, send, or modify anything, politely explain that you're in Ask mode (read-only) and suggest they switch to Agent mode to make changes.
+
+Be conversational. Keep answers concise but thorough. Use the available tools to back up your answers with real data from the workspace.`;
+
+const PLAN_INSTRUCTIONS = `You are Rüke, an expert API development assistant in planning mode. Your job is to analyze what the user wants, explore their workspace for context, and produce a clear, structured plan using create_plan — but NOT execute it.
+
+You have access to read-only tools for exploration plus planning tools. Use list_connections, search_endpoints, list_requests, and other read tools to understand the workspace, then create a comprehensive step-by-step plan.
+
+Key rules in Plan mode:
+- ALWAYS use create_plan to output your plan as a structured plan the user can track.
+- DO NOT execute the plan. Only create it. The user will switch to Agent mode to execute.
+- If the user asks you to execute, modify, or create things, explain you're in Plan mode and suggest switching to Agent mode.
+- Be thorough in your analysis. Read the workspace state before planning.
+- Each plan step should be specific and actionable.`;
 
 const DELTA_BATCH_MS = 40;
 
@@ -329,8 +388,10 @@ export async function runAgent(
     return;
   }
 
+  const mode = options?.mode || 'agent';
   const model = createModelProvider(config);
-  const systemPrompt = options?.systemPrompt || DEFAULT_AGENT_INSTRUCTIONS;
+  const defaultPrompt = mode === 'ask' ? ASK_INSTRUCTIONS : mode === 'plan' ? PLAN_INSTRUCTIONS : DEFAULT_AGENT_INSTRUCTIONS;
+  const systemPrompt = options?.systemPrompt || defaultPrompt;
 
   let contextBlock = buildContextMessage();
   if (options?.extraContext) {
@@ -376,11 +437,12 @@ export async function runAgent(
   };
 
   try {
+    const tools = mode === 'ask' ? ASK_TOOLS : mode === 'plan' ? PLAN_TOOLS : AGENT_TOOLS;
     const result = streamText({
       model,
       system: fullSystem,
       messages: convertMessages(sessionMessages),
-      tools: AGENT_TOOLS,
+      tools,
       toolChoice: 'auto',
       stopWhen: stepCountIs(MAX_STEPS),
       maxOutputTokens: 4096,

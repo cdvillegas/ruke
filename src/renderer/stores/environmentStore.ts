@@ -25,6 +25,7 @@ interface EnvironmentState {
   resolveString: (str: string) => string;
   getEnvironmentVariables: (envId: string) => EnvVariable[];
   getAllVariableKeys: () => string[];
+  reorderEnvironments: (orderedIds: string[]) => Promise<void>;
 }
 
 export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
@@ -196,5 +197,20 @@ export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
     if (!activeEnvironmentId) return [];
     const vars = variables.get(activeEnvironmentId) || [];
     return vars.map((v) => v.key).filter(Boolean);
+  },
+
+  reorderEnvironments: async (orderedIds) => {
+    const updates = orderedIds.map((id, i) =>
+      window.ruke.db.query('updateEnvironment', id, { sortOrder: i })
+    );
+    await Promise.all(updates);
+    set((s) => ({
+      environments: s.environments
+        .map((e) => {
+          const idx = orderedIds.indexOf(e.id);
+          return idx >= 0 ? { ...e, sortOrder: idx } : e;
+        })
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    }));
   },
 }));

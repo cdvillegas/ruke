@@ -314,6 +314,41 @@ export interface ChatAttachment {
   content: string;
 }
 
+export type ContextMentionType = 'request' | 'environment' | 'connection' | 'collection';
+
+export interface ContextMention {
+  type: ContextMentionType;
+  id: string;
+  label: string;
+  meta?: string;
+}
+
+export interface QueuedMessage {
+  content: string;
+  attachments?: ChatAttachment[];
+  mentions?: ContextMention[];
+  mode: 'agent' | 'ask' | 'plan';
+}
+
+export type PlanStepStatus = 'pending' | 'in_progress' | 'done' | 'failed' | 'skipped';
+export type PlanStatus = 'draft' | 'in_progress' | 'completed' | 'failed';
+
+export interface PlanStep {
+  id: string;
+  description: string;
+  status: PlanStepStatus;
+}
+
+export interface Plan {
+  id: string;
+  title: string;
+  steps: PlanStep[];
+  status: PlanStatus;
+  chatSessionId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'tool';

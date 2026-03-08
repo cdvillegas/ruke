@@ -442,9 +442,51 @@ interface ResolveResult {
 }
 
 export function ConnectionsSidebar() {
-  const { connections, activeConnectionId, setActiveConnection, searchQuery, setSearchQuery } = useConnectionStore();
+  const { connections, activeConnectionId, setActiveConnection, searchQuery, setSearchQuery, reorderConnections } = useConnectionStore();
   const aiCreatedItems = useUiStore(s => s.aiCreatedItems);
   const clearAiCreated = useUiStore(s => s.clearAiCreated);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; position: 'above' | 'below' } | null>(null);
+
+  const isSearching = !!searchQuery.trim();
+
+  const filtered = useMemo(() =>
+    connections.filter(c =>
+      !isSearching ||
+      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.baseUrl.toLowerCase().includes(searchQuery.toLowerCase())
+    ), [connections, searchQuery, isSearching]);
+
+  const handleDragOver = useCallback((e: React.DragEvent, targetId: string) => {
+    if (!draggedId || draggedId === targetId || isSearching) return;
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    setDropTarget({ id: targetId, position: e.clientY < midY ? 'above' : 'below' });
+  }, [draggedId, isSearching]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (!draggedId || !dropTarget || isSearching) {
+      setDraggedId(null);
+      setDropTarget(null);
+      return;
+    }
+    const ordered = connections.map((c) => c.id);
+    const fromIdx = ordered.indexOf(draggedId);
+    if (fromIdx < 0) { setDraggedId(null); setDropTarget(null); return; }
+    ordered.splice(fromIdx, 1);
+    const toIdx = ordered.indexOf(dropTarget.id);
+    ordered.splice(dropTarget.position === 'above' ? toIdx : toIdx + 1, 0, draggedId);
+    reorderConnections(ordered);
+    setDraggedId(null);
+    setDropTarget(null);
+  }, [draggedId, dropTarget, connections, reorderConnections, isSearching]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedId(null);
+    setDropTarget(null);
+  }, []);
 
   return (
     <>
@@ -471,32 +513,48 @@ export function ConnectionsSidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-0">
-        {connections.filter(c =>
-          !searchQuery.trim() ||
-          c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          c.baseUrl.toLowerCase().includes(searchQuery.toLowerCase())
-        ).map((conn) => (
-          <button
+        {filtered.map((conn) => (
+          <div
             key={conn.id}
-            onClick={() => { if (aiCreatedItems.includes(conn.id)) clearAiCreated(conn.id); setActiveConnection(conn.id); }}
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left group ${
-              conn.id === activeConnectionId
-                ? 'bg-accent/10 text-text-primary'
-                : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-            }`}
+            className={`relative ${draggedId === conn.id ? 'opacity-30' : ''}`}
+            onDragOver={(e) => handleDragOver(e, conn.id)}
+            onDragLeave={(e) => {
+              if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+                setDropTarget((prev) => prev?.id === conn.id ? null : prev);
+              }
+            }}
+            onDrop={handleDrop}
           >
-            {aiCreatedItems.includes(conn.id) && (
-              <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
+            {dropTarget?.id === conn.id && dropTarget.position === 'above' && (
+              <div className="absolute top-0 left-2 right-2 h-0.5 bg-accent rounded-full z-10" />
             )}
-            <ConnectionIcon conn={conn} size="sm" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium truncate">{conn.name}</p>
-              <p className="text-[9px] text-text-muted font-mono truncate">{conn.baseUrl}</p>
-            </div>
-            <span className="text-[9px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
-              {conn.endpoints.length}
-            </span>
-          </button>
+            <button
+              onClick={() => { if (aiCreatedItems.includes(conn.id)) clearAiCreated(conn.id); setActiveConnection(conn.id); }}
+              draggable={!isSearching}
+              onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('application/ruke-context', JSON.stringify({ type: 'connection', id: conn.id, label: conn.name, meta: conn.baseUrl })); setDraggedId(conn.id); }}
+              onDragEnd={handleDragEnd}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left group ${
+                conn.id === activeConnectionId
+                  ? 'bg-accent/10 text-text-primary'
+                  : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+              }`}
+            >
+              {aiCreatedItems.includes(conn.id) && (
+                <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
+              )}
+              <ConnectionIcon conn={conn} size="sm" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium truncate">{conn.name}</p>
+                <p className="text-[9px] text-text-muted font-mono truncate">{conn.baseUrl}</p>
+              </div>
+              <span className="text-[9px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
+                {conn.endpoints.length}
+              </span>
+            </button>
+            {dropTarget?.id === conn.id && dropTarget.position === 'below' && (
+              <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-accent rounded-full z-10" />
+            )}
+          </div>
         ))}
 
         {connections.length === 0 && (

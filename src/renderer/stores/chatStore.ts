@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 import { generateText } from 'ai';
-import type { ChatMessage, ChatSession, ChatToolCall, ChatAttachment } from '@shared/types';
-import { runAgent } from '../lib/agentRunner';
+import type { ChatMessage, ChatSession, ChatToolCall, ChatAttachment, QueuedMessage, ContextMention } from '@shared/types';
+import { runAgent, type AgentMode } from '../lib/agentRunner';
 import { useRequestStore } from './requestStore';
 import { useConnectionStore } from './connectionStore';
 import { useUiStore } from './uiStore';
@@ -148,7 +148,10 @@ Core capabilities:
 - History: search_history, get_history_entry, replay_request, clear_history.
 - gRPC: create_grpc_request, send_grpc_request, list_grpc_services.
 - Docs: generate_docs. Curl: import_curl, export_curl. Scripts: generate_script.
+- Plans: create_plan, update_plan_step, list_plans.
 - App: set_api_key, toggle_theme, get_app_info.
+
+Plans: When a task has 3+ steps, use create_plan first. As you work, call update_plan_step to mark each step in_progress then done. Plans show progress in the UI.
 
 Auto-debug pattern: When a request returns an error (4xx/5xx), read the response body, diagnose the issue, fix the request with edit_current_request, and retry with send_request — up to 3 attempts before reporting the failure.
 
@@ -240,6 +243,7 @@ interface ChatState {
   streamingMessageId: string | null;
   streamTick: number;
   abortController: AbortController | null;
+  messageQueue: QueuedMessage[];
 
   isRunning: boolean;
 
@@ -251,7 +255,11 @@ interface ChatState {
   archiveSession: (id: string) => void;
   unarchiveSession: (id: string) => void;
   loadFromHistory: (id: string) => void;
-  sendMessage: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
+  sendMessage: (content: string, attachments?: ChatAttachment[], mode?: AgentMode, mentions?: ContextMention[]) => Promise<void>;
+  enqueueMessage: (content: string, attachments?: ChatAttachment[], mode?: AgentMode, mentions?: ContextMention[]) => void;
+  removeQueuedMessage: (index: number) => void;
+  reorderQueue: (queue: QueuedMessage[]) => void;
+  clearQueue: () => void;
   stopGeneration: () => void;
   appendMessage: (sessionId: string, msg: ChatMessage) => void;
   updateMessageContent: (sessionId: string, messageId: string, delta: string) => void;
@@ -273,6 +281,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingMessageId: null,
   streamTick: 0,
   abortController: null,
+  messageQueue: [],
 
   getActiveSession: () => {
     const { sessions, activeSessionId, openTabIds } = get();
@@ -409,9 +418,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     saveTabState(newTabs, id);
   },
 
-  sendMessage: async (content: string, attachments?: ChatAttachment[]) => {
+  sendMessage: async (content: string, attachments?: ChatAttachment[], mode?: AgentMode, mentions?: ContextMention[]) => {
     const { runningSessionId, activeSessionId, sessions, openTabIds } = get();
-    if (runningSessionId) return;
+
+    if (runningSessionId) {
+      get().enqueueMessage(content, attachments, mode, mentions);
+      return;
+    }
+
     if (!activeSessionId || !openTabIds.includes(activeSessionId)) return;
 
     const session = sessions.find(s => s.id === activeSessionId);
@@ -425,10 +439,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const targetSessionId = activeSessionId;
 
+    let fullContent = content;
+    if (mentions && mentions.length > 0) {
+      const mentionBlock = mentions.map(m => {
+        const typeLabel = m.type.charAt(0).toUpperCase() + m.type.slice(1);
+        return `<context type="${m.type}" id="${m.id}" label="${m.label}"${m.meta ? ` meta="${m.meta}"` : ''} />`
+          + `\n[${typeLabel}: ${m.label}${m.meta ? ` — ${m.meta}` : ''}]`;
+      }).join('\n');
+      fullContent = `${content}\n\nAttached context:\n${mentionBlock}`;
+    }
+
     const userMsg: ChatMessage = {
       id: nanoid(),
       role: 'user',
-      content,
+      content: fullContent,
       attachments: attachments && attachments.length > 0 ? attachments : undefined,
       timestamp: new Date().toISOString(),
     };
@@ -441,7 +465,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const isFirstMessage = session.messages.length === 0;
     if (isFirstMessage) {
-      const titleSource = content.replace(/<file[\s\S]*?<\/file>/g, '').trim();
+      const titleSource = content.replace(/<file[\s\S]*?<\/file>/g, '').replace(/<context[\s\S]*?\/>/g, '').trim();
       const fileNames = attachments?.map(a => a.name).join(', ');
       updatedSession.title = titleSource
         ? titleSource.slice(0, 40) + (titleSource.length > 40 ? '...' : '')
@@ -511,14 +535,47 @@ export const useChatStore = create<ChatState>((set, get) => ({
             });
           }
           saveSessions(get().sessions);
+
+          const queue = get().messageQueue;
+          if (queue.length > 0) {
+            const [next, ...rest] = queue;
+            set({ messageQueue: rest });
+            get().sendMessage(next.content, next.attachments, next.mode, next.mentions);
+          }
         },
       },
       {
         systemPrompt: AGENT_SYSTEM_PROMPT,
         extraContext: buildRequestContext(),
         abortSignal: controller.signal,
+        mode: mode || 'agent',
       },
     );
+  },
+
+  enqueueMessage: (content, attachments, mode, mentions) => {
+    set(s => ({
+      messageQueue: [...s.messageQueue, {
+        content,
+        attachments,
+        mentions,
+        mode: mode || 'agent',
+      }],
+    }));
+  },
+
+  removeQueuedMessage: (index) => {
+    set(s => ({
+      messageQueue: s.messageQueue.filter((_, i) => i !== index),
+    }));
+  },
+
+  reorderQueue: (queue) => {
+    set({ messageQueue: queue });
+  },
+
+  clearQueue: () => {
+    set({ messageQueue: [] });
   },
 
   stopGeneration: () => {

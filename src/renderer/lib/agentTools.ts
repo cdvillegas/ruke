@@ -6,6 +6,8 @@ import { useCollectionStore } from '../stores/collectionStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 import { useGrpcStore } from '../stores/grpcStore';
 import { useUiStore } from '../stores/uiStore';
+import { usePlanStore } from '../stores/planStore';
+import { useChatStore } from '../stores/chatStore';
 import type { HttpMethod, KeyValue, AppView, AuthConfig } from '@shared/types';
 import { parseCurl, toCurl } from '@shared/curl';
 
@@ -2063,6 +2065,68 @@ const clearMemoryTool = tool({
   },
 });
 
+// ── Plan tools ──
+
+const createPlanTool = tool({
+  description: 'Create a structured plan with numbered steps. Use this when a task has multiple steps so the user can track progress. Returns the plan ID and step IDs.',
+  inputSchema: z.object({
+    title: z.string().describe('Short title for the plan'),
+    steps: z.array(z.string()).describe('Array of step descriptions'),
+  }),
+  execute: async ({ title, steps }) => {
+    const chatSessionId = useChatStore.getState().activeSessionId;
+    const plan = usePlanStore.getState().createPlan(title, steps, chatSessionId);
+    return JSON.stringify({
+      success: true,
+      plan_id: plan.id,
+      title: plan.title,
+      steps: plan.steps.map(s => ({ step_id: s.id, description: s.description, status: s.status })),
+    });
+  },
+});
+
+const updatePlanStepTool = tool({
+  description: 'Update the status of a plan step. Call this as you work through plan steps to keep the user informed of progress.',
+  inputSchema: z.object({
+    plan_id: z.string().describe('The plan ID'),
+    step_id: z.string().describe('The step ID to update'),
+    status: z.enum(['in_progress', 'done', 'failed', 'skipped']).describe('New status for the step'),
+  }),
+  execute: async ({ plan_id, step_id, status }) => {
+    const plan = usePlanStore.getState().getPlan(plan_id);
+    if (!plan) return JSON.stringify({ success: false, error: 'Plan not found' });
+    const step = plan.steps.find(s => s.id === step_id);
+    if (!step) return JSON.stringify({ success: false, error: 'Step not found' });
+    usePlanStore.getState().updatePlanStep(plan_id, step_id, status);
+    const updated = usePlanStore.getState().getPlan(plan_id)!;
+    return JSON.stringify({
+      success: true,
+      step: { step_id, description: step.description, status },
+      plan_status: updated.status,
+      progress: `${updated.steps.filter(s => s.status === 'done' || s.status === 'skipped').length}/${updated.steps.length}`,
+    });
+  },
+});
+
+const listPlansTool = tool({
+  description: 'List all plans with their status and progress.',
+  inputSchema: z.object({}),
+  execute: async () => {
+    const plans = usePlanStore.getState().plans;
+    if (plans.length === 0) return JSON.stringify({ plans: [], message: 'No plans exist yet.' });
+    return JSON.stringify({
+      plans: plans.map(p => ({
+        plan_id: p.id,
+        title: p.title,
+        status: p.status,
+        progress: `${p.steps.filter(s => s.status === 'done' || s.status === 'skipped').length}/${p.steps.length}`,
+        steps: p.steps.map(s => ({ step_id: s.id, description: s.description, status: s.status })),
+        created: p.createdAt,
+      })),
+    });
+  },
+});
+
 // ── Exported tools object (keyed by name for streamText) ──
 
 export const AGENT_TOOLS = {
@@ -2143,11 +2207,44 @@ export const AGENT_TOOLS = {
   save_memory: saveMemoryTool,
   recall_memory: recallMemoryTool,
   clear_memory: clearMemoryTool,
+  // Plans
+  create_plan: createPlanTool,
+  update_plan_step: updatePlanStepTool,
+  list_plans: listPlansTool,
   // App
   set_api_key: setApiKeyTool,
   configure_ai: configureAiTool,
   toggle_theme: toggleThemeTool,
   get_app_info: getAppInfoTool,
+};
+
+export const ASK_TOOLS = {
+  list_connections: listConnectionsTool,
+  search_endpoints: searchEndpointsTool,
+  select_request: selectRequestTool,
+  list_requests: listRequestsTool,
+  search_requests: searchRequestsTool,
+  get_response: getResponseTool,
+  get_response_body: getResponseBodyTool,
+  get_response_headers: getResponseHeadersTool,
+  list_collections: listCollectionsTool,
+  list_environments: listEnvironmentsTool,
+  search_history: searchHistoryTool,
+  get_history_entry: getHistoryEntryTool,
+  list_grpc_services: listGrpcServicesTool,
+  list_tests: listTestsTool,
+  list_workflows: listWorkflowsTool,
+  export_curl: exportCurlTool,
+  analyze_workspace: analyzeWorkspaceTool,
+  recall_memory: recallMemoryTool,
+  list_plans: listPlansTool,
+  get_app_info: getAppInfoTool,
+};
+
+export const PLAN_TOOLS = {
+  ...ASK_TOOLS,
+  create_plan: createPlanTool,
+  update_plan_step: updatePlanStepTool,
 };
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -2214,6 +2311,9 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   save_memory: 'Remembering preference',
   recall_memory: 'Recalling memories',
   clear_memory: 'Clearing memories',
+  create_plan: 'Creating plan',
+  update_plan_step: 'Updating plan step',
+  list_plans: 'Listing plans',
   set_api_key: 'Saving API key',
   configure_ai: 'Configuring AI provider',
   toggle_theme: 'Switching theme',

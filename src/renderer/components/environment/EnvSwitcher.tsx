@@ -7,7 +7,9 @@ export function EnvSwitcher() {
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { environments, activeEnvironmentId, setActiveEnvironment, createEnvironment } = useEnvironmentStore();
   const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
@@ -40,10 +42,19 @@ export function EnvSwitcher() {
     setOpen(false);
   };
 
+  const toggleOpen = () => {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setOpen(!open);
+  };
+
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen(!open)}
+        ref={buttonRef}
+        onClick={toggleOpen}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
           activeEnv
             ? 'bg-accent/10 border-accent/20 text-accent hover:bg-accent/15'
@@ -56,7 +67,10 @@ export function EnvSwitcher() {
       </button>
 
       {open && (
-        <div className="absolute top-full mt-1 right-0 w-56 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in">
+        <div
+          className="fixed w-56 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in"
+          style={dropdownPos ? { top: dropdownPos.top, left: dropdownPos.left } : undefined}
+        >
           <button
             onClick={() => {
               if (activeWorkspaceId) setActiveEnvironment(activeWorkspaceId, '');
