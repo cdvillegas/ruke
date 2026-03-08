@@ -240,7 +240,7 @@ async function importRukeFile(data: RukeExport) {
     for (const env of data.environments) {
       const newEnvId = nanoid();
       idMap.set(env.id, newEnvId);
-      await window.ruke.db.query('createEnvironment', newEnvId, wsId, env.name, env.sortOrder || 0, env.connectionId, env.baseUrl);
+      await window.ruke.db.query('createEnvironment', newEnvId, wsId, env.name, env.sortOrder || 0);
 
       const envVars = (data.variables || []).filter((v) => v.environmentId === env.id);
       for (const v of envVars) {

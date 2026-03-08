@@ -43,15 +43,14 @@ interface Props {
 function getResolvedUrl(
   req: ApiRequest,
   getConnection: (id: string) => { id: string; baseUrl: string } | undefined,
-  resolveBaseUrl: (connectionId: string, connectionBaseUrl: string) => string,
+  resolveString: (str: string) => string,
   resolvedVariables: Record<string, string>
 ): string {
   let resolved = req.url;
   if (req.connectionId) {
     const conn = getConnection(req.connectionId);
     if (conn) {
-      const envBaseUrl = resolveBaseUrl(conn.id, conn.baseUrl);
-      const base = envBaseUrl.replace(/\/+$/, '');
+      const base = resolveString(conn.baseUrl).replace(/\/+$/, '');
       const path = req.url.startsWith('/') ? req.url : `/${req.url}`;
       resolved = req.url.startsWith('http') ? req.url : `${base}${path}`;
     }
@@ -106,7 +105,7 @@ export function CollectionRunner({ collectionId }: Props) {
   const loadRequests = useCollectionStore((s) => s.loadRequests);
   const getConnection = useConnectionStore((s) => s.getConnection);
   const resolveVariables = useEnvironmentStore((s) => s.resolveVariables);
-  const resolveBaseUrl = useEnvironmentStore((s) => s.resolveBaseUrl);
+  const resolveString = useEnvironmentStore((s) => s.resolveString);
 
   const [running, setRunning] = useState(false);
   const [aborted, setAborted] = useState(false);
@@ -141,7 +140,7 @@ export function CollectionRunner({ collectionId }: Props) {
       const resolvedUrl = getResolvedUrl(
         req,
         getConnection,
-        resolveBaseUrl,
+        resolveString,
         runVariables
       );
       const effectiveAuth = getEffectiveAuth(req, getConnection);
@@ -267,7 +266,7 @@ export function CollectionRunner({ collectionId }: Props) {
     requests,
     getConnection,
     resolveVariables,
-    resolveBaseUrl,
+    resolveString,
   ]);
 
   const handleAbort = useCallback(() => {

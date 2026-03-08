@@ -3,7 +3,6 @@ import { useConnectionStore } from '../../stores/connectionStore';
 import { useRequestStore } from '../../stores/requestStore';
 import { useGrpcStore } from '../../stores/grpcStore';
 import { useEnvironmentStore } from '../../stores/environmentStore';
-import { useCollectionStore } from '../../stores/collectionStore';
 import { useUiStore } from '../../stores/uiStore';
 import { VariableHighlight } from '../shared/VariableInput';
 import {
@@ -1683,13 +1682,10 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
 }) {
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set(['all']));
   const [reimporting, setReimporting] = useState(false);
-  const [showEnvs, setShowEnvs] = useState(false);
   const reimportSpec = useConnectionStore((s) => s.reimportSpec);
-  const { environments, activeEnvironmentId, getEnvironmentsByConnection, createEnvironment, getEnvironmentVariables } = useEnvironmentStore();
+  const { environments, activeEnvironmentId } = useEnvironmentStore();
   const resolveString = useEnvironmentStore((s) => s.resolveString);
-  const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
   const setActiveView = useUiStore((s) => s.setActiveView);
-  const connEnvs = getEnvironmentsByConnection(conn.id);
 
   const activeEnv = environments.find(e => e.id === activeEnvironmentId);
   const resolvedBaseUrl = resolveString(conn.baseUrl);
@@ -1822,54 +1818,15 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
         </div>
       )}
 
-      {/* Environments section */}
-      <div className="mb-4 rounded-xl border border-border overflow-hidden">
-        <button
-          onClick={() => setShowEnvs(!showEnvs)}
-          className="w-full flex items-center justify-between px-4 py-2.5 bg-bg-secondary hover:bg-bg-tertiary transition-colors text-left"
-        >
-          <div className="flex items-center gap-2">
-            {showEnvs ? <ChevronDown size={13} className="text-text-muted" /> : <ChevronRight size={13} className="text-text-muted" />}
-            <Layers size={13} className="text-accent" />
-            <span className="text-xs font-semibold text-text-primary">Environments</span>
-          </div>
-          <span className="text-[10px] text-text-muted">{connEnvs.length}</span>
-        </button>
-        {showEnvs && (
-          <div className="border-t border-border">
-            {connEnvs.map((env) => {
-              const varCount = getEnvironmentVariables(env.id).length;
-              return (
-                <div
-                  key={env.id}
-                  onClick={() => setActiveView('environments')}
-                  className="flex items-center justify-between px-4 py-2 hover:bg-bg-hover cursor-pointer transition-colors border-b border-border last:border-b-0"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${env.id === activeEnvironmentId ? 'bg-success' : 'bg-text-muted/30'}`} />
-                    <span className="text-xs text-text-primary">{env.name}</span>
-                    {env.baseUrl && (
-                      <span className="text-[10px] text-text-muted font-mono truncate max-w-48">{env.baseUrl}</span>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-text-muted">{varCount} var{varCount !== 1 ? 's' : ''}</span>
-                </div>
-              );
-            })}
-            <button
-              onClick={async () => {
-                if (activeWorkspaceId) {
-                  await createEnvironment(activeWorkspaceId, `${conn.name} - New Env`, conn.id, conn.baseUrl);
-                }
-              }}
-              className="w-full flex items-center gap-2 px-4 py-2 text-xs text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-            >
-              <Plus size={12} />
-              Add Environment
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Environment hint */}
+      {hasVariables && activeEnv && (
+        <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-accent/5 border border-accent/10">
+          <Layers size={12} className="text-accent shrink-0" />
+          <span className="text-[11px] text-text-muted">
+            Variables resolved from <button onClick={() => setActiveView('environments')} className="text-accent hover:underline font-medium">{activeEnv.name}</button>
+          </span>
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative mb-4">

@@ -1,6 +1,5 @@
 import { useEnvironmentStore } from '../../stores/environmentStore';
 import { useCollectionStore } from '../../stores/collectionStore';
-import { useConnectionStore } from '../../stores/connectionStore';
 import { Layers, Check, Plus, ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
@@ -10,15 +9,10 @@ export function EnvSwitcher() {
   const [newName, setNewName] = useState('');
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { environments, activeEnvironmentId, setActiveEnvironment, createEnvironment, getGlobalEnvironments, getEnvironmentsByConnection } = useEnvironmentStore();
+  const { environments, activeEnvironmentId, setActiveEnvironment, createEnvironment } = useEnvironmentStore();
   const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
-  const connections = useConnectionStore((s) => s.connections);
 
   const activeEnv = environments.find((e) => e.id === activeEnvironmentId);
-  const globalEnvs = getGlobalEnvironments();
-  const connectionsWithEnvs = connections
-    .map((conn) => ({ connection: conn, envs: getEnvironmentsByConnection(conn.id) }))
-    .filter((g) => g.envs.length > 0);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -45,25 +39,6 @@ export function EnvSwitcher() {
     setNewName('');
     setOpen(false);
   };
-
-  const envButton = (env: { id: string; name: string; baseUrl?: string }) => (
-    <button
-      key={env.id}
-      onClick={() => {
-        if (activeWorkspaceId) setActiveEnvironment(activeWorkspaceId, env.id);
-        setOpen(false);
-      }}
-      className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors ${
-        env.id === activeEnvironmentId ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        <div className={`w-1.5 h-1.5 rounded-full ${env.id === activeEnvironmentId ? 'bg-success' : 'bg-text-muted/30'}`} />
-        <span className="truncate">{env.name}</span>
-      </div>
-      {env.id === activeEnvironmentId && <Check size={12} />}
-    </button>
-  );
 
   return (
     <div ref={ref} className="relative">
@@ -95,23 +70,28 @@ export function EnvSwitcher() {
             {!activeEnvironmentId && <Check size={12} />}
           </button>
 
-          {globalEnvs.length > 0 && (
-            <>
-              <div className="px-3 py-1 text-[9px] text-text-muted uppercase tracking-wider font-semibold border-t border-border mt-1 pt-1">
-                Global
-              </div>
-              {globalEnvs.map(envButton)}
-            </>
-          )}
-
-          {connectionsWithEnvs.map(({ connection, envs }) => (
-            <div key={connection.id}>
-              <div className="px-3 py-1 text-[9px] text-text-muted uppercase tracking-wider font-semibold border-t border-border mt-1 pt-1">
-                {connection.name}
-              </div>
-              {envs.map(envButton)}
+          {environments.length > 0 && (
+            <div className="border-t border-border mt-1 pt-1">
+              {environments.map((env) => (
+                <button
+                  key={env.id}
+                  onClick={() => {
+                    if (activeWorkspaceId) setActiveEnvironment(activeWorkspaceId, env.id);
+                    setOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors ${
+                    env.id === activeEnvironmentId ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${env.id === activeEnvironmentId ? 'bg-success' : 'bg-text-muted/30'}`} />
+                    <span className="truncate">{env.name}</span>
+                  </div>
+                  {env.id === activeEnvironmentId && <Check size={12} />}
+                </button>
+              ))}
             </div>
-          ))}
+          )}
 
           <div className="border-t border-border mt-1 pt-1">
             {creating ? (

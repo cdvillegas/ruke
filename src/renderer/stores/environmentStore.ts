@@ -11,12 +11,11 @@ interface EnvironmentState {
 
   setSelectedEnvironmentId: (id: string | null) => void;
   loadEnvironments: (workspaceId: string) => Promise<void>;
-  createEnvironment: (workspaceId: string, name: string, connectionId?: string, baseUrl?: string) => Promise<Environment>;
+  createEnvironment: (workspaceId: string, name: string) => Promise<Environment>;
   setActiveEnvironment: (workspaceId: string, envId: string) => Promise<void>;
   deleteEnvironment: (id: string) => Promise<void>;
   duplicateEnvironment: (envId: string) => Promise<Environment>;
   renameEnvironment: (id: string, name: string) => Promise<void>;
-  updateEnvironmentBaseUrl: (id: string, baseUrl: string) => Promise<void>;
   loadVariables: (environmentId: string) => Promise<void>;
   addVariable: (environmentId: string, key: string, value: string, scope?: VariableScope, isSecret?: boolean) => Promise<void>;
   updateVariable: (id: string, updates: Partial<EnvVariable>) => Promise<void>;
@@ -25,9 +24,6 @@ interface EnvironmentState {
   getResolvedVariableDetails: () => ResolvedVariable[];
   resolveString: (str: string) => string;
   getEnvironmentVariables: (envId: string) => EnvVariable[];
-  getGlobalEnvironments: () => Environment[];
-  getEnvironmentsByConnection: (connectionId: string) => Environment[];
-  resolveBaseUrl: (connectionId: string, connectionBaseUrl: string) => string;
   getAllVariableKeys: () => string[];
 }
 
@@ -49,17 +45,16 @@ export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
     } catch { /* db not ready */ }
   },
 
-  createEnvironment: async (workspaceId, name, connectionId?, baseUrl?) => {
+  createEnvironment: async (workspaceId, name) => {
     const id = nanoid();
     const sortOrder = get().environments.length;
     const shouldActivate = !get().activeEnvironmentId;
-    await window.ruke.db.query('createEnvironment', id, workspaceId, name, sortOrder, connectionId, baseUrl);
+    await window.ruke.db.query('createEnvironment', id, workspaceId, name, sortOrder);
     if (shouldActivate) {
       await window.ruke.db.query('setActiveEnvironment', workspaceId, id);
     }
     const env: Environment = {
       id, workspaceId, name, isActive: shouldActivate, sortOrder,
-      connectionId, baseUrl,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     };
     set((s) => ({
@@ -91,9 +86,7 @@ export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
   duplicateEnvironment: async (envId) => {
     const source = get().environments.find((e) => e.id === envId);
     if (!source) throw new Error('Environment not found');
-    const newEnv = await get().createEnvironment(
-      source.workspaceId, `${source.name} (copy)`, source.connectionId, source.baseUrl,
-    );
+    const newEnv = await get().createEnvironment(source.workspaceId, `${source.name} (copy)`);
     const sourceVars = get().variables.get(envId) || [];
     for (const v of sourceVars) {
       await get().addVariable(newEnv.id, v.key, v.value, v.scope, v.isSecret);
@@ -105,13 +98,6 @@ export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
     await window.ruke.db.query('updateEnvironment', id, { name });
     set((s) => ({
       environments: s.environments.map((e) => (e.id === id ? { ...e, name } : e)),
-    }));
-  },
-
-  updateEnvironmentBaseUrl: async (id, baseUrl) => {
-    await window.ruke.db.query('updateEnvironment', id, { baseUrl });
-    set((s) => ({
-      environments: s.environments.map((e) => (e.id === id ? { ...e, baseUrl } : e)),
     }));
   },
 
@@ -203,28 +189,6 @@ export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
 
   getEnvironmentVariables: (envId) => {
     return get().variables.get(envId) || [];
-  },
-
-  getGlobalEnvironments: () => {
-    return get().environments.filter((e) => !e.connectionId);
-  },
-
-  getEnvironmentsByConnection: (connectionId) => {
-    return get().environments.filter((e) => e.connectionId === connectionId);
-  },
-
-  resolveBaseUrl: (connectionId, connectionBaseUrl) => {
-    const { activeEnvironmentId, environments } = get();
-    if (!activeEnvironmentId) return connectionBaseUrl;
-
-    const activeEnv = environments.find((e) => e.id === activeEnvironmentId);
-    if (activeEnv?.baseUrl) {
-      const belongsToThisConnection = activeEnv.connectionId === connectionId;
-      const isGlobal = !activeEnv.connectionId;
-      if (belongsToThisConnection || isGlobal) return activeEnv.baseUrl;
-    }
-
-    return connectionBaseUrl;
   },
 
   getAllVariableKeys: () => {

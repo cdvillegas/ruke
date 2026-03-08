@@ -153,8 +153,6 @@ export interface Environment {
   name: string;
   isActive: boolean;
   sortOrder: number;
-  connectionId?: string;
-  baseUrl?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -449,24 +449,22 @@ const importSpecTool = tool({
 });
 
 const createEnvironmentTool = tool({
-  description: 'Create an environment with variables. Environments let users switch between different configurations (e.g. dev, staging, production).',
+  description: 'Create an environment with variables. Environments are just bags of key-value pairs — use variables like base_url, api_key, token. Use {{variable}} syntax in connection base URLs and auth fields to reference them.',
   inputSchema: z.object({
     name: z.string().describe('Environment name (e.g. "Production", "Staging")'),
     variables: z.array(z.object({
       key: z.string(),
       value: z.string(),
       is_secret: z.boolean().optional().describe('Whether this is a secret value'),
-    })).optional().describe('Environment variables to create'),
-    base_url: z.string().optional().describe('Optional base URL override for this environment'),
-    connection_id: z.string().optional().describe('Optional connection ID to tie this environment to'),
+    })).optional().describe('Environment variables to create (e.g. base_url, api_key, token)'),
   }),
-  execute: async ({ name, variables, base_url, connection_id }) => {
+  execute: async ({ name, variables }) => {
     const envStore = useEnvironmentStore.getState();
     const collStore = useCollectionStore.getState();
     const wsId = collStore.activeWorkspaceId;
     if (!wsId) return JSON.stringify({ success: false, error: 'No active workspace' });
 
-    const env = await envStore.createEnvironment(wsId, name, connection_id, base_url);
+    const env = await envStore.createEnvironment(wsId, name);
 
     const vars = variables || [];
     for (const v of vars) {
@@ -496,8 +494,6 @@ const listEnvironmentsTool = tool({
         id: env.id,
         name: env.name,
         isActive: env.isActive,
-        baseUrl: env.baseUrl,
-        connectionId: env.connectionId,
         variables: (variables.get(env.id) || []).map(v => ({
           key: v.key,
           value: v.isSecret ? '••••••••' : v.value,
@@ -1227,20 +1223,17 @@ const getResponseHeadersTool = tool({
 // ── P0: Environment Mutation ──
 
 const updateEnvironmentTool = tool({
-  description: 'Update an environment\'s name or base URL.',
+  description: 'Rename an environment.',
   inputSchema: z.object({
     match: z.string().describe('Environment name or ID'),
-    name: z.string().optional().describe('New name'),
-    base_url: z.string().optional().describe('New base URL'),
+    name: z.string().describe('New name'),
   }),
-  execute: async ({ match, name, base_url }) => {
+  execute: async ({ match, name }) => {
     const env = findEnvironment(match);
     if (!env) return JSON.stringify({ success: false, error: `No environment matching "${match}" found.` });
-    const changed: string[] = [];
-    if (name) { await useEnvironmentStore.getState().renameEnvironment(env.id, name); changed.push('name'); }
-    if (base_url) { await useEnvironmentStore.getState().updateEnvironmentBaseUrl(env.id, base_url); changed.push('baseUrl'); }
+    await useEnvironmentStore.getState().renameEnvironment(env.id, name);
     notifyView('environments');
-    return JSON.stringify({ success: true, environmentId: env.id, changed });
+    return JSON.stringify({ success: true, environmentId: env.id, changed: ['name'] });
   },
 });
 
@@ -1257,7 +1250,7 @@ const deleteEnvironmentTool = tool({
 });
 
 const setActiveEnvironmentTool = tool({
-  description: 'Set the active environment. All variable resolution and base URL overrides will use this environment.',
+  description: 'Set the active environment. All {{variable}} references will resolve from this environment.',
   inputSchema: z.object({ match: z.string().describe('Environment name or ID to activate') }),
   execute: async ({ match }) => {
     const env = findEnvironment(match);

@@ -190,8 +190,8 @@ export const useRequestStore = create<RequestState>((set, get) => {
       if (req.connectionId) {
         const conn = useConnectionStore.getState().getConnection(req.connectionId);
         if (conn) {
-          const envBaseUrl = useEnvironmentStore.getState().resolveBaseUrl(conn.id, conn.baseUrl);
-          const base = envBaseUrl.replace(/\/+$/, '');
+          const resolvedBaseUrl = useEnvironmentStore.getState().resolveString(conn.baseUrl);
+          const base = resolvedBaseUrl.replace(/\/+$/, '');
           const path = req.url.startsWith('/') ? req.url : `/${req.url}`;
           resolved = req.url.startsWith('http') ? req.url : `${base}${path}`;
         }

@@ -1,43 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useEnvironmentStore } from '../../stores/environmentStore';
-import { useConnectionStore } from '../../stores/connectionStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { useUiStore } from '../../stores/uiStore';
-import { ConnectionIcon } from '../connections/ConnectionsView';
 import {
-  Plus, Trash2, Eye, EyeOff, Globe, Edit3, Check, X,
-  Layers, Link, ExternalLink, Search, Upload, FileText, Copy,
+  Plus, Trash2, Eye, EyeOff, MoreHorizontal,
+  Layers, Search, FileText, Copy, Pencil, Check,
 } from 'lucide-react';
-import type { Environment, ApiConnection } from '@shared/types';
-
-function useEnvironmentsShared() {
-  const {
-    environments, activeEnvironmentId, createEnvironment,
-    deleteEnvironment, duplicateEnvironment, renameEnvironment, updateEnvironmentBaseUrl,
-    addVariable, updateVariable, deleteVariable,
-    getEnvironmentVariables, setActiveEnvironment,
-    getGlobalEnvironments, getEnvironmentsByConnection,
-  } = useEnvironmentStore();
-  const connections = useConnectionStore((s) => s.connections);
-  const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
-  const setActiveView = useUiStore((s) => s.setActiveView);
-
-  return {
-    environments, activeEnvironmentId, createEnvironment,
-    deleteEnvironment, duplicateEnvironment, renameEnvironment, updateEnvironmentBaseUrl,
-    addVariable, updateVariable, deleteVariable,
-    getEnvironmentVariables, setActiveEnvironment,
-    getGlobalEnvironments, getEnvironmentsByConnection,
-    connections, activeWorkspaceId, setActiveView,
-  };
-}
+import type { Environment } from '@shared/types';
 
 export function EnvironmentsSidebar() {
   const {
     environments, activeEnvironmentId, createEnvironment,
-    deleteEnvironment, duplicateEnvironment, getGlobalEnvironments, getEnvironmentsByConnection,
-    connections, activeWorkspaceId, renameEnvironment,
-  } = useEnvironmentsShared();
+    deleteEnvironment, duplicateEnvironment, renameEnvironment,
+  } = useEnvironmentStore();
+  const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
 
   const selectedEnvId = useEnvironmentStore((s) => s.selectedEnvironmentId);
   const setSelectedEnvId = useEnvironmentStore((s) => s.setSelectedEnvironmentId);
@@ -51,37 +27,16 @@ export function EnvironmentsSidebar() {
     }
   }, [activeEnvironmentId]);
 
-  const globalEnvs = getGlobalEnvironments();
-  const connectionsWithEnvs = connections.map((conn) => ({
-    connection: conn,
-    environments: getEnvironmentsByConnection(conn.id),
-  }));
+  const filtered = sidebarSearch.trim()
+    ? environments.filter((e) => e.name.toLowerCase().includes(sidebarSearch.toLowerCase()))
+    : environments;
 
-  const filteredGlobalEnvs = sidebarSearch.trim()
-    ? globalEnvs.filter((e) => e.name.toLowerCase().includes(sidebarSearch.toLowerCase()))
-    : globalEnvs;
-
-  const filteredConnectionGroups = connectionsWithEnvs
-    .map((group) => ({
-      ...group,
-      environments: sidebarSearch.trim()
-        ? group.environments.filter((e) =>
-            e.name.toLowerCase().includes(sidebarSearch.toLowerCase()) ||
-            group.connection.name.toLowerCase().includes(sidebarSearch.toLowerCase())
-          )
-        : group.environments,
-    }))
-    .filter((group) => group.environments.length > 0 || !sidebarSearch.trim());
-
-  const handleCreate = async (connectionId?: string, connection?: ApiConnection) => {
+  const handleCreate = async () => {
     if (!activeWorkspaceId) return;
-    const defaultName = connectionId
-      ? `${connection?.name || 'API'} - New Env`
-      : 'New Environment';
-    const env = await createEnvironment(activeWorkspaceId, defaultName, connectionId, connection?.baseUrl);
+    const env = await createEnvironment(activeWorkspaceId, 'New Environment');
     setSelectedEnvId(env.id);
     setEditingName(env.id);
-    setEditNameValue(defaultName);
+    setEditNameValue('New Environment');
   };
 
   const startRename = (env: Environment) => {
@@ -107,9 +62,9 @@ export function EnvironmentsSidebar() {
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">Environments</h2>
           <button
-            onClick={() => handleCreate()}
+            onClick={handleCreate}
             className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-            title="New global environment"
+            title="New environment"
           >
             <Plus size={14} />
           </button>
@@ -127,79 +82,34 @@ export function EnvironmentsSidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-2 min-h-0">
-        <div className="mb-1">
-          <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider px-3 py-1.5 flex items-center gap-1.5">
-            <Globe size={10} />
-            Global
-          </p>
-          {filteredGlobalEnvs.map((env) => (
-            <EnvListItem
-              key={env.id}
-              env={env}
-              isSelected={env.id === selectedEnvId}
-              isActive={env.id === activeEnvironmentId}
-              isEditing={editingName === env.id}
-              editNameValue={editNameValue}
-              onSelect={() => setSelectedEnvId(env.id)}
-              onStartRename={() => startRename(env)}
-              onEditNameChange={setEditNameValue}
-              onCommitRename={() => commitRename(env.id)}
-              onCancelRename={() => setEditingName(null)}
-              onDuplicate={() => handleDuplicate(env.id)}
-              onDelete={() => deleteEnvironment(env.id)}
-            />
-          ))}
-          {filteredGlobalEnvs.length === 0 && !sidebarSearch.trim() && (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <Layers size={20} className="text-text-muted mb-2" />
-              <p className="text-xs text-text-muted">No environments yet</p>
-            </div>
-          )}
-        </div>
-
-        {filteredConnectionGroups.map(({ connection, environments: connEnvs }) => (
-          <div key={connection.id} className="mt-2 pt-2 border-t border-border/60">
-            <div className="group px-3 py-1.5 flex items-center gap-2">
-              <ConnectionIcon conn={connection} size="xs" />
-              <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider truncate flex-1">
-                {connection.name}
-              </span>
-              <button
-                onClick={() => handleCreate(connection.id, connection)}
-                className="p-0.5 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-all"
-                title={`Add environment for ${connection.name}`}
-              >
-                <Plus size={10} />
-              </button>
-            </div>
-            {connEnvs.map((env) => (
-              <EnvListItem
-                key={env.id}
-                env={env}
-                isSelected={env.id === selectedEnvId}
-                isActive={env.id === activeEnvironmentId}
-                isEditing={editingName === env.id}
-                editNameValue={editNameValue}
-                onSelect={() => setSelectedEnvId(env.id)}
-                onStartRename={() => startRename(env)}
-                onEditNameChange={setEditNameValue}
-                onCommitRename={() => commitRename(env.id)}
-                onCancelRename={() => setEditingName(null)}
-                onDuplicate={() => handleDuplicate(env.id)}
-                onDelete={() => deleteEnvironment(env.id)}
-              />
-            ))}
-            {connEnvs.length === 0 && (
-              <button
-                onClick={() => handleCreate(connection.id, connection)}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-hover rounded-lg transition-colors"
-              >
-                <Plus size={11} />
-                Add environment
-              </button>
-            )}
-          </div>
+        {filtered.map((env) => (
+          <EnvListItem
+            key={env.id}
+            env={env}
+            isSelected={env.id === selectedEnvId}
+            isActive={env.id === activeEnvironmentId}
+            isEditing={editingName === env.id}
+            editNameValue={editNameValue}
+            onSelect={() => setSelectedEnvId(env.id)}
+            onStartRename={() => startRename(env)}
+            onEditNameChange={setEditNameValue}
+            onCommitRename={() => commitRename(env.id)}
+            onCancelRename={() => setEditingName(null)}
+            onDuplicate={() => handleDuplicate(env.id)}
+            onDelete={() => deleteEnvironment(env.id)}
+          />
         ))}
+        {filtered.length === 0 && !sidebarSearch.trim() && (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <Layers size={20} className="text-text-muted mb-2" />
+            <p className="text-xs text-text-muted">No environments yet</p>
+          </div>
+        )}
+        {filtered.length === 0 && sidebarSearch.trim() && (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <p className="text-xs text-text-muted">No matches</p>
+          </div>
+        )}
       </div>
     </>
   );
@@ -208,20 +118,16 @@ export function EnvironmentsSidebar() {
 export function EnvironmentsMain() {
   const {
     environments, activeEnvironmentId, createEnvironment,
-    updateEnvironmentBaseUrl, addVariable, updateVariable,
-    deleteVariable, getEnvironmentVariables, setActiveEnvironment,
-    connections, activeWorkspaceId, setActiveView,
-  } = useEnvironmentsShared();
+    addVariable, updateVariable, deleteVariable,
+    getEnvironmentVariables, setActiveEnvironment,
+  } = useEnvironmentStore();
+  const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
 
   const selectedEnvId = useEnvironmentStore((s) => s.selectedEnvironmentId);
   const setSelectedEnvId = useEnvironmentStore((s) => s.setSelectedEnvironmentId);
 
   const selectedEnv = environments.find((e) => e.id === selectedEnvId);
   const variables = selectedEnvId ? getEnvironmentVariables(selectedEnvId) : [];
-
-  const linkedConnection = selectedEnv?.connectionId
-    ? connections.find((c) => c.id === selectedEnv.connectionId)
-    : null;
 
   const handleCreate = async () => {
     if (!activeWorkspaceId) return;
@@ -233,6 +139,7 @@ export function EnvironmentsMain() {
     if (!activeWorkspaceId) return;
     const env = await createEnvironment(activeWorkspaceId, 'Development');
     setSelectedEnvId(env.id);
+    await addVariable(env.id, 'base_url', 'https://api.example.com');
     await addVariable(env.id, 'api_key', '', undefined, true);
     await addVariable(env.id, 'token', '', undefined, true);
   };
@@ -243,94 +150,107 @@ export function EnvironmentsMain() {
     }
   };
 
+  const [editingName, setEditingName] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const { renameEnvironment } = useEnvironmentStore();
+
   return (
     <div className="h-full overflow-y-auto">
       {selectedEnv ? (
-        <div className="max-w-3xl mx-auto p-6 space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-text-primary">{selectedEnv.name}</h2>
-              <div className="flex items-center gap-3 mt-1">
-                <span className="text-xs text-text-muted">
-                  {variables.length} variable{variables.length !== 1 ? 's' : ''}
-                </span>
-                {selectedEnv.id === activeEnvironmentId && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-success/15 text-success font-medium">
-                    Active
-                  </span>
-                )}
-                {linkedConnection && (
-                  <button
-                    onClick={() => {
-                      useConnectionStore.getState().setActiveConnection(linkedConnection.id);
-                      setActiveView('connections');
-                    }}
-                    className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
-                  >
-                    <Link size={9} />
-                    {linkedConnection.name}
-                    <ExternalLink size={8} />
-                  </button>
-                )}
-              </div>
+        <div className="p-5 pb-2">
+          <div className="flex items-center gap-2 mb-2 min-w-0">
+            <div className="flex-1 min-w-0">
+              {editingName ? (
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  value={selectedEnv.name}
+                  onChange={(e) => renameEnvironment(selectedEnv.id, e.target.value)}
+                  onBlur={() => setEditingName(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === 'Escape') setEditingName(false);
+                  }}
+                  placeholder="Environment name"
+                  className="w-full px-1.5 py-0.5 text-sm font-semibold text-text-primary bg-bg-tertiary border border-accent/50 rounded-md focus:outline-none focus:border-accent"
+                  autoFocus
+                />
+              ) : (
+                <button
+                  onClick={() => {
+                    setEditingName(true);
+                    setTimeout(() => nameInputRef.current?.select(), 10);
+                  }}
+                  className="group flex items-center gap-1 text-sm font-semibold text-text-primary hover:text-accent truncate max-w-full transition-colors"
+                  title="Click to rename"
+                >
+                  <span className="truncate">{selectedEnv.name}</span>
+                </button>
+              )}
             </div>
-            {selectedEnv.id !== activeEnvironmentId && activeWorkspaceId && (
+          </div>
+
+          <div className="flex items-center gap-2 mb-3">
+            {selectedEnv.id === activeEnvironmentId ? (
+              <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium bg-success/10 border-success/20 text-success">
+                <div className="w-1.5 h-1.5 rounded-full bg-success" />
+                Active
+              </span>
+            ) : activeWorkspaceId ? (
               <button
                 onClick={() => setActiveEnvironment(activeWorkspaceId, selectedEnv.id)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-success/20 text-success hover:bg-success/30 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium bg-bg-tertiary border-border text-text-muted hover:bg-success/10 hover:border-success/20 hover:text-success transition-all"
               >
-                <Check size={13} /> Set Active
+                <Check size={12} />
+                Set Active
               </button>
-            )}
+            ) : null}
+            <span className="text-xs text-text-muted">
+              {variables.length} variable{variables.length !== 1 ? 's' : ''}
+            </span>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-[11px] text-text-muted font-medium uppercase tracking-wider">
-              Base URL {linkedConnection && <span className="normal-case tracking-normal text-text-muted/60">(overrides {linkedConnection.baseUrl})</span>}
-            </label>
-            <input
-              type="text"
-              value={selectedEnv.baseUrl || ''}
-              onChange={(e) => updateEnvironmentBaseUrl(selectedEnv.id, e.target.value)}
-              placeholder={linkedConnection?.baseUrl || 'https://api.example.com'}
-              className="w-full px-3 py-2 text-sm font-mono bg-bg-secondary border border-border rounded-lg text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-accent transition-colors"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-text-primary uppercase tracking-wider">Variables</h3>
-              <button
-                onClick={handleAddVariable}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md bg-bg-tertiary hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors border border-border"
-              >
-                <Plus size={12} /> Add
-              </button>
-            </div>
-
-            <div className="rounded-lg border border-border overflow-hidden">
-              <div className="grid grid-cols-[1fr_1fr_40px_40px] gap-0 bg-bg-tertiary border-b border-border text-[10px] text-text-muted uppercase tracking-wider font-semibold">
-                <div className="px-3 py-2">Variable</div>
-                <div className="px-3 py-2">Value</div>
-                <div className="px-3 py-2 text-center">Secret</div>
-                <div className="px-3 py-2" />
-              </div>
-              {variables.map((v) => (
-                <VariableRow
-                  key={v.id}
-                  variable={v}
-                  onUpdate={(updates) => updateVariable(v.id, updates)}
-                  onDelete={() => deleteVariable(v.id, selectedEnvId!)}
-                />
-              ))}
-              {variables.length === 0 && (
-                <div className="px-3 py-8 text-center">
-                  <p className="text-xs text-text-muted">No variables yet</p>
-                  <p className="text-[11px] text-text-muted/60 mt-1">
-                    Add variables like <code className="px-1 py-0.5 rounded bg-bg-tertiary font-mono text-accent">{'{{api_key}}'}</code> to use in your requests
-                  </p>
+          <div className="mt-4 border-t border-border pt-3">
+            <div className="space-y-2">
+              <div className="rounded-lg border border-border overflow-hidden bg-bg-secondary">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-tertiary/50 border-b border-border/50">
+                  <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Variables</span>
+                  {variables.length > 0 && (
+                    <span className="text-[9px] text-text-muted/50 font-mono">{variables.length}</span>
+                  )}
                 </div>
-              )}
+                <div className="grid grid-cols-[1fr_1fr_28px_28px] gap-0 border-b border-border/50 bg-bg-tertiary/30">
+                  <div className="px-3 py-1 text-[10px] text-text-muted/60 uppercase tracking-wider font-semibold">Key</div>
+                  <div className="px-3 py-1 text-[10px] text-text-muted/60 uppercase tracking-wider font-semibold border-l border-border/50">Value</div>
+                  <div className="flex items-center justify-center border-l border-border/50">
+                    <Eye size={10} className="text-text-muted/40" />
+                  </div>
+                  <div />
+                </div>
+                {variables.map((v) => (
+                  <VariableRow
+                    key={v.id}
+                    variable={v}
+                    onUpdate={(updates) => updateVariable(v.id, updates)}
+                    onDelete={() => deleteVariable(v.id, selectedEnvId!)}
+                  />
+                ))}
+                {variables.length === 0 && (
+                  <div className="px-3 py-4 text-center">
+                    <p className="text-[11px] text-text-muted/50">
+                      No variables yet — use <code className="px-1 py-0.5 rounded bg-bg-tertiary font-mono text-accent/70 text-[10px]">{'{{key}}'}</code> in requests
+                    </p>
+                  </div>
+                )}
+                <div className="border-t border-border/50">
+                  <button
+                    onClick={handleAddVariable}
+                    className="flex items-center gap-1.5 w-full px-3 py-2 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-hover/50 transition-colors"
+                  >
+                    <Plus size={12} />
+                    <span>Add variable</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -371,7 +291,7 @@ export function EnvironmentsMain() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-text-primary">Quick start template</p>
-                    <p className="text-[10px] text-text-muted/60 mt-0.5">Create with common variables like API key and token</p>
+                    <p className="text-[10px] text-text-muted/60 mt-0.5">Create with base_url, api_key, and token variables</p>
                   </div>
                 </button>
               </>
@@ -412,94 +332,100 @@ function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSe
 }) {
   const isAiCreated = useUiStore(s => s.aiCreatedItems.includes(env.id));
   const clearAiCreated = useUiStore(s => s.clearAiCreated);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const varCount = useEnvironmentStore(s => (s.variables.get(env.id) || []).length);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
 
   const handleSelect = () => {
     if (isAiCreated) clearAiCreated(env.id);
     onSelect();
   };
 
-  if (confirmingDelete) {
-    return (
-      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-error/10 border border-error/20">
-        <span className="text-xs text-error truncate">Delete "{env.name}"?</span>
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="px-2 py-0.5 text-[10px] font-medium rounded bg-error/20 text-error hover:bg-error/30 transition-colors"
-          >
-            Delete
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setConfirmingDelete(false); }}
-            className="px-2 py-0.5 text-[10px] font-medium rounded bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const subtitle = varCount > 0 ? `${varCount} variable${varCount !== 1 ? 's' : ''}` : 'No variables';
 
   return (
-    <div
-      onClick={handleSelect}
-      className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-        isSelected
-          ? 'bg-accent/10 text-text-primary'
-          : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-      }`}
-    >
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        {isAiCreated ? (
-          <span className="w-2 h-2 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
-        ) : (
-          <div
-            className={`w-2 h-2 rounded-full shrink-0 ${
-              isActive ? 'bg-success' : 'bg-text-muted/30'
-            }`}
-          />
-        )}
-        {isEditing ? (
-          <input
-            autoFocus
-            value={editNameValue}
-            onChange={(e) => onEditNameChange(e.target.value)}
-            onBlur={onCommitRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onCommitRename();
-              if (e.key === 'Escape') onCancelRename();
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="flex-1 px-1 text-xs bg-bg-tertiary border border-accent rounded text-text-primary focus:outline-none"
-          />
-        ) : (
-          <span className="text-xs truncate">{env.name}</span>
-        )}
-      </div>
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={(e) => { e.stopPropagation(); onStartRename(); }}
-          className="p-0.5 rounded hover:bg-bg-active text-text-muted"
-          title="Rename"
+    <div className="relative group">
+      <button
+        onClick={handleSelect}
+        className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+          isSelected
+            ? 'bg-accent/10 text-text-primary'
+            : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          {isAiCreated ? (
+            <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
+          ) : (
+            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-success' : 'bg-text-muted/30'}`} />
+          )}
+          <div className="flex-1 min-w-0">
+            {isEditing ? (
+              <input
+                autoFocus
+                value={editNameValue}
+                onChange={(e) => onEditNameChange(e.target.value)}
+                onBlur={onCommitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onCommitRename();
+                  if (e.key === 'Escape') onCancelRename();
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full text-xs bg-bg-tertiary border border-accent px-1.5 py-0.5 rounded text-text-primary focus:outline-none"
+              />
+            ) : (
+              <>
+                <span className="text-xs font-medium truncate block">{env.name}</span>
+                <p className="text-[10px] text-text-muted truncate mt-0.5">{subtitle}</p>
+              </>
+            )}
+          </div>
+        </div>
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
+        className={`absolute right-1.5 top-1.5 p-1 rounded-md transition-all ${
+          menuOpen
+            ? 'opacity-100 bg-bg-hover'
+            : 'opacity-0 group-hover:opacity-100 hover:bg-bg-hover'
+        }`}
+      >
+        <MoreHorizontal size={12} className="text-text-muted" />
+      </button>
+      {menuOpen && (
+        <div
+          ref={menuRef}
+          className="absolute right-0 top-full mt-1 z-50 w-36 py-1 rounded-lg bg-bg-secondary border border-border shadow-xl"
         >
-          <Edit3 size={11} />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
-          className="p-0.5 rounded hover:bg-bg-active text-text-muted"
-          title="Duplicate"
-        >
-          <Copy size={11} />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); setConfirmingDelete(true); }}
-          className="p-0.5 rounded hover:bg-error/20 text-text-muted hover:text-error"
-          title="Delete"
-        >
-          <Trash2 size={11} />
-        </button>
-      </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); onStartRename(); setMenuOpen(false); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          >
+            <Pencil size={12} /> Rename
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDuplicate(); setMenuOpen(false); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          >
+            <Copy size={12} /> Duplicate
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); setMenuOpen(false); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <Trash2 size={12} /> Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -512,45 +438,48 @@ function VariableRow({ variable: v, onUpdate, onDelete }: {
   const [showSecret, setShowSecret] = useState(false);
 
   return (
-    <div className="grid grid-cols-[1fr_1fr_40px_40px] gap-0 border-b border-border last:border-b-0 hover:bg-bg-hover/50 transition-colors group">
-      <div className="px-2 py-1.5">
+    <div className="group grid grid-cols-[1fr_1fr_28px_28px] gap-0 items-stretch border-b border-border/50 last:border-b-0 transition-colors hover:bg-bg-hover/30">
+      <div className="relative">
         <input
           type="text"
           value={v.key}
           onChange={(e) => onUpdate({ key: e.target.value })}
-          placeholder="KEY"
-          className="w-full px-2 py-1 text-xs font-mono bg-transparent text-text-primary placeholder:text-text-muted focus:outline-none focus:bg-bg-tertiary rounded transition-colors"
+          placeholder="variable_name"
+          spellCheck={false}
+          className="w-full px-3 py-2 text-xs font-mono text-text-primary bg-transparent border-none outline-none placeholder:text-text-muted/30"
         />
       </div>
-      <div className="px-2 py-1.5 relative">
+      <div className="relative border-l border-border/50">
         <input
           type={v.isSecret && !showSecret ? 'password' : 'text'}
           value={v.value}
           onChange={(e) => onUpdate({ value: e.target.value })}
           placeholder="value"
-          className="w-full px-2 py-1 text-xs font-mono bg-transparent text-text-primary placeholder:text-text-muted focus:outline-none focus:bg-bg-tertiary rounded transition-colors"
+          spellCheck={false}
+          className="w-full px-3 py-2 text-xs font-mono text-text-primary bg-transparent border-none outline-none placeholder:text-text-muted/30"
         />
-        {v.isSecret && (
+      </div>
+      <div className="flex items-center justify-center border-l border-border/50">
+        {v.isSecret ? (
           <button
             onClick={() => setShowSecret(!showSecret)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-text-primary"
+            className="p-1 rounded text-accent/60 hover:text-accent transition-colors"
           >
-            {showSecret ? <EyeOff size={12} /> : <Eye size={12} />}
+            {showSecret ? <EyeOff size={11} /> : <Eye size={11} />}
           </button>
+        ) : (
+          <input
+            type="checkbox"
+            checked={v.isSecret}
+            onChange={(e) => onUpdate({ isSecret: e.target.checked })}
+            className="w-3.5 h-3.5 rounded border-border accent-accent cursor-pointer"
+          />
         )}
       </div>
-      <div className="px-2 py-1.5 flex items-center justify-center">
-        <input
-          type="checkbox"
-          checked={v.isSecret}
-          onChange={(e) => onUpdate({ isSecret: e.target.checked })}
-          className="w-3.5 h-3.5 rounded border-border accent-accent cursor-pointer"
-        />
-      </div>
-      <div className="px-2 py-1.5 flex items-center justify-center">
+      <div className="flex items-center justify-center">
         <button
           onClick={onDelete}
-          className="p-0.5 rounded text-text-muted hover:text-error opacity-0 group-hover:opacity-100 transition-all"
+          className="p-1 rounded text-text-muted/20 hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all"
         >
           <Trash2 size={12} />
         </button>

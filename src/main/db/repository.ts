@@ -189,8 +189,6 @@ export function createRepository(db: Database.Database) {
       const values: any[] = [];
       if (data.name !== undefined) { sets.push('name = ?'); values.push(data.name); }
       if (data.sortOrder !== undefined) { sets.push('sort_order = ?'); values.push(data.sortOrder); }
-      if (data.baseUrl !== undefined) { sets.push('base_url = ?'); values.push(data.baseUrl); }
-      if (data.connectionId !== undefined) { sets.push('connection_id = ?'); values.push(data.connectionId); }
       sets.push("updated_at = datetime('now')");
       values.push(id);
       db.prepare(`UPDATE environments SET ${sets.join(', ')} WHERE id = ?`).run(...values);
