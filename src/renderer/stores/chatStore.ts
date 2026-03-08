@@ -6,6 +6,7 @@ import { runAgent, type AgentMode } from '../lib/agentRunner';
 import { useRequestStore } from './requestStore';
 import { useConnectionStore } from './connectionStore';
 import { useUiStore } from './uiStore';
+import { usePlanStore } from './planStore';
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
 
@@ -148,10 +149,10 @@ Core capabilities:
 - History: search_history, get_history_entry, replay_request, clear_history.
 - gRPC: create_grpc_request, send_grpc_request, list_grpc_services.
 - Docs: generate_docs. Curl: import_curl, export_curl. Scripts: generate_script.
-- Plans: create_plan, update_plan_step, list_plans.
+- Plan execution: update_plan_step.
 - App: set_api_key, toggle_theme, get_app_info.
 
-Plans: When a task has 3+ steps, use create_plan first. As you work, call update_plan_step to mark each step in_progress then done. Plans show progress in the UI.
+Plan Execution: When given a plan to execute, work through each step. Call update_plan_step to mark steps in_progress then done (or failed).
 
 Auto-debug pattern: When a request returns an error (4xx/5xx), read the response body, diagnose the issue, fix the request with edit_current_request, and retry with send_request — up to 3 attempts before reporting the failure.
 
@@ -536,6 +537,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
           saveSessions(get().sessions);
 
+          const planState = usePlanStore.getState();
+          const inProgressPlans = planState.plans.filter(
+            p => p.status === 'in_progress' && p.chatSessionId === targetSessionId
+          );
+          for (const plan of inProgressPlans) {
+            const allDone = plan.steps.every(s => s.status === 'done' || s.status === 'skipped');
+            const anyFailed = plan.steps.some(s => s.status === 'failed');
+            if (allDone) {
+              planState.updatePlanStatus(plan.id, 'completed');
+            } else if (anyFailed) {
+              planState.updatePlanStatus(plan.id, 'failed');
+            } else {
+              planState.updatePlanStatus(plan.id, 'draft');
+            }
+          }
+
           const queue = get().messageQueue;
           if (queue.length > 0) {
             const [next, ...rest] = queue;
@@ -579,9 +596,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   stopGeneration: () => {
-    const { abortController } = get();
+    const { abortController, runningSessionId } = get();
     if (abortController) {
       abortController.abort();
+
+      if (runningSessionId) {
+        const planState = usePlanStore.getState();
+        const inProgressPlans = planState.plans.filter(
+          p => p.status === 'in_progress' && p.chatSessionId === runningSessionId
+        );
+        for (const plan of inProgressPlans) {
+          planState.updatePlanStatus(plan.id, 'draft');
+        }
+      }
+
       set({
         runningSessionId: null,
         isRunning: false,

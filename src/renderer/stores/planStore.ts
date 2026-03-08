@@ -32,6 +32,7 @@ interface PlanState {
   createPlan: (title: string, stepDescriptions: string[], chatSessionId: string) => Plan;
   updatePlanStep: (planId: string, stepId: string, status: PlanStepStatus) => void;
   updatePlanStatus: (planId: string, status: PlanStatus) => void;
+  updatePlanSession: (planId: string, chatSessionId: string) => void;
   deletePlan: (planId: string) => void;
   setActivePlan: (planId: string | null) => void;
   getPlan: (planId: string) => Plan | undefined;
@@ -76,6 +77,14 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   updatePlanStatus: (planId, status) => {
     const updated = get().plans.map(p =>
       p.id === planId ? { ...p, status, updatedAt: new Date().toISOString() } : p
+    );
+    set({ plans: updated });
+    savePlans(updated);
+  },
+
+  updatePlanSession: (planId, chatSessionId) => {
+    const updated = get().plans.map(p =>
+      p.id === planId ? { ...p, chatSessionId, updatedAt: new Date().toISOString() } : p
     );
     set({ plans: updated });
     savePlans(updated);

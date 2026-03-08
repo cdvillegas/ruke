@@ -2255,10 +2255,8 @@ export const AGENT_TOOLS = {
   save_memory: saveMemoryTool,
   recall_memory: recallMemoryTool,
   clear_memory: clearMemoryTool,
-  // Plans
-  create_plan: createPlanTool,
+  // Plan execution
   update_plan_step: updatePlanStepTool,
-  list_plans: listPlansTool,
   // App
   set_api_key: setApiKeyTool,
   configure_ai: configureAiTool,
@@ -2293,7 +2291,6 @@ export const ASK_TOOLS = {
 export const PLAN_TOOLS = {
   ...ASK_TOOLS,
   create_plan: createPlanTool,
-  update_plan_step: updatePlanStepTool,
 };
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {

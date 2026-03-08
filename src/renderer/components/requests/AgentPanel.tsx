@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
 import {
   Send, Plus, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, X,
@@ -463,7 +463,7 @@ function PlansPopover({ onClose }: { onClose: () => void }) {
   );
 }
 
-function InlinePlanView({ plan }: { plan: Plan }) {
+function InlinePlanView({ plan, onExecute, onStop }: { plan: Plan; onExecute: () => void; onStop: () => void }) {
   const [collapsed, setCollapsed] = useState(plan.status === 'completed');
   const done = plan.steps.filter(s => s.status === 'done' || s.status === 'skipped').length;
   const total = plan.steps.length;
@@ -473,35 +473,94 @@ function InlinePlanView({ plan }: { plan: Plan }) {
     if (plan.status === 'completed') setCollapsed(true);
   }, [plan.status]);
 
+  const borderClass = plan.status === 'in_progress'
+    ? 'border-accent/30'
+    : plan.status === 'completed'
+      ? 'border-emerald-400/20'
+      : plan.status === 'failed'
+        ? 'border-red-400/20'
+        : 'border-amber-400/20';
+
+  const statusBadge = plan.status === 'completed'
+    ? <span className="text-[10px] font-medium text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">Completed</span>
+    : plan.status === 'failed'
+      ? <span className="text-[10px] font-medium text-red-400 bg-red-400/10 px-1.5 py-0.5 rounded-full">Failed</span>
+      : plan.status === 'in_progress'
+        ? <span className="text-[10px] font-medium text-accent bg-accent/10 px-1.5 py-0.5 rounded-full">Running</span>
+        : null;
+
   return (
-    <div className="mx-3 mt-2 mb-1 rounded-xl border border-border bg-bg-secondary/50 overflow-hidden">
+    <div className={`mx-3 mt-2 mb-1 rounded-xl border bg-bg-secondary/50 transition-all ${borderClass} ${
+      plan.status === 'in_progress' ? 'plan-glow' : ''
+    }`}>
+      {/* Header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-bg-hover/50 transition-colors"
+        className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-bg-hover/30 transition-colors"
       >
-        <ListChecks size={13} className="text-accent shrink-0" />
-        <span className="text-xs font-medium text-text-primary flex-1 text-left truncate">{plan.title}</span>
-        <span className="text-[10px] text-text-muted shrink-0">{done}/{total}</span>
-        <div className="w-12 h-1 rounded-full bg-bg-tertiary overflow-hidden shrink-0">
-          <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
-        </div>
+        <ListChecks size={14} className={`shrink-0 ${
+          plan.status === 'completed' ? 'text-emerald-400' :
+          plan.status === 'in_progress' ? 'text-accent' :
+          'text-amber-400'
+        }`} />
+        <span className="text-sm font-medium text-text-primary flex-1 text-left truncate">{plan.title}</span>
+        {statusBadge}
+        <span className="text-[10px] text-text-muted shrink-0 tabular-nums">{done}/{total}</span>
         <ChevronRight size={12} className={`text-text-muted shrink-0 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
       </button>
 
+      {/* Progress bar */}
+      {plan.status !== 'draft' && (
+        <div className="mx-3.5 h-0.5 rounded-full bg-bg-tertiary overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${
+              plan.status === 'completed' ? 'bg-emerald-400' :
+              plan.status === 'failed' ? 'bg-red-400' :
+              'bg-accent'
+            }`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+
+      {/* Steps */}
       {!collapsed && (
-        <div className="px-3 pb-2 space-y-0.5">
+        <div className="px-3.5 pt-2 pb-1 space-y-0.5">
           {plan.steps.map(step => (
-            <div key={step.id} className="flex items-start gap-2 py-1">
+            <div key={step.id} className="flex items-start gap-2.5 py-1">
               <PlanStepIcon status={step.status} />
               <span className={`text-xs leading-snug ${
                 step.status === 'done' ? 'text-text-muted line-through' :
-                step.status === 'in_progress' ? 'text-text-primary' :
+                step.status === 'in_progress' ? 'text-text-primary font-medium' :
                 step.status === 'failed' ? 'text-red-400' :
                 step.status === 'skipped' ? 'text-text-muted' :
                 'text-text-secondary'
               }`}>{step.description}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Footer actions */}
+      {plan.status === 'draft' && (
+        <div className="px-3.5 pb-3 pt-2">
+          <button
+            onClick={onExecute}
+            className="w-full py-2 rounded-lg text-sm font-medium text-white bg-accent hover:bg-accent-hover transition-all"
+            style={{ boxShadow: '0 0 16px rgba(99,102,241,0.4), 0 0 32px rgba(99,102,241,0.15)' }}
+          >
+            Execute Plan
+          </button>
+        </div>
+      )}
+      {plan.status === 'in_progress' && (
+        <div className="px-3.5 pb-3 pt-2">
+          <button
+            onClick={onStop}
+            className="w-full py-1.5 rounded-lg text-xs font-medium text-text-secondary bg-bg-tertiary hover:bg-bg-hover border border-border transition-all"
+          >
+            Stop Execution
+          </button>
         </div>
       )}
     </div>
@@ -572,9 +631,9 @@ export function AgentPanel() {
   const activePlan = useMemo(() => {
     if (activePlanId) {
       const p = plans.find(pl => pl.id === activePlanId);
-      if (p && p.chatSessionId === activeSessionId) return p;
+      if (p) return p;
     }
-    return plans.find(p => p.chatSessionId === activeSessionId && (p.status === 'in_progress' || p.status === 'draft')) || null;
+    return plans.find(p => p.chatSessionId === activeSessionId) || null;
   }, [activePlanId, plans, activeSessionId]);
 
   const hasHistory = useMemo(
@@ -587,7 +646,7 @@ export function AgentPanel() {
     [activeSession]
   );
   const hasActiveTab = !!activeSession && openTabIds.includes(activeSessionId);
-  const isEmpty = visibleMessages.length === 0 && !isRunning;
+  const isEmpty = visibleMessages.length === 0 && !isRunning && !activePlan;
   const canSend = hasActiveTab && (input.trim() || attachedFiles.length > 0);
 
   const mentionItems = useMemo(() => {
@@ -750,6 +809,18 @@ export function AgentPanel() {
   const handleSuggestion = useCallback((prompt: string) => {
     sendMessage(prompt, undefined, agentMode);
   }, [sendMessage, agentMode]);
+
+  const executePlan = useCallback((plan: Plan) => {
+    setAgentMode('agent');
+    const currentSessionId = useChatStore.getState().activeSessionId;
+    if (currentSessionId && plan.chatSessionId !== currentSessionId) {
+      usePlanStore.getState().updatePlanSession(plan.id, currentSessionId);
+    }
+    usePlanStore.getState().updatePlanStatus(plan.id, 'in_progress');
+    const stepsList = plan.steps.map((s, i) => `${i + 1}. [step_id:${s.id}] ${s.description}`).join('\n');
+    const msg = `Execute plan "${plan.title}" (plan_id: ${plan.id}).\n\nWork through each step sequentially:\n${stepsList}`;
+    sendMessage(msg, undefined, 'agent');
+  }, [sendMessage]);
 
   const addMention = useCallback((item: { type: ContextMentionType; id: string; label: string; meta?: string }) => {
     if (mentions.some(m => m.id === item.id && m.type === item.type)) return;
@@ -994,17 +1065,56 @@ export function AgentPanel() {
         </div>
       ) : (
         <div ref={scrollRef} className="flex-1 overflow-y-auto py-3 relative z-0">
-          {activePlan && <InlinePlanView plan={activePlan} />}
           <div className="space-y-3 px-3">
-            {visibleMessages.map(msg => (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                isStreaming={msg.id === streamingMessageId}
-                maxWidth="max-w-[90%]"
-                userMaxWidth="max-w-[85%]"
-              />
-            ))}
+            {(() => {
+              const planCard = activePlan ? (
+                <InlinePlanView
+                  key={`plan-${activePlan.id}`}
+                  plan={activePlan}
+                  onExecute={() => executePlan(activePlan)}
+                  onStop={() => {
+                    stopGeneration();
+                    usePlanStore.getState().updatePlanStatus(activePlan.id, 'draft');
+                  }}
+                />
+              ) : null;
+
+              const isExecuting = activePlan?.status === 'in_progress';
+
+              const insertAfterIdx = activePlan && !isExecuting
+                ? (() => {
+                    let idx = -1;
+                    for (let i = 0; i < visibleMessages.length; i++) {
+                      if (visibleMessages[i].timestamp <= activePlan.createdAt) idx = i;
+                      else break;
+                    }
+                    return idx;
+                  })()
+                : -1;
+
+              const showInline = !isExecuting && !!planCard;
+              const splitAt = showInline ? insertAfterIdx + 1 : visibleMessages.length;
+              const before = visibleMessages.slice(0, splitAt);
+              const after = visibleMessages.slice(splitAt);
+
+              const renderMsg = (msg: typeof visibleMessages[0]) => (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  isStreaming={msg.id === streamingMessageId}
+                  maxWidth="max-w-[90%]"
+                  userMaxWidth="max-w-[85%]"
+                />
+              );
+
+              return (
+                <>
+                  {before.map(renderMsg)}
+                  {showInline && planCard}
+                  {after.map(renderMsg)}
+                </>
+              );
+            })()}
             {showThinking && (
               <div className="flex justify-start">
                 <div className="flex items-center gap-1.5 px-3 py-2">
@@ -1025,6 +1135,18 @@ export function AgentPanel() {
               </div>
             )}
           </div>
+          {activePlan?.status === 'in_progress' && (
+            <div className="sticky bottom-0 z-10">
+              <InlinePlanView
+                plan={activePlan}
+                onExecute={() => executePlan(activePlan)}
+                onStop={() => {
+                  stopGeneration();
+                  usePlanStore.getState().updatePlanStatus(activePlan.id, 'draft');
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
 
