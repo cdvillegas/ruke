@@ -3,7 +3,7 @@ import { useConnectionStore } from '../stores/connectionStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 import { useUiStore } from '../stores/uiStore';
-import type { HttpMethod, KeyValue, AppView } from '@shared/types';
+import type { HttpMethod, KeyValue, AppView, AuthConfig } from '@shared/types';
 
 function notifyView(view: AppView) {
   useUiStore.getState().incrementBadge(view);
@@ -37,6 +37,57 @@ function compactJson(raw: string | undefined): string {
   }
 }
 
+const AUTH_PARAMS_SCHEMA = {
+  auth_type: {
+    type: 'string',
+    enum: ['none', 'bearer', 'basic', 'api-key'],
+    description: 'Auth type. Use "bearer" for Bearer/API tokens, "basic" for username/password, "api-key" for custom API key header or query param.',
+  },
+  auth_token: {
+    type: 'string',
+    description: 'Bearer token value (used when auth_type is "bearer")',
+  },
+  auth_username: {
+    type: 'string',
+    description: 'Username for basic auth (used when auth_type is "basic")',
+  },
+  auth_password: {
+    type: 'string',
+    description: 'Password for basic auth (used when auth_type is "basic")',
+  },
+  auth_key_name: {
+    type: 'string',
+    description: 'API key header/param name, e.g. "X-API-Key" (used when auth_type is "api-key")',
+  },
+  auth_key_value: {
+    type: 'string',
+    description: 'API key value (used when auth_type is "api-key")',
+  },
+  auth_key_location: {
+    type: 'string',
+    enum: ['header', 'query'],
+    description: 'Where to add the API key: "header" or "query" (default: "header")',
+  },
+} as const;
+
+function buildAuthConfig(args: Record<string, unknown>): AuthConfig | null {
+  const authType = args.auth_type as string | undefined;
+  if (!authType) return null;
+
+  switch (authType) {
+    case 'bearer':
+      return { type: 'bearer', bearer: { token: (args.auth_token as string) || '' } };
+    case 'basic':
+      return { type: 'basic', basic: { username: (args.auth_username as string) || '', password: (args.auth_password as string) || '' } };
+    case 'api-key':
+      return { type: 'api-key', apiKey: { key: (args.auth_key_name as string) || '', value: (args.auth_key_value as string) || '', addTo: (args.auth_key_location as 'header' | 'query') || 'header' } };
+    case 'none':
+      return { type: 'none' };
+    default:
+      return null;
+  }
+}
+
 export const AGENT_TOOLS: ToolDef[] = [
   // ── list_connections ──
   {
@@ -59,6 +110,8 @@ export const AGENT_TOOLS: ToolDef[] = [
           specType: c.specType,
           endpointCount: c.endpoints.length,
           description: c.description,
+          authType: c.auth.type,
+          authConfigured: c.auth.type !== 'none',
         })),
       });
     },
@@ -122,7 +175,7 @@ export const AGENT_TOOLS: ToolDef[] = [
       type: 'function',
       function: {
         name: 'create_request',
-        description: 'Create a new API request and open it in the request builder. Use search_endpoints first to find the correct endpoint.',
+        description: 'Create a new API request and open it in the request builder. Use search_endpoints first to find the correct endpoint. If the API requires auth, set auth_type and credentials. If the request is linked to a connection that already has auth configured, you can skip auth here.',
         parameters: {
           type: 'object',
           properties: {
@@ -144,6 +197,7 @@ export const AGENT_TOOLS: ToolDef[] = [
             connection_id: { type: 'string', description: 'Connection ID to link this request to' },
             endpoint_id: { type: 'string', description: 'Endpoint ID to link this request to' },
             collection_id: { type: 'string', description: 'Collection ID to add this request to' },
+            ...AUTH_PARAMS_SCHEMA,
           },
           required: ['name', 'method', 'url'],
         },
@@ -158,7 +212,6 @@ export const AGENT_TOOLS: ToolDef[] = [
 
       let url = args.url as string;
 
-      // When linked to a connection, strip the base URL so only the path is stored
       if (connectionId) {
         const conn = useConnectionStore.getState().getConnection(connectionId);
         if (conn) {
@@ -171,37 +224,37 @@ export const AGENT_TOOLS: ToolDef[] = [
 
       const bodyRaw = compactJson(args.body_content as string);
 
-      store.newRequest(collectionId);
-      const req = useRequestStore.getState().activeRequest;
-
-      const updates: Partial<typeof req> = {
+      const { nanoid } = await import('nanoid');
+      const now = new Date().toISOString();
+      const req = {
+        id: nanoid(),
+        name: args.name as string,
         method,
         url,
-        name: args.name as string,
         headers: kv(args.headers as Array<{ key: string; value: string }>),
         params: kv(args.params as Array<{ key: string; value: string }>),
         body: { type: (args.body_type as string) || 'none', raw: bodyRaw } as any,
-        auth: { type: 'none' as const },
+        auth: buildAuthConfig(args) || { type: 'none' as const },
         connectionId,
         endpointId,
         collectionId,
+        sortOrder: 0,
+        createdAt: now,
+        updatedAt: now,
       };
 
-      store.updateActiveRequest(updates);
-
       try {
-        const updated = useRequestStore.getState().activeRequest;
-        await window.ruke.db.query('updateRequest', updated.id, updated);
+        await window.ruke.db.query('createRequest', req);
       } catch {}
 
       if (collectionId) {
         await useCollectionStore.getState().loadRequests(collectionId);
       }
-
-      store.loadUncollectedRequests();
+      await store.loadUncollectedRequests();
+      await store.loadArchivedRequests();
       notifyView('requests');
 
-      return JSON.stringify({ success: true, requestId: req.id, name: args.name, method, url });
+      return JSON.stringify({ success: true, requestId: req.id, name: req.name, method, url });
     },
   },
 
@@ -446,10 +499,19 @@ export const AGENT_TOOLS: ToolDef[] = [
     execute: async () => {
       const reqStore = useRequestStore.getState();
       const colStore = useCollectionStore.getState();
-      const uncollected = reqStore.uncollectedRequests;
+
+      await reqStore.loadUncollectedRequests();
+      await reqStore.loadArchivedRequests();
+      for (const c of colStore.collections) {
+        await colStore.loadRequests(c.id);
+      }
+
+      const freshReq = useRequestStore.getState();
+      const freshCol = useCollectionStore.getState();
+
       const collectionRequests: Array<Record<string, unknown>> = [];
-      for (const [colId, reqs] of Object.entries(colStore.requests)) {
-        const col = colStore.collections.find(c => c.id === colId);
+      for (const [colId, reqs] of Object.entries(freshCol.requests)) {
+        const col = freshCol.collections.find(c => c.id === colId);
         for (const r of reqs) {
           collectionRequests.push({
             id: r.id, name: r.name || 'Untitled', method: r.method, url: r.url,
@@ -458,12 +520,12 @@ export const AGENT_TOOLS: ToolDef[] = [
         }
       }
       return JSON.stringify({
-        uncollected: uncollected.map(r => ({
+        uncollected: freshReq.uncollectedRequests.map(r => ({
           id: r.id, name: r.name || 'Untitled', method: r.method, url: r.url,
           connectionId: r.connectionId,
         })),
         inCollections: collectionRequests,
-        archived: reqStore.archivedRequests.map(r => ({
+        archived: freshReq.archivedRequests.map(r => ({
           id: r.id, name: r.name || 'Untitled', method: r.method, url: r.url,
         })),
       });
@@ -491,11 +553,17 @@ export const AGENT_TOOLS: ToolDef[] = [
       const reqStore = useRequestStore.getState();
       const colStore = useCollectionStore.getState();
 
+      await reqStore.loadUncollectedRequests();
+      await reqStore.loadArchivedRequests();
+
+      const freshReq = useRequestStore.getState();
+      const freshCol = useCollectionStore.getState();
+
       const all: Array<{ req: any; source: string; collectionName?: string }> = [];
-      for (const r of reqStore.uncollectedRequests) all.push({ req: r, source: 'uncollected' });
-      for (const r of reqStore.archivedRequests) all.push({ req: r, source: 'archived' });
-      for (const [colId, reqs] of Object.entries(colStore.requests)) {
-        const col = colStore.collections.find(c => c.id === colId);
+      for (const r of freshReq.uncollectedRequests) all.push({ req: r, source: 'uncollected' });
+      for (const r of freshReq.archivedRequests) all.push({ req: r, source: 'archived' });
+      for (const [colId, reqs] of Object.entries(freshCol.requests)) {
+        const col = freshCol.collections.find(c => c.id === colId);
         for (const r of reqs) all.push({ req: r, source: 'collection', collectionName: col?.name });
       }
 
@@ -719,13 +787,51 @@ export const AGENT_TOOLS: ToolDef[] = [
     },
   },
 
+  // ── set_connection_auth ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'set_connection_auth',
+        description: 'Configure authentication for a connected API. All requests linked to this connection will inherit this auth unless they override it. Use list_connections to find the connection ID first.',
+        parameters: {
+          type: 'object',
+          properties: {
+            connection_id: { type: 'string', description: 'Connection ID to configure auth for' },
+            ...AUTH_PARAMS_SCHEMA,
+          },
+          required: ['connection_id', 'auth_type'],
+        },
+      },
+    },
+    execute: async (args) => {
+      const connStore = useConnectionStore.getState();
+      const conn = connStore.getConnection(args.connection_id as string);
+      if (!conn) return JSON.stringify({ success: false, error: `No connection with ID "${args.connection_id}" found.` });
+
+      const authConfig = buildAuthConfig(args);
+      if (!authConfig) return JSON.stringify({ success: false, error: 'Invalid auth_type. Use "none", "bearer", "basic", or "api-key".' });
+
+      connStore.updateConnection(conn.id, { auth: authConfig });
+      return JSON.stringify({
+        success: true,
+        connectionId: conn.id,
+        connectionName: conn.name,
+        authType: authConfig.type,
+        note: authConfig.type !== 'none'
+          ? `Auth configured. All requests linked to "${conn.name}" will use ${authConfig.type} auth.`
+          : `Auth removed from "${conn.name}".`,
+      });
+    },
+  },
+
   // ── edit_current_request ──
   {
     schema: {
       type: 'function',
       function: {
         name: 'edit_current_request',
-        description: 'Edit fields of the currently active request. Can change method, URL, name, headers, query params, body, and auth. Only specify the fields you want to change.',
+        description: 'Edit fields of the currently active request. Can change method, URL, name, headers, query params, body, and auth. Only specify the fields you want to change. For auth, set auth_type plus the relevant credentials (auth_token for bearer, auth_username/auth_password for basic, auth_key_name/auth_key_value for api-key).',
         parameters: {
           type: 'object',
           properties: {
@@ -746,6 +852,7 @@ export const AGENT_TOOLS: ToolDef[] = [
             body_content: { type: 'string', description: 'Body content (compact JSON string for json type)' },
             connection_id: { type: 'string', description: 'Connection ID to link' },
             endpoint_id: { type: 'string', description: 'Endpoint ID to link' },
+            ...AUTH_PARAMS_SCHEMA,
           },
           required: [],
         },
@@ -772,23 +879,29 @@ export const AGENT_TOOLS: ToolDef[] = [
       if (args.connection_id) { changes.connectionId = args.connection_id as string; changed.push('connection'); }
       if (args.endpoint_id) { changes.endpointId = args.endpoint_id as string; changed.push('endpoint'); }
 
+      const authConfig = buildAuthConfig(args);
+      if (authConfig) { changes.auth = authConfig; changed.push('auth'); }
+
       store.updateActiveRequest(changes);
 
+      const updated = useRequestStore.getState().activeRequest;
       try {
-        const updated = useRequestStore.getState().activeRequest;
         await window.ruke.db.query('updateRequest', updated.id, updated);
       } catch {}
 
-      store.loadUncollectedRequests();
+      await store.loadUncollectedRequests();
+      if (updated.collectionId) {
+        await useCollectionStore.getState().loadRequests(updated.collectionId);
+      }
 
       return JSON.stringify({
         success: true,
         requestId: req.id,
         changed,
         current: {
-          name: useRequestStore.getState().activeRequest.name,
-          method: useRequestStore.getState().activeRequest.method,
-          url: useRequestStore.getState().activeRequest.url,
+          name: updated.name,
+          method: updated.method,
+          url: updated.url,
         },
       });
     },
@@ -866,6 +979,7 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   list_collections: 'Listing collections',
   rename_collection: 'Renaming collection',
   delete_collection: 'Deleting collection',
+  set_connection_auth: 'Configuring auth',
   edit_current_request: 'Editing request',
   select_request: 'Selecting request',
 };

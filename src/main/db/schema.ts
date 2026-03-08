@@ -108,6 +108,12 @@ export function initDatabase(dbPath: string): Database.Database {
   if (!reqColNames.has('archived')) {
     db.exec("ALTER TABLE requests ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
   }
+  if (!reqColNames.has('connection_id')) {
+    db.exec("ALTER TABLE requests ADD COLUMN connection_id TEXT");
+  }
+  if (!reqColNames.has('endpoint_id')) {
+    db.exec("ALTER TABLE requests ADD COLUMN endpoint_id TEXT");
+  }
 
   const wsCount = db.prepare('SELECT COUNT(*) as count FROM workspaces').get() as { count: number };
   if (wsCount.count === 0) {

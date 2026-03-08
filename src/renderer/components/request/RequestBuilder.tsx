@@ -12,7 +12,7 @@ import { HTTP_METHODS, METHOD_COLORS } from '@shared/constants';
 import type { HttpMethod, ApiEndpoint, ApiConnection } from '@shared/types';
 import {
   Send, Loader2, Save, ChevronDown, Search, Shield, Check,
-  FileText, Braces,
+  FileText, Braces, SlidersHorizontal,
 } from 'lucide-react';
 import { VariableInput } from '../shared/VariableInput';
 
@@ -291,7 +291,7 @@ export function RequestBuilder() {
   const connections = useConnectionStore((s) => s.connections);
   const pending = pendingTabIds.includes(activeRequest.id);
 
-  const [advancedTab, setAdvancedTab] = useState<'headers' | 'body' | 'auth'>('headers');
+  const [advancedTab, setAdvancedTab] = useState<'params' | 'headers' | 'body' | 'auth'>('params');
   const [saved, setSaved] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -347,15 +347,20 @@ export function RequestBuilder() {
       }
     }
 
-    updateActiveRequest({
+    const updates: Record<string, any> = {
       method: ep.method,
       url: ep.path,
-      name: ep.summary || `${ep.method} ${ep.path}`,
       params: (ep.parameters || [])
         .filter((p) => p.in === 'query')
         .map((p) => ({ key: p.name, value: '', enabled: true })),
       body,
-    });
+    };
+
+    if (!activeRequest.name || activeRequest.name === 'New Request') {
+      updates.name = 'New Request';
+    }
+
+    updateActiveRequest(updates);
   };
 
   const handleParamChipClick = useCallback((paramName: string) => {
@@ -367,6 +372,9 @@ export function RequestBuilder() {
     }
   }, []);
 
+  const endpointDef = linkedConnection?.endpoints.find(e => e.id === activeRequest.endpointId);
+  const paramCount = activeRequest.params.filter((p) => p.enabled && p.key).length
+    + (endpointDef?.parameters?.filter((p: { in: string }) => p.in !== 'body').length || 0);
   const headerCount = activeRequest.headers.filter((h) => h.enabled && h.key).length;
   const hasBody = activeRequest.body.type !== 'none';
   const hasAuth = activeRequest.auth.type !== 'none' || (linkedConnection?.auth.type !== 'none' && !!linkedConnection);
@@ -484,15 +492,11 @@ export function RequestBuilder() {
         </div>
       )}
 
-      {/* Parameters — optional fields collapsed when linked to an API */}
-      <div className="mt-4">
-        <ParameterEditor paramRefs={paramRefs} simpleMode={isLinked} />
-      </div>
-
-      {/* Headers / Body / Auth tabs */}
+      {/* Params / Headers / Body / Auth tabs */}
       <div className="mt-4 border-t border-border pt-3">
         <div className="flex gap-1 border-b border-border mb-3">
           {([
+            { id: 'params' as const, label: 'Params', icon: SlidersHorizontal, active: paramCount > 0 },
             { id: 'headers' as const, label: 'Headers', icon: FileText, active: headerCount > 0 },
             { id: 'body' as const, label: 'Body', icon: Braces, active: hasBody },
             { id: 'auth' as const, label: 'Auth', icon: Shield, active: hasAuth },
@@ -515,6 +519,7 @@ export function RequestBuilder() {
         </div>
 
         <div className="pb-2">
+          {advancedTab === 'params' && <ParameterEditor paramRefs={paramRefs} simpleMode={isLinked} />}
           {advancedTab === 'headers' && <HeadersEditor />}
           {advancedTab === 'body' && <BodyEditor />}
           {advancedTab === 'auth' && (

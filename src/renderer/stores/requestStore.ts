@@ -72,7 +72,7 @@ interface RequestState {
   sendRequest: (resolvedVariables?: Record<string, string>) => Promise<void>;
 
   selectRequest: (req: ApiRequest) => void;
-  newRequest: (collectionId?: string | null) => void;
+  newRequest: (collectionId?: string | null) => Promise<void>;
 
   loadUncollectedRequests: () => Promise<void>;
   loadArchivedRequests: () => Promise<void>;
@@ -219,7 +219,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
       set({ activeRequest: req, activeTabId: req.id, response: null });
     },
 
-    newRequest: (collectionId = null) => {
+    newRequest: async (collectionId = null) => {
       const req = createEmptyRequest(collectionId);
       set((s) => ({
         activeRequest: req,
@@ -227,10 +227,10 @@ export const useRequestStore = create<RequestState>((set, get) => {
         openTabs: [...s.openTabs, req],
         activeTabId: req.id,
       }));
-      // Auto-persist to DB
-      window.ruke.db.query('createRequest', req)
-        .then(() => get().loadUncollectedRequests())
-        .catch(() => {});
+      try {
+        await window.ruke.db.query('createRequest', req);
+      } catch {}
+      await get().loadUncollectedRequests();
     },
 
     loadUncollectedRequests: async () => {

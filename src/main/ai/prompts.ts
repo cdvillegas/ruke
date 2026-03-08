@@ -32,7 +32,7 @@ Example structures: ${PROMPT_EXAMPLES.join(' | ')}
 1. ALWAYS link to connected APIs using connectionId and endpointId from context. URL is just the path — the connection provides the base URL.
 2. Match endpoint method and path exactly as shown in context.
 3. Use realistic sample data — real model names, sample messages, plausible values. Not empty placeholders.
-4. If the connection has auth configured (noted in context), do NOT add Authorization headers.
+4. Do NOT add Authorization headers manually. Use set_connection_auth to configure auth on a connection (all linked requests inherit it), or set auth_type/auth_token on create_request/edit_current_request for per-request auth. If the connection already has auth configured, skip auth entirely.
 5. Use \`{{VARIABLE}}\` syntax only for values the user truly needs to fill in.
 6. When creating 2+ related requests, use create_collection.
 7. JSON bodies in "raw" must be properly stringified strings.

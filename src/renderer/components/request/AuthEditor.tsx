@@ -12,7 +12,7 @@ const AUTH_TYPES: { id: AuthType; label: string; icon: typeof Shield }[] = [
 ];
 
 const INPUT_CLASS =
-  'w-full px-3 py-2.5 text-sm rounded-lg bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 transition-all';
+  'w-full px-3 py-2 text-xs rounded-lg bg-bg-tertiary border border-border font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 transition-all';
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -60,7 +60,7 @@ export function AuthEditor() {
       )}
 
       {auth.type === 'bearer' && (
-        <div>
+        <div className="max-w-sm">
           <FieldLabel>Token</FieldLabel>
           <div className="relative">
             <VariableInput
@@ -86,7 +86,7 @@ export function AuthEditor() {
       )}
 
       {auth.type === 'basic' && (
-        <div className="space-y-4">
+        <div className="max-w-sm space-y-3">
           <div>
             <FieldLabel>Username</FieldLabel>
             <VariableInput
@@ -133,46 +133,44 @@ export function AuthEditor() {
       )}
 
       {auth.type === 'api-key' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <FieldLabel>Key Name</FieldLabel>
+        <div className="max-w-sm space-y-3">
+          <div>
+            <FieldLabel>Key Name</FieldLabel>
+            <VariableInput
+              value={auth.apiKey?.key || ''}
+              onChange={(v) =>
+                setAuth({
+                  ...auth,
+                  apiKey: { key: v, value: auth.apiKey?.value || '', addTo: auth.apiKey?.addTo || 'header' },
+                })
+              }
+              placeholder="e.g. X-API-Key"
+              className={INPUT_CLASS}
+            />
+          </div>
+          <div>
+            <FieldLabel>Value</FieldLabel>
+            <div className="relative">
               <VariableInput
-                value={auth.apiKey?.key || ''}
+                value={auth.apiKey?.value || ''}
                 onChange={(v) =>
                   setAuth({
                     ...auth,
-                    apiKey: { key: v, value: auth.apiKey?.value || '', addTo: auth.apiKey?.addTo || 'header' },
+                    apiKey: { key: auth.apiKey?.key || '', value: v, addTo: auth.apiKey?.addTo || 'header' },
                   })
                 }
-                placeholder="e.g. X-API-Key"
-                className={INPUT_CLASS}
+                placeholder="API key value or {{variable}}"
+                type={showApiValue ? 'text' : 'password'}
+                className={INPUT_CLASS + ' pr-9'}
               />
-            </div>
-            <div>
-              <FieldLabel>Value</FieldLabel>
-              <div className="relative">
-                <VariableInput
-                  value={auth.apiKey?.value || ''}
-                  onChange={(v) =>
-                    setAuth({
-                      ...auth,
-                      apiKey: { key: auth.apiKey?.key || '', value: v, addTo: auth.apiKey?.addTo || 'header' },
-                    })
-                  }
-                  placeholder="API key value or {{variable}}"
-                  type={showApiValue ? 'text' : 'password'}
-                  className={INPUT_CLASS + ' pr-9'}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiValue(!showApiValue)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
-                  tabIndex={-1}
-                >
-                  {showApiValue ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowApiValue(!showApiValue)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+                tabIndex={-1}
+              >
+                {showApiValue ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
             </div>
           </div>
 

@@ -4,7 +4,7 @@ import { TOOL_SCHEMAS, getToolExecutor } from './agentTools';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 
-const MAX_ITERATIONS = 10;
+const MAX_ITERATIONS = 25;
 const AI_KEY_STORAGE = 'ruke:ai_key';
 
 function getApiKey(): string | null {
@@ -211,7 +211,9 @@ Key behaviors:
 - When creating requests for a connected API, always include connection_id and endpoint_id.
 - When the user asks to edit, rename, or modify requests, use list_requests to find them, then update_requests to change them.
 - Use realistic sample data in request bodies — real model names, plausible messages, etc.
-- Don't add Authorization headers if the connection already handles auth.
+- Don't add Authorization headers manually. Instead, use set_connection_auth to configure auth on the connection (all linked requests inherit it), or set auth_type on create_request/edit_current_request for per-request auth.
+- When the user provides an API key or token, use set_connection_auth to configure it on the connection so all requests use it automatically.
+- Use list_connections to check if auth is already configured (authConfigured field) before adding auth.
 - Group related requests into collections.
 - When asked to create "a bunch" or "several" requests, create at least 5-8 varied examples.`;
 

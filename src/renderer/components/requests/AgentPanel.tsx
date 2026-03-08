@@ -36,7 +36,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] bg-accent/15 border border-accent/20 rounded-2xl rounded-br-md px-4 py-2.5 space-y-2">
+        <div className="max-w-[85%] overflow-hidden bg-accent/15 border border-accent/20 rounded-2xl rounded-br-md px-4 py-2.5 space-y-2">
           {message.attachments && message.attachments.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {message.attachments.map((a, i) => (
@@ -45,7 +45,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             </div>
           )}
           {displayContent && (
-            <p className="text-sm text-text-primary whitespace-pre-wrap">{displayContent}</p>
+            <p className="text-sm text-text-primary whitespace-pre-wrap break-words">{displayContent}</p>
           )}
         </div>
       </div>
@@ -416,7 +416,7 @@ export function AgentPanel() {
               ? 'input-glow-waiting border-accent/30'
               : 'border-border focus-within:border-accent/40'
           }`}>
-            {attachedFiles.length > 0 && (
+            {!isRunning && attachedFiles.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pb-1.5">
                 {attachedFiles.map(f => (
                   <AttachmentChip key={f.name} attachment={f} removable onRemove={() => removeFile(f.name)} />
@@ -424,22 +424,28 @@ export function AgentPanel() {
               </div>
             )}
             <div className="flex items-end gap-2">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={isRunning ? 'Thinking...' : 'Ask anything about your request...'}
-                disabled={isRunning}
-                rows={1}
-                className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-28 py-1 disabled:opacity-60"
-                style={{ height: 'auto', overflow: 'hidden' }}
-                onInput={e => {
-                  const t = e.target as HTMLTextAreaElement;
-                  t.style.height = 'auto';
-                  t.style.height = Math.min(t.scrollHeight, 112) + 'px';
-                }}
-              />
+              {isRunning ? (
+                <div className="flex items-center gap-2 flex-1 py-1">
+                  <Loader2 size={13} className="animate-spin text-accent shrink-0" />
+                  <span className="text-sm text-text-muted">Thinking...</span>
+                </div>
+              ) : (
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask anything about your request..."
+                  rows={1}
+                  className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-28 py-1"
+                  style={{ height: 'auto', overflow: 'hidden' }}
+                  onInput={e => {
+                    const t = e.target as HTMLTextAreaElement;
+                    t.style.height = 'auto';
+                    t.style.height = Math.min(t.scrollHeight, 112) + 'px';
+                  }}
+                />
+              )}
               <button
                 onClick={handleSend}
                 disabled={!canSend}

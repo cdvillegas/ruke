@@ -34,7 +34,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] bg-accent/15 border border-accent/20 rounded-2xl rounded-br-md px-4 py-2.5 space-y-2">
+        <div className="max-w-[80%] overflow-hidden bg-accent/15 border border-accent/20 rounded-2xl rounded-br-md px-4 py-2.5 space-y-2">
           {message.attachments && message.attachments.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {message.attachments.map((a, i) => (
@@ -43,7 +43,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             </div>
           )}
           {displayContent && (
-            <p className="text-sm text-text-primary whitespace-pre-wrap">{displayContent}</p>
+            <p className="text-sm text-text-primary whitespace-pre-wrap break-words">{displayContent}</p>
           )}
         </div>
       </div>
