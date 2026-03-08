@@ -40,12 +40,16 @@ function createEmptyRequest(collectionId: string | null = null): ApiRequest {
   };
 }
 
+type SaveStatus = 'idle' | 'unsaved' | 'saving' | 'saved';
+
 interface RequestState {
   activeRequest: ApiRequest;
   hasSelection: boolean;
   response: ApiResponse | null;
   loading: boolean;
   history: HistoryEntry[];
+  requestHistory: HistoryEntry[];
+  saveStatus: SaveStatus;
 
   uncollectedRequests: ApiRequest[];
   archivedRequests: ApiRequest[];
@@ -92,19 +96,36 @@ interface RequestState {
   loadHistory: () => Promise<void>;
   clearHistory: () => Promise<void>;
   searchHistory: (query: string) => Promise<void>;
+  loadRequestHistory: (requestId: string) => Promise<void>;
+  viewHistoryResponse: (historyId: string) => void;
   saveRequest: () => Promise<void>;
   loadRequest: (id: string) => Promise<void>;
   deleteRequest: (id: string) => Promise<void>;
 }
 
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let savedResetTimer: ReturnType<typeof setTimeout> | null = null;
 const AUTO_SAVE_DELAY = 800;
+
+async function fetchLastResponse(requestId: string): Promise<{ response: ApiResponse | null; history: HistoryEntry[] }> {
+  try {
+    const entries: HistoryEntry[] = await window.ruke.db.query('getHistoryForRequest', requestId, 20);
+    return {
+      response: entries.length > 0 ? entries[0].response : null,
+      history: entries,
+    };
+  } catch {
+    return { response: null, history: [] };
+  }
+}
 
 export const useRequestStore = create<RequestState>((set, get) => {
   const initial = createEmptyRequest();
 
   const scheduleAutoSave = () => {
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    if (savedResetTimer) clearTimeout(savedResetTimer);
+    set({ saveStatus: 'unsaved' });
     autoSaveTimer = setTimeout(() => {
       autoSaveTimer = null;
       get().saveRequest();
@@ -117,6 +138,8 @@ export const useRequestStore = create<RequestState>((set, get) => {
     response: null,
     loading: false,
     history: [],
+    requestHistory: [],
+    saveStatus: 'idle' as SaveStatus,
 
     uncollectedRequests: [],
     archivedRequests: [],
@@ -143,7 +166,14 @@ export const useRequestStore = create<RequestState>((set, get) => {
       }
     },
 
-    setMethod: (method) => get().updateActiveRequest({ method }),
+    setMethod: (method) => {
+      const updates: Partial<ApiRequest> = { method };
+      const noBodyMethods: HttpMethod[] = ['GET', 'HEAD', 'OPTIONS'];
+      if (noBodyMethods.includes(method)) {
+        updates.body = { type: 'none' };
+      }
+      get().updateActiveRequest(updates);
+    },
     setUrl: (url) => get().updateActiveRequest({ url }),
     setHeaders: (headers) => get().updateActiveRequest({ headers }),
     setParams: (params) => get().updateActiveRequest({ params }),
@@ -216,6 +246,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
         });
 
         get().loadHistory();
+        get().loadRequestHistory(req.id);
         get().saveRequest();
         get().loadUncollectedRequests();
       } catch (err) {
@@ -235,8 +266,13 @@ export const useRequestStore = create<RequestState>((set, get) => {
     },
 
     selectRequest: (req) => {
-      set({ activeRequest: req, activeTabId: req.id, response: null, hasSelection: true });
+      set({ activeRequest: req, activeTabId: req.id, response: null, requestHistory: [], hasSelection: true });
       localStorage.setItem('ruke:lastActiveRequestId', req.id);
+      fetchLastResponse(req.id).then(({ response, history }) => {
+        if (get().activeRequest.id === req.id) {
+          set({ response, requestHistory: history });
+        }
+      });
     },
 
     newRequest: async (collectionId = null) => {
@@ -245,6 +281,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
         activeRequest: req,
         hasSelection: true,
         response: null,
+        requestHistory: [],
         openTabs: [...s.openTabs, req],
         activeTabId: req.id,
       }));
@@ -289,7 +326,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
       const { activeRequest } = get();
       if (activeRequest.id === id) {
         const req = createEmptyRequest();
-        set({ activeRequest: req, response: null, hasSelection: false });
+        set({ activeRequest: req, response: null, requestHistory: [], hasSelection: false });
       }
       get().loadUncollectedRequests();
       get().loadArchivedRequests();
@@ -327,7 +364,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
       set((s) => {
         const exists = s.openTabs.find((t) => t.id === req.id);
         if (exists) {
-          return { activeRequest: req, activeTabId: req.id, hasSelection: true, response: null };
+          return { activeRequest: req, activeTabId: req.id, hasSelection: true, response: null, requestHistory: [] };
         }
         return {
           activeRequest: req,
@@ -335,11 +372,18 @@ export const useRequestStore = create<RequestState>((set, get) => {
           activeTabId: req.id,
           hasSelection: true,
           response: null,
+          requestHistory: [],
         };
+      });
+      fetchLastResponse(req.id).then(({ response, history }) => {
+        if (get().activeRequest.id === req.id) {
+          set({ response, requestHistory: history });
+        }
       });
     },
 
     closeTab: (id) => {
+      let newActiveId: string | null = null;
       set((s) => {
         const tabs = s.openTabs.filter((t) => t.id !== id);
         if (tabs.length === 0) {
@@ -350,29 +394,44 @@ export const useRequestStore = create<RequestState>((set, get) => {
             activeTabId: newReq.id,
             hasSelection: false,
             response: null,
+            requestHistory: [],
           };
         }
         if (s.activeTabId === id) {
           const idx = s.openTabs.findIndex((t) => t.id === id);
           const newActive = tabs[Math.min(idx, tabs.length - 1)];
+          newActiveId = newActive.id;
           return {
             openTabs: tabs,
             activeRequest: newActive,
             activeTabId: newActive.id,
             response: null,
+            requestHistory: [],
           };
         }
         return { openTabs: tabs };
       });
+      if (newActiveId) {
+        fetchLastResponse(newActiveId).then(({ response, history }) => {
+          if (get().activeTabId === newActiveId) {
+            set({ response, requestHistory: history });
+          }
+        });
+      }
     },
 
     switchTab: (id) => {
       set((s) => {
         const tab = s.openTabs.find((t) => t.id === id);
         if (tab) {
-          return { activeRequest: tab, activeTabId: id, response: null };
+          return { activeRequest: tab, activeTabId: id, response: null, requestHistory: [] };
         }
         return {};
+      });
+      fetchLastResponse(id).then(({ response, history }) => {
+        if (get().activeTabId === id) {
+          set({ response, requestHistory: history });
+        }
       });
     },
 
@@ -431,8 +490,29 @@ export const useRequestStore = create<RequestState>((set, get) => {
       set({ history });
     },
 
+    loadRequestHistory: async (requestId) => {
+      try {
+        const entries: HistoryEntry[] = await window.ruke.db.query('getHistoryForRequest', requestId, 20);
+        if (get().activeRequest.id === requestId) {
+          set({ requestHistory: entries });
+        }
+      } catch {}
+    },
+
+    viewHistoryResponse: (historyId) => {
+      const entry = get().requestHistory.find(h => h.id === historyId);
+      if (entry) {
+        set({ response: entry.response });
+      }
+    },
+
     saveRequest: async () => {
+      if (autoSaveTimer) {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = null;
+      }
       const req = get().activeRequest;
+      set({ saveStatus: 'saving' });
       try {
         const existing = await window.ruke.db.query('getRequestById', req.id);
         if (existing) {
@@ -443,6 +523,12 @@ export const useRequestStore = create<RequestState>((set, get) => {
       } catch {
         try { await window.ruke.db.query('createRequest', req); } catch {}
       }
+      set({ saveStatus: 'saved' });
+      if (savedResetTimer) clearTimeout(savedResetTimer);
+      savedResetTimer = setTimeout(() => {
+        savedResetTimer = null;
+        if (get().saveStatus === 'saved') set({ saveStatus: 'idle' });
+      }, 2000);
       if (req.collectionId) {
         try {
           const { useCollectionStore } = await import('./collectionStore');
@@ -464,7 +550,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
       try { await window.ruke.db.query('deleteRequest', id); } catch {}
       if (activeRequest.id === id) {
         const req = createEmptyRequest();
-        set({ activeRequest: req, response: null, hasSelection: false });
+        set({ activeRequest: req, response: null, requestHistory: [], hasSelection: false });
       }
       get().loadUncollectedRequests();
       get().loadArchivedRequests();

@@ -185,9 +185,9 @@ export function RequestsView() {
       {!showAgent && (
         <button
           onClick={toggleAgent}
-          className="absolute bottom-4 right-4 z-10 flex items-center gap-2 px-4 py-2.5 rounded-full bg-accent hover:bg-accent-hover text-white shadow-lg shadow-accent/25 hover:shadow-accent/40 transition-all text-xs font-medium"
+          className="ai-assist-fab absolute bottom-5 right-5 z-10 flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-xs font-semibold tracking-wide transition-all duration-300 hover:scale-105 active:scale-95"
         >
-          <Sparkles size={14} />
+          <Sparkles size={14} className="ai-assist-icon" />
           AI Assist
         </button>
       )}

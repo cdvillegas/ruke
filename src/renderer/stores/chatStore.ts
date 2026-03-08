@@ -38,6 +38,8 @@ async function generateChatTitle(userMessage: string): Promise<string | null> {
 }
 
 const STORAGE_KEY = 'ruke:chat_sessions';
+const TABS_KEY = 'ruke:chat_open_tabs';
+const ACTIVE_KEY = 'ruke:chat_active_id';
 
 function loadSessions(): ChatSession[] {
   try {
@@ -99,6 +101,22 @@ function saveSessions(sessions: ChatSession[]) {
     ),
   }));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+}
+
+function saveTabState(openTabIds: string[], activeId: string) {
+  localStorage.setItem(TABS_KEY, JSON.stringify(openTabIds));
+  localStorage.setItem(ACTIVE_KEY, activeId);
+}
+
+function loadTabState(): { openTabIds: string[]; activeId: string } | null {
+  try {
+    const tabs = localStorage.getItem(TABS_KEY);
+    const active = localStorage.getItem(ACTIVE_KEY);
+    if (tabs) {
+      return { openTabIds: JSON.parse(tabs), activeId: active || '' };
+    }
+  } catch {}
+  return null;
 }
 
 function createSession(): ChatSession {
@@ -187,13 +205,22 @@ function initSessions(): { sessions: ChatSession[]; activeId: string; openTabIds
     const fresh = createSession();
     sessions = [fresh];
     saveSessions(sessions);
+    saveTabState([fresh.id], fresh.id);
     return { sessions, activeId: fresh.id, openTabIds: [fresh.id] };
   }
 
-  const nonArchived = sessions.filter(s => !s.archived);
-  const openTabIds = nonArchived.map(s => s.id);
-  const active = nonArchived[0] || sessions[0];
-  return { sessions, activeId: active.id, openTabIds };
+  const savedTabs = loadTabState();
+  if (savedTabs) {
+    const sessionIds = new Set(sessions.map(s => s.id));
+    const validTabs = savedTabs.openTabIds.filter(id => sessionIds.has(id));
+    const activeId = validTabs.includes(savedTabs.activeId)
+      ? savedTabs.activeId
+      : validTabs[0] || sessions[0].id;
+    return { sessions, activeId, openTabIds: validTabs };
+  }
+
+  const first = sessions.find(s => !s.archived) || sessions[0];
+  return { sessions, activeId: first.id, openTabIds: [first.id] };
 }
 
 interface ChatState {
@@ -244,6 +271,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setActiveSession: (id) => {
     set({ activeSessionId: id, error: null });
+    saveTabState(get().openTabIds, id);
   },
 
   newChat: () => {
@@ -253,6 +281,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       .find(s => s && s.messages.length === 0);
     if (emptyOpen) {
       set({ activeSessionId: emptyOpen.id, error: null, isRunning: false });
+      saveTabState(openTabIds, emptyOpen.id);
       return;
     }
     const session = createSession();
@@ -260,6 +289,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const newTabs = [...openTabIds, session.id];
     set({ sessions: updated, openTabIds: newTabs, activeSessionId: session.id, error: null, isRunning: false });
     saveSessions(updated);
+    saveTabState(newTabs, session.id);
   },
 
   closeTab: (id) => {
@@ -271,6 +301,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       newActive = newTabs[Math.min(closedIdx, newTabs.length - 1)] || '';
     }
     set({ openTabIds: newTabs, activeSessionId: newActive, error: null });
+    saveTabState(newTabs, newActive);
   },
 
   deleteSession: (id) => {
@@ -284,6 +315,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     set({ sessions: remaining, openTabIds: newTabs, activeSessionId: newActive, error: null });
     saveSessions(remaining);
+    saveTabState(newTabs, newActive);
   },
 
   loadFromHistory: (id) => {
@@ -292,10 +324,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!session) return;
     if (openTabIds.includes(id)) {
       set({ activeSessionId: id, error: null });
+      saveTabState(openTabIds, id);
       return;
     }
     const newTabs = [...openTabIds, id];
     set({ openTabIds: newTabs, activeSessionId: id, error: null });
+    saveTabState(newTabs, id);
   },
 
   sendMessage: async (content: string, attachments?: ChatAttachment[]) => {

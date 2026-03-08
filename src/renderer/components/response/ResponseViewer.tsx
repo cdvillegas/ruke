@@ -1,12 +1,126 @@
+import { useState, useRef, useEffect } from 'react';
 import { useRequestStore } from '../../stores/requestStore';
 import { useUiStore } from '../../stores/uiStore';
 import { ResponseBody } from './ResponseBody';
 import { ResponseHeaders } from './ResponseHeaders';
-import { Clock, HardDrive, ArrowDown } from 'lucide-react';
+import { Clock, HardDrive, ArrowDown, ChevronDown, History } from 'lucide-react';
+
+function statusColor(status: number) {
+  if (status >= 200 && status < 300) return 'text-success';
+  if (status >= 400) return 'text-error';
+  if (status >= 300) return 'text-warning';
+  return 'text-error';
+}
+
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function timeAgo(timestamp: string): string {
+  const diff = Date.now() - new Date(timestamp).getTime();
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function HistoryDropdown() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const requestHistory = useRequestStore((s) => s.requestHistory);
+  const viewHistoryResponse = useRequestStore((s) => s.viewHistoryResponse);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  if (requestHistory.length <= 1) return null;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary bg-bg-tertiary/50 hover:bg-bg-tertiary rounded-md transition-colors"
+      >
+        <History size={11} />
+        <span>History</span>
+        <span className="text-[10px] text-text-muted tabular-nums">({requestHistory.length})</span>
+        <ChevronDown size={10} />
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1 w-64 bg-bg-secondary border border-border/60 rounded-lg shadow-2xl z-50 py-1 animate-fade-in max-h-64 overflow-y-auto">
+          <div className="px-3 py-1.5 text-[9px] text-text-muted/50 uppercase tracking-wider font-medium">
+            Response history
+          </div>
+          {requestHistory.map((entry) => (
+            <button
+              key={entry.id}
+              onClick={() => { viewHistoryResponse(entry.id); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-bg-hover transition-colors"
+            >
+              <span className={`text-[11px] font-mono font-bold tabular-nums ${statusColor(entry.status)}`}>
+                {entry.status}
+              </span>
+              <span className="text-[10px] text-text-muted tabular-nums">{entry.duration}ms</span>
+              <span className="text-[10px] text-text-muted/50 ml-auto">{timeAgo(entry.timestamp)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistoryList() {
+  const requestHistory = useRequestStore((s) => s.requestHistory);
+  const viewHistoryResponse = useRequestStore((s) => s.viewHistoryResponse);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-4 py-2 border-b border-border bg-bg-secondary shrink-0">
+        <div className="flex items-center gap-1.5 text-text-muted">
+          <History size={12} />
+          <span className="text-[11px] font-medium">Previous responses</span>
+          <span className="text-[10px] text-text-muted/50">({requestHistory.length})</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {requestHistory.map((entry) => (
+          <button
+            key={entry.id}
+            onClick={() => viewHistoryResponse(entry.id)}
+            className="w-full flex items-center gap-3 px-4 py-2.5 border-b border-border/30 hover:bg-bg-hover/50 transition-colors text-left"
+          >
+            <span className={`text-xs font-mono font-bold tabular-nums w-8 ${statusColor(entry.status)}`}>
+              {entry.status}
+            </span>
+            <span className="text-[11px] font-mono text-text-secondary truncate flex-1">{entry.url}</span>
+            <div className="flex items-center gap-3 shrink-0 text-[10px] text-text-muted tabular-nums">
+              <span>{entry.duration}ms</span>
+              <span>{formatSize(entry.responseSize)}</span>
+              <span className="text-text-muted/50">{timeAgo(entry.timestamp)}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function ResponseViewer() {
   const response = useRequestStore((s) => s.response);
   const loading = useRequestStore((s) => s.loading);
+  const requestHistory = useRequestStore((s) => s.requestHistory);
   const activeResponseTab = useUiStore((s) => s.activeResponseTab);
   const setActiveResponseTab = useUiStore((s) => s.setActiveResponseTab);
 
@@ -31,6 +145,10 @@ export function ResponseViewer() {
     );
   }
 
+  if (!response && requestHistory.length > 0) {
+    return <HistoryList />;
+  }
+
   if (!response) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -43,21 +161,6 @@ export function ResponseViewer() {
     );
   }
 
-  const statusColor =
-    response.status >= 200 && response.status < 300
-      ? 'text-success'
-      : response.status >= 400
-      ? 'text-error'
-      : response.status >= 300
-      ? 'text-warning'
-      : 'text-error';
-
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
   const headerCount = Object.keys(response.headers).length;
 
   return (
@@ -65,7 +168,7 @@ export function ResponseViewer() {
       {/* Status bar */}
       <div className="flex items-center gap-4 px-4 py-2 border-b border-border bg-bg-secondary shrink-0">
         <div className="flex items-center gap-2">
-          <span className={`font-mono font-bold text-sm ${statusColor}`}>
+          <span className={`font-mono font-bold text-sm ${statusColor(response.status)}`}>
             {response.status || 'ERR'}
           </span>
           <span className="text-xs text-text-secondary">{response.statusText}</span>
@@ -80,6 +183,7 @@ export function ResponseViewer() {
             <HardDrive size={12} />
             <span>{formatSize(response.size)}</span>
           </div>
+          <HistoryDropdown />
         </div>
       </div>
 

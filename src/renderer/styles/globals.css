@@ -387,3 +387,59 @@ body {
 [data-theme="light"] .param-field-row + .param-field-row {
   border-top: 1px solid rgba(0, 0, 0, 0.04);
 }
+
+/* ─── AI Assist FAB ─── */
+
+.ai-assist-fab {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #60a5fa 100%);
+  box-shadow:
+    0 4px 16px rgba(59, 130, 246, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  animation: fab-glow 3s ease-in-out infinite;
+}
+
+.ai-assist-fab::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #2563eb, #3b82f6, #60a5fa, #2563eb);
+  background-size: 300% 300%;
+  animation: fab-border-shift 4s ease-in-out infinite;
+  z-index: -1;
+  opacity: 0.5;
+  filter: blur(6px);
+  transition: opacity 0.3s ease;
+}
+
+.ai-assist-fab:hover::before {
+  opacity: 0.8;
+}
+
+.ai-assist-fab:hover {
+  box-shadow:
+    0 6px 24px rgba(59, 130, 246, 0.55),
+    0 2px 8px rgba(37, 99, 235, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.ai-assist-icon {
+  animation: fab-sparkle 2s ease-in-out infinite;
+}
+
+@keyframes fab-glow {
+  0%, 100% { box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.15); }
+  50% { box-shadow: 0 4px 24px rgba(59, 130, 246, 0.55), 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.15); }
+}
+
+@keyframes fab-border-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes fab-sparkle {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(-8deg) scale(1.1); }
+  75% { transform: rotate(8deg) scale(1.05); }
+}

@@ -11,8 +11,8 @@ import { AuthEditor } from './AuthEditor';
 import { HTTP_METHODS, METHOD_COLORS } from '@shared/constants';
 import type { HttpMethod, ApiEndpoint, ApiConnection } from '@shared/types';
 import {
-  Send, Loader2, Save, ChevronDown, Search, Shield, Check,
-  FileText, Braces, SlidersHorizontal,
+  Send, Loader2, ChevronDown, Search, Shield, Check,
+  FileText, Braces, SlidersHorizontal, Cloud,
 } from 'lucide-react';
 import { VariableInput } from '../shared/VariableInput';
 
@@ -299,7 +299,7 @@ export function RequestBuilder() {
   const setName = useRequestStore((s) => s.setName);
   const loading = useRequestStore((s) => s.loading);
   const sendRequest = useRequestStore((s) => s.sendRequest);
-  const saveRequest = useRequestStore((s) => s.saveRequest);
+  const saveStatus = useRequestStore((s) => s.saveStatus);
   const updateActiveRequest = useRequestStore((s) => s.updateActiveRequest);
   const linkEndpoint = useRequestStore((s) => s.linkEndpoint);
   const pendingTabIds = useRequestStore((s) => s.pendingTabIds);
@@ -308,7 +308,6 @@ export function RequestBuilder() {
   const pending = pendingTabIds.includes(activeRequest.id);
 
   const [advancedTab, setAdvancedTab] = useState<'params' | 'headers' | 'body' | 'auth'>('params');
-  const [saved, setSaved] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const paramRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -328,12 +327,6 @@ export function RequestBuilder() {
   const handleSend = () => {
     const vars = resolveVariables();
     sendRequest(vars);
-  };
-
-  const handleSave = async () => {
-    await saveRequest();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
   };
 
   const handleSelectEndpoint = (ep: ApiEndpoint) => {
@@ -374,7 +367,8 @@ export function RequestBuilder() {
       .filter((p) => p.in === 'query')
       .map((p) => {
         const existing = activeRequest.params.find((ap) => ap.key === p.name);
-        return { key: p.name, value: existing?.value || '', enabled: existing?.enabled ?? true };
+        const hasValue = !!(existing?.value);
+        return { key: p.name, value: existing?.value || '', enabled: hasValue ? (existing?.enabled ?? true) : false };
       });
 
     const updates: Record<string, any> = {
@@ -453,17 +447,26 @@ export function RequestBuilder() {
 
         <div className="flex-1" />
 
-        <button
-          onClick={handleSave}
-          className={`p-2 rounded-lg border transition-all shrink-0 ${
-            saved
-              ? 'bg-success/10 border-success/20 text-success'
-              : 'bg-bg-tertiary border-border hover:bg-bg-hover text-text-secondary hover:text-text-primary'
-          }`}
-          title={saved ? 'Saved!' : 'Save (Cmd+S)'}
-        >
-          {saved ? <Check size={14} /> : <Save size={14} />}
-        </button>
+        {saveStatus !== 'idle' && (
+          <div className={`flex items-center gap-1.5 text-[11px] shrink-0 transition-opacity duration-300 ${
+            saveStatus === 'saved' ? 'opacity-60' : 'opacity-100'
+          }`}>
+            {saveStatus === 'unsaved' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
+            )}
+            {saveStatus === 'saving' && (
+              <Loader2 size={11} className="text-text-muted animate-spin" />
+            )}
+            {saveStatus === 'saved' && (
+              <Check size={11} className="text-success" />
+            )}
+            <span className={
+              saveStatus === 'saved' ? 'text-success/80' : 'text-text-muted'
+            }>
+              {saveStatus === 'unsaved' ? 'Editing' : saveStatus === 'saving' ? 'Saving...' : 'Saved'}
+            </span>
+          </div>
+        )}
 
         <button
           onClick={handleSend}

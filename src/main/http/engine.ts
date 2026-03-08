@@ -18,7 +18,7 @@ export class HttpEngine {
       this.applyAuth(request, headers, vars);
 
       let queryString = '';
-      const enabledParams = request.params.filter(p => p.enabled);
+      const enabledParams = request.params.filter(p => p.enabled && p.key && p.value !== '');
       if (enabledParams.length > 0) {
         const searchParams = new URLSearchParams();
         for (const p of enabledParams) {

@@ -277,6 +277,12 @@ const localRepo: Record<string, (...args: any[]) => any> = {
     if (h.length > 200) h.splice(0, h.length - 200);
     setStore('history', h);
   },
+  getHistoryForRequest: (requestId: string, limit: number = 20) => {
+    return getStore('history')
+      .filter((h: any) => h.requestId === requestId)
+      .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limit);
+  },
   clearHistory: () => setStore('history', []),
   searchHistory: (query: string) => {
     const q = query.toLowerCase();
@@ -315,7 +321,7 @@ async function browserSendRequest(request: any): Promise<ApiResponse> {
     headers[resolve(request.auth.apiKey.key)] = resolve(request.auth.apiKey.value);
   }
 
-  const enabledParams = (request.params || []).filter((p: any) => p.enabled && p.key);
+  const enabledParams = (request.params || []).filter((p: any) => p.enabled && p.key && p.value !== '');
   if (enabledParams.length > 0) {
     const sp = new URLSearchParams();
     for (const p of enabledParams) sp.append(resolve(p.key), resolve(p.value));

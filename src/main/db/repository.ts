@@ -259,6 +259,20 @@ export function createRepository(db: Database.Database) {
       );
     },
 
+    getHistoryForRequest(requestId: string, limit: number = 20): HistoryEntry[] {
+      const rows = db.prepare(
+        `SELECT id, request_id as requestId, method, url, status,
+         duration_ms as duration, response_size as responseSize,
+         request_data, response_data, timestamp
+         FROM history WHERE request_id = ? ORDER BY timestamp DESC LIMIT ?`
+      ).all(requestId, limit) as any[];
+      return rows.map((row: any) => ({
+        ...row,
+        request: JSON.parse(row.request_data),
+        response: JSON.parse(row.response_data),
+      }));
+    },
+
     clearHistory(): void {
       db.prepare('DELETE FROM history').run();
     },

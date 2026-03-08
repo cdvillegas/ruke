@@ -46,7 +46,7 @@ function HeaderKeySuggestions({
   if (!visible || filtered.length === 0) return null;
 
   return (
-    <div className="absolute top-full left-0 mt-1 w-72 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in max-h-52 overflow-y-auto">
+    <div className="absolute top-full left-0 mt-1 w-72 bg-bg-secondary border border-border/60 rounded-lg shadow-2xl z-50 py-1 animate-fade-in max-h-52 overflow-y-auto">
       {filtered.map((name, i) => (
         <button
           key={name}
@@ -87,7 +87,7 @@ function HeaderValueSuggestions({
   if (!visible || suggestions.length === 0) return null;
 
   return (
-    <div className="absolute top-full left-0 mt-1 w-64 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in max-h-40 overflow-y-auto">
+    <div className="absolute top-full left-0 mt-1 w-64 bg-bg-secondary border border-border/60 rounded-lg shadow-2xl z-50 py-1 animate-fade-in max-h-40 overflow-y-auto">
       {suggestions.map((val, i) => (
         <button
           key={val}
@@ -312,7 +312,7 @@ function BulkEditor({
   };
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden bg-bg-secondary">
+    <div className="rounded-lg border border-border/60 overflow-hidden bg-bg-secondary">
       <div className="px-3 py-1.5 border-b border-border/50 bg-bg-tertiary/50">
         <span className="text-[10px] text-text-muted">
           One header per line as <code className="text-accent/80">Key: Value</code> — prefix with <code className="text-accent/80">//</code> to disable
@@ -384,7 +384,7 @@ function PresetMenu({ onSelect }: { onSelect: (headers: KeyValue[]) => void }) {
         <ChevronDown size={10} />
       </button>
       {open && (
-        <div className="absolute top-full right-0 mt-1 w-44 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in">
+        <div className="absolute top-full right-0 mt-1 w-44 bg-bg-secondary border border-border/60 rounded-lg shadow-2xl z-50 py-1 animate-fade-in">
           {presets.map((p) => (
             <button
               key={p.label}
@@ -467,25 +467,31 @@ export function HeadersEditor() {
             </button>
           )}
           <PresetMenu onSelect={addPreset} />
-          <button
-            onClick={() => setBulkMode(!bulkMode)}
-            className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded transition-colors ${
-              bulkMode
-                ? 'text-accent bg-accent/10'
-                : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
-            }`}
-            title={bulkMode ? 'Switch to table view' : 'Switch to bulk edit'}
-          >
-            {bulkMode ? <Table size={11} /> : <Code2 size={11} />}
-            <span>{bulkMode ? 'Table' : 'Bulk Edit'}</span>
-          </button>
+          <div className="flex gap-0.5 p-0.5 rounded-md bg-bg-secondary/60">
+            <button
+              onClick={() => setBulkMode(false)}
+              className={`px-2 py-0.5 text-[10px] font-medium rounded transition-all duration-150 ${
+                !bulkMode ? 'bg-bg-tertiary text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              <Table size={11} />
+            </button>
+            <button
+              onClick={() => setBulkMode(true)}
+              className={`px-2 py-0.5 text-[10px] font-medium rounded transition-all duration-150 ${
+                bulkMode ? 'bg-bg-tertiary text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              <Code2 size={11} />
+            </button>
+          </div>
         </div>
       </div>
 
       {bulkMode ? (
         <BulkEditor headers={headers} onChange={setHeaders} />
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden bg-bg-secondary">
+        <div className="rounded-lg border border-border/60 overflow-hidden bg-bg-secondary">
           <div className="grid grid-cols-[28px_1fr_1fr_28px] gap-0 border-b border-border bg-bg-tertiary/50">
             <div className="flex items-center justify-center py-1.5">
               <input
