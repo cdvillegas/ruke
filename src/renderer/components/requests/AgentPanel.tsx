@@ -3,6 +3,7 @@ import {
   Send, Plus, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, X,
   Clock, Trash2, Square,
+  SlidersHorizontal, Layers, Terminal, FolderOpen,
 } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
@@ -19,10 +20,10 @@ function hasAiKey(): boolean {
 }
 
 const SUGGESTIONS = [
-  { label: 'Set up a request', prompt: 'Help me set up this API request with the right parameters' },
-  { label: 'Create from API', prompt: 'Show me what endpoints are available and create requests for the most useful ones' },
-  { label: 'Import requests', prompt: 'I have some curl commands I want to convert to requests' },
-  { label: 'Organize requests', prompt: 'Help me organize my requests into collections' },
+  { icon: SlidersHorizontal, label: 'Set up a request', desc: 'Configure parameters, headers, and auth', prompt: 'Help me set up this API request with the right parameters' },
+  { icon: Layers, label: 'Create from API', desc: 'Generate requests from connected endpoints', prompt: 'Show me what endpoints are available and create requests for the most useful ones' },
+  { icon: Terminal, label: 'Import cURL', desc: 'Paste cURL commands to convert to requests', prompt: 'I have some curl commands I want to convert to requests' },
+  { icon: FolderOpen, label: 'Organize requests', desc: 'Group requests into collections', prompt: 'Help me organize my requests into collections' },
 ];
 
 function SessionTab({ id, title, isActive, onClick, onClose }: {
@@ -49,7 +50,7 @@ function SessionTab({ id, title, isActive, onClick, onClose }: {
     <button
       onClick={onClick}
       title={title}
-      className={`group relative flex items-center shrink-0 rounded-md transition-colors pl-3 pr-2 py-1.5 text-xs max-w-[180px] ${
+      className={`group relative flex items-center shrink-0 rounded-md transition-colors px-2.5 py-1.5 text-xs max-w-[180px] ${
         isActive
           ? 'bg-bg-hover/70 text-text-primary'
           : 'text-text-muted hover:text-text-secondary'
@@ -188,9 +189,8 @@ export function AgentPanel() {
   }, [canSend, input, attachedFiles, sendMessage]);
 
   const handleSuggestion = useCallback((prompt: string) => {
-    setInput(prompt);
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }, []);
+    sendMessage(prompt);
+  }, [sendMessage]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -353,46 +353,52 @@ export function AgentPanel() {
         </div>
       ) : !hasActiveTab ? (
         <div className="flex-1 flex flex-col items-center justify-center px-4">
-          <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center mb-3">
-            <Sparkles size={20} className="text-accent" />
+          <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
+            <Sparkles size={18} className="text-text-muted" />
           </div>
-          <h2 className="text-sm font-semibold text-text-primary mb-0.5">Ruke</h2>
-          <p className="text-xs text-text-muted text-center max-w-xs mb-4">
-            Start a new chat or open one from history.
+          <h2 className="text-sm font-semibold text-text-primary mb-1">Ruke</h2>
+          <p className="text-[11px] text-text-muted/70 text-center max-w-xs mb-4">
+            Start a new chat or open one from history
           </p>
           <button
             onClick={newChat}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg bg-accent hover:bg-accent-hover text-white transition-colors"
+            className="flex items-center gap-2 px-3.5 py-2 text-xs rounded-xl bg-accent hover:bg-accent-hover text-white transition-colors font-medium"
           >
-            <Plus size={12} /> New Chat
+            <Plus size={13} /> New Chat
           </button>
         </div>
       ) : isEmpty ? (
         <div className="flex-1 flex flex-col items-center justify-center px-4">
-          <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center mb-3">
-            <Sparkles size={20} className="text-accent" />
+          <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
+            <Sparkles size={18} className="text-text-muted" />
           </div>
-          <h2 className="text-sm font-semibold text-text-primary mb-0.5">Ruke</h2>
-          <p className="text-xs text-text-muted text-center max-w-xs mb-4">
-            Your API assistant. I can edit requests, connect APIs, create collections, and more.
+          <h2 className="text-sm font-semibold text-text-primary mb-1">Ruke</h2>
+          <p className="text-[11px] text-text-muted/70 text-center max-w-[220px] mb-4">
+            Your API assistant for requests, connections, collections, and more
           </p>
           {connections.length > 0 && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-bg-secondary border border-border mb-4">
-              <Plug size={11} className="text-accent" />
-              <span className="text-[10px] text-text-muted">
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-bg-secondary/60 border border-border/40 mb-4">
+              <Plug size={10} className="text-text-muted/50" />
+              <span className="text-[10px] text-text-muted/60">
                 {connections.length} API{connections.length !== 1 ? 's' : ''} &middot;{' '}
                 {connections.reduce((sum, c) => sum + c.endpoints.length, 0)} endpoints
               </span>
             </div>
           )}
-          <div className="grid grid-cols-1 gap-1.5 w-full max-w-xs">
+          <div className="w-full max-w-xs space-y-1.5">
             {SUGGESTIONS.map(s => (
               <button
                 key={s.label}
                 onClick={() => handleSuggestion(s.prompt)}
-                className="text-left px-3 py-2 rounded-lg border border-border bg-bg-secondary hover:bg-bg-hover hover:border-accent/30 transition-all"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-bg-secondary border border-border hover:border-accent/30 hover:bg-bg-hover transition-all text-left group"
               >
-                <p className="text-xs font-medium text-text-primary">{s.label}</p>
+                <div className="w-7 h-7 rounded-lg bg-bg-tertiary/60 group-hover:bg-accent/10 flex items-center justify-center shrink-0 transition-colors">
+                  <s.icon size={13} className="text-text-muted/50 group-hover:text-accent/70 transition-colors" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-medium text-text-primary">{s.label}</p>
+                  <p className="text-[10px] text-text-muted/50 mt-0.5">{s.desc}</p>
+                </div>
               </button>
             ))}
           </div>
