@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useEnvironmentStore } from '../../stores/environmentStore';
 import { VARIABLE_REGEX } from '@shared/constants';
 
@@ -18,7 +18,8 @@ export function VariableInput({ value, onChange, onKeyDown, placeholder, classNa
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const allKeys = useEnvironmentStore((s) => s.getAllVariableKeys());
+  const getAllVariableKeys = useEnvironmentStore((s) => s.getAllVariableKeys);
+  const allKeys = useMemo(() => getAllVariableKeys(), [getAllVariableKeys]);
 
   const getVariableContext = useCallback((): { isInVariable: boolean; prefix: string; startIdx: number } => {
     const beforeCursor = value.substring(0, cursorPos);

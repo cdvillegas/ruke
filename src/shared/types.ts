@@ -248,12 +248,19 @@ export interface ChatToolCall {
   status: 'pending' | 'running' | 'done' | 'error';
 }
 
+export interface ChatAttachment {
+  name: string;
+  size: number;
+  content: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'tool';
   content: string | null;
   toolCalls?: ChatToolCall[];
   toolCallId?: string;
+  attachments?: ChatAttachment[];
   timestamp: string;
 }
 

@@ -6,10 +6,10 @@ import { useConnectionStore } from '../../stores/connectionStore';
 import { useUiStore } from '../../stores/uiStore';
 import {
   Send, Plus, Loader2, Check, AlertCircle, ChevronDown, ChevronRight,
-  Plug, Sparkles, Key, ArrowRight,
+  Plug, Sparkles, Key, ArrowRight, FileUp, File, X,
 } from 'lucide-react';
 import { TOOL_DISPLAY_NAMES } from '../../lib/agentTools';
-import type { ChatMessage, ChatToolCall } from '@shared/types';
+import type { ChatMessage, ChatToolCall, ChatAttachment } from '@shared/types';
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
 function hasAiKey(): boolean {
@@ -147,14 +147,50 @@ function AssistantMessage({ content }: { content: string }) {
   );
 }
 
+function AttachmentChip({ attachment, removable, onRemove }: {
+  attachment: ChatAttachment;
+  removable?: boolean;
+  onRemove?: () => void;
+}) {
+  const sizeLabel = attachment.size >= 1024 * 1024
+    ? `${(attachment.size / (1024 * 1024)).toFixed(1)} MB`
+    : `${(attachment.size / 1024).toFixed(1)} KB`;
+
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-bg-tertiary/60 border border-border/40 text-xs">
+      <File size={12} className="text-accent shrink-0" />
+      <span className="text-text-primary font-medium truncate max-w-[160px]">{attachment.name}</span>
+      <span className="text-text-muted">{sizeLabel}</span>
+      {removable && onRemove && (
+        <button onClick={onRemove} className="text-text-muted hover:text-text-primary transition-colors ml-0.5">
+          <X size={12} />
+        </button>
+      )}
+    </span>
+  );
+}
+
 function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'tool') return null;
 
   if (message.role === 'user') {
+    const displayContent = message.attachments?.length
+      ? (message.content || '').replace(/<file[\s\S]*?<\/file>/g, '').trim()
+      : message.content;
+
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] bg-accent/15 border border-accent/20 rounded-2xl rounded-br-md px-4 py-2.5">
-          <p className="text-sm text-text-primary whitespace-pre-wrap">{message.content}</p>
+        <div className="max-w-[80%] bg-accent/15 border border-accent/20 rounded-2xl rounded-br-md px-4 py-2.5 space-y-2">
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {message.attachments.map((a, i) => (
+                <AttachmentChip key={i} attachment={a} />
+              ))}
+            </div>
+          )}
+          {displayContent && (
+            <p className="text-sm text-text-primary whitespace-pre-wrap">{displayContent}</p>
+          )}
         </div>
       </div>
     );
@@ -237,11 +273,15 @@ export function ChatView() {
   const { session, isRunning, error, sendMessage, newChat } = useChatStore();
   const connections = useConnectionStore(s => s.connections);
   const [input, setInput] = useState('');
+  const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const visibleMessages = session.messages.filter(m => m.role !== 'tool');
   const isEmpty = visibleMessages.length === 0 && !isRunning;
+  const canSend = (!isRunning) && (input.trim() || attachedFiles.length > 0);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -254,15 +294,30 @@ export function ChatView() {
   }, []);
 
   const handleSend = useCallback(async () => {
-    const trimmed = input.trim();
-    if (!trimmed || isRunning) return;
+    if (!canSend) return;
+    const text = input.trim();
+    const files = [...attachedFiles];
     setInput('');
-    await sendMessage(trimmed);
+    setAttachedFiles([]);
+
+    let messageContent = text;
+    if (files.length > 0) {
+      const fileParts = files.map(f =>
+        `<file name="${f.name}" size="${f.size}">\n${f.content}\n</file>`
+      );
+      const fileBlock = fileParts.join('\n\n');
+      messageContent = text
+        ? `${text}\n\n${fileBlock}`
+        : fileBlock;
+    }
+
+    await sendMessage(messageContent, files);
     inputRef.current?.focus();
-  }, [input, isRunning, sendMessage]);
+  }, [canSend, input, attachedFiles, sendMessage]);
 
   const handleSuggestion = useCallback((prompt: string) => {
     setInput('');
+    setAttachedFiles([]);
     sendMessage(prompt);
   }, [sendMessage]);
 
@@ -273,27 +328,79 @@ export function ChatView() {
     }
   }, [handleSend]);
 
-  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    const text = await file.text();
-    const name = file.name.toLowerCase();
+  const addFiles = useCallback(async (fileList: FileList | File[]) => {
+    const files = Array.from(fileList);
+    const newAttachments: ChatAttachment[] = [];
 
-    if (name.endsWith('.json') || name.endsWith('.yaml') || name.endsWith('.yml')) {
-      const conn = useConnectionStore.getState().importOpenApiSpec(text, file.name);
-      if (conn) {
-        sendMessage(`I just imported a spec file (${file.name}). It's now connected as "${conn.name}" with ${conn.endpoints.length} endpoints. What would you like to do with it?`);
+    for (const file of files) {
+      const alreadyAttached = attachedFiles.some(a => a.name === file.name);
+      if (alreadyAttached) continue;
+
+      try {
+        const content = await file.text();
+        newAttachments.push({ name: file.name, size: file.size, content });
+      } catch {
+        // Binary or unreadable file -- skip silently
       }
     }
-  }, [sendMessage]);
+
+    if (newAttachments.length > 0) {
+      setAttachedFiles(prev => [...prev, ...newAttachments]);
+      inputRef.current?.focus();
+    }
+  }, [attachedFiles]);
+
+  const removeFile = useCallback((name: string) => {
+    setAttachedFiles(prev => prev.filter(f => f.name !== name));
+  }, []);
+
+  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setIsDragging(false);
+    if (isRunning) return;
+    await addFiles(e.dataTransfer.files);
+  }, [isRunning, addFiles]);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current--;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
 
   return (
     <div
-      className="h-full flex flex-col bg-bg-primary"
-      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+      className="h-full flex flex-col bg-bg-primary relative"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
       onDrop={handleFileDrop}
     >
+      {isDragging && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 p-8 rounded-2xl border-2 border-dashed border-accent/50 bg-accent/5">
+            <FileUp size={32} className="text-accent" />
+            <p className="text-sm font-medium text-text-primary">Drop files here</p>
+            <p className="text-xs text-text-muted">Attach files to your message for Ruke to work with</p>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
@@ -358,34 +465,49 @@ export function ChatView() {
       {/* Input Bar */}
       <div className="shrink-0 border-t border-border p-3">
         <div className="max-w-2xl mx-auto">
-          <div className="flex items-end gap-2 bg-bg-secondary rounded-2xl border border-border focus-within:border-accent/40 transition-colors px-4 py-2">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={isRunning ? 'Waiting for response...' : 'Ask Ruke anything about APIs...'}
-              disabled={isRunning}
-              rows={1}
-              className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-32 py-1 disabled:opacity-50"
-              style={{ height: 'auto', overflow: 'hidden' }}
-              onInput={(e) => {
-                const t = e.target as HTMLTextAreaElement;
-                t.style.height = 'auto';
-                t.style.height = Math.min(t.scrollHeight, 128) + 'px';
-              }}
-            />
-            <button
-              onClick={handleSend}
-              disabled={isRunning || !input.trim()}
-              className={`shrink-0 p-2 rounded-xl transition-all ${
-                input.trim()
-                  ? 'bg-accent hover:bg-accent-hover text-white shadow-[0_0_12px_rgba(59,130,246,0.3)]'
-                  : 'bg-accent/20 text-white/30 cursor-not-allowed'
-              }`}
-            >
-              {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-            </button>
+          <div className="bg-bg-secondary rounded-2xl border border-border focus-within:border-accent/40 transition-colors px-4 py-2">
+            {attachedFiles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pb-2">
+                {attachedFiles.map(f => (
+                  <AttachmentChip key={f.name} attachment={f} removable onRemove={() => removeFile(f.name)} />
+                ))}
+              </div>
+            )}
+            <div className="flex items-end gap-2">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  isRunning
+                    ? 'Waiting for response...'
+                    : attachedFiles.length > 0
+                      ? 'Add a message or press Enter to send...'
+                      : 'Ask Ruke anything about APIs...'
+                }
+                disabled={isRunning}
+                rows={1}
+                className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none resize-none min-h-[24px] max-h-32 py-1 disabled:opacity-50"
+                style={{ height: 'auto', overflow: 'hidden' }}
+                onInput={(e) => {
+                  const t = e.target as HTMLTextAreaElement;
+                  t.style.height = 'auto';
+                  t.style.height = Math.min(t.scrollHeight, 128) + 'px';
+                }}
+              />
+              <button
+                onClick={handleSend}
+                disabled={!canSend}
+                className={`shrink-0 p-2 rounded-xl transition-all ${
+                  canSend
+                    ? 'bg-accent hover:bg-accent-hover text-white shadow-[0_0_12px_rgba(59,130,246,0.3)]'
+                    : 'bg-accent/20 text-white/30 cursor-not-allowed'
+                }`}
+              >
+                {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+              </button>
+            </div>
           </div>
           <p className="text-[10px] text-text-muted text-center mt-2 opacity-60">
             Ruke can make mistakes. Verify important API configurations.

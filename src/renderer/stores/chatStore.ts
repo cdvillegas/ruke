@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
-import type { ChatMessage, ChatSession, ChatToolCall } from '@shared/types';
+import type { ChatMessage, ChatSession, ChatToolCall, ChatAttachment } from '@shared/types';
 import { runAgent } from '../lib/agentRunner';
 
 const STORAGE_KEY = 'ruke:chat_session';
@@ -15,7 +15,15 @@ function loadSession(): ChatSession | null {
 
 function saveSession(session: ChatSession | null) {
   if (session) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    const toSave = {
+      ...session,
+      messages: session.messages.map(m =>
+        m.attachments
+          ? { ...m, attachments: m.attachments.map(({ name, size }) => ({ name, size, content: '' })) }
+          : m
+      ),
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   } else {
     localStorage.removeItem(STORAGE_KEY);
   }
@@ -37,7 +45,7 @@ interface ChatState {
   error: string | null;
 
   newChat: () => void;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
   appendMessage: (msg: ChatMessage) => void;
   updateToolCall: (messageId: string, toolCallId: string, updates: Partial<ChatToolCall>) => void;
   setError: (error: string | null) => void;
@@ -54,7 +62,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     saveSession(session);
   },
 
-  sendMessage: async (content: string) => {
+  sendMessage: async (content: string, attachments?: ChatAttachment[]) => {
     const { session, isRunning } = get();
     if (isRunning) return;
 
@@ -62,6 +70,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       id: nanoid(),
       role: 'user',
       content,
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
       timestamp: new Date().toISOString(),
     };
 
@@ -72,7 +81,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
 
     if (session.messages.length === 0) {
-      updated.title = content.slice(0, 60) + (content.length > 60 ? '...' : '');
+      const titleSource = content.replace(/<file[\s\S]*?<\/file>/g, '').trim();
+      const fileNames = attachments?.map(a => a.name).join(', ');
+      updated.title = titleSource
+        ? titleSource.slice(0, 60) + (titleSource.length > 60 ? '...' : '')
+        : fileNames
+          ? `Files: ${fileNames.slice(0, 50)}`
+          : 'New Chat';
     }
 
     set({ session: updated, isRunning: true, error: null });

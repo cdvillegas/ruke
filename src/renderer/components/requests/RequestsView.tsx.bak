@@ -8,10 +8,10 @@ import { GrpcRequestView } from '../request/GrpcRequestView';
 import { ResponseViewer } from '../response/ResponseViewer';
 import {
   Search, Plus, FolderPlus, ChevronRight, ChevronDown,
-  MoreHorizontal, Send, Trash2, Pencil, X, FolderOpen, Loader2,
+  MoreHorizontal, Send, Trash2, Copy, Pencil, X, FolderOpen, Loader2,
 } from 'lucide-react';
 import { METHOD_COLORS } from '@shared/constants';
-import type { ApiRequest, CollectionTreeNode } from '@shared/types';
+import type { ApiRequest, Collection, CollectionTreeNode } from '@shared/types';
 
 function ResizableSplit() {
   const [topRatio, setTopRatio] = useState(0.45);
@@ -92,14 +92,6 @@ function CollectionNode({
     setIsRenaming(false);
   };
 
-  const pendingForCollection = useMemo(() => {
-    const { openTabs, pendingTabIds } = useRequestStore.getState();
-    return openTabs.filter(
-      t => pendingTabIds.includes(t.id) && t.collectionId === node.collection.id &&
-        !node.requests.some(r => r.id === t.id)
-    );
-  }, [node.collection.id, node.requests]);
-
   return (
     <div>
       <div
@@ -160,73 +152,79 @@ function CollectionNode({
         </div>
       </div>
 
-      {isExpanded && (
-        <div>
-          {node.requests.map((req) => {
-            const conn = req.connectionId ? connections.find(c => c.id === req.connectionId) : null;
-            return (
+      {isExpanded && (() => {
+        const { openTabs, pendingTabIds } = useRequestStore.getState();
+        const pendingForCollection = openTabs.filter(
+          t => pendingTabIds.includes(t.id) && t.collectionId === node.collection.id &&
+            !node.requests.some(r => r.id === t.id)
+        );
+        return (
+          <div>
+            {node.requests.map((req) => {
+              const conn = req.connectionId ? connections.find(c => c.id === req.connectionId) : null;
+              return (
+                <div
+                  key={req.id}
+                  onClick={() => onSelectRequest(req)}
+                  className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
+                    selectedRequestId === req.id
+                      ? 'bg-accent/10 text-text-primary cursor-pointer'
+                      : 'hover:bg-bg-hover text-text-secondary cursor-pointer'
+                  }`}
+                  style={{ paddingLeft: `${24 + depth * 16}px` }}
+                >
+                  <span
+                    className="font-mono font-bold text-[9px] w-8 shrink-0"
+                    style={{ color: METHOD_COLORS[req.method] || '#6b7280' }}
+                  >
+                    {req.method}
+                  </span>
+                  <span className="text-xs truncate flex-1">{req.name || 'Untitled'}</span>
+                  {conn && (
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: conn.iconColor }}
+                      title={conn.name}
+                    />
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteRequest(req.id); }}
+                    className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-error/20 text-text-muted hover:text-error transition-all"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              );
+            })}
+            {pendingForCollection.map((tab) => (
               <div
-                key={req.id}
-                onClick={() => onSelectRequest(req)}
-                className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
-                  selectedRequestId === req.id
-                    ? 'bg-accent/10 text-text-primary cursor-pointer'
-                    : 'hover:bg-bg-hover text-text-secondary cursor-pointer'
-                }`}
+                key={tab.id}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg opacity-50 ghost-tab-shimmer cursor-wait"
                 style={{ paddingLeft: `${24 + depth * 16}px` }}
               >
-                <span
-                  className="font-mono font-bold text-[9px] w-8 shrink-0"
-                  style={{ color: METHOD_COLORS[req.method] || '#6b7280' }}
-                >
-                  {req.method}
-                </span>
-                <span className="text-xs truncate flex-1">{req.name || 'Untitled'}</span>
-                {conn && (
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: conn.iconColor }}
-                    title={conn.name}
-                  />
-                )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); deleteRequest(req.id); }}
-                  className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-error/20 text-text-muted hover:text-error transition-all"
-                >
-                  <Trash2 size={11} />
-                </button>
+                <Loader2 size={10} className="text-accent animate-spin shrink-0 w-8" />
+                <span className="text-xs truncate flex-1">{tab.name || 'Creating...'}</span>
               </div>
-            );
-          })}
-          {pendingForCollection.map((tab) => (
-            <div
-              key={tab.id}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg opacity-50 ghost-tab-shimmer cursor-wait"
-              style={{ paddingLeft: `${24 + depth * 16}px` }}
-            >
-              <Loader2 size={10} className="text-accent animate-spin shrink-0 w-8" />
-              <span className="text-xs truncate flex-1">{tab.name || 'Creating...'}</span>
-            </div>
-          ))}
-          {node.children.map((child) => (
-            <CollectionNode
-              key={child.collection.id}
-              node={child}
-              depth={depth + 1}
-              selectedRequestId={selectedRequestId}
-              onSelectRequest={onSelectRequest}
-              onNewRequest={onNewRequest}
-            />
-          ))}
-        </div>
-      )}
+            ))}
+            {node.children.map((child) => (
+              <CollectionNode
+                key={child.collection.id}
+                node={child}
+                depth={depth + 1}
+                selectedRequestId={selectedRequestId}
+                onSelectRequest={onSelectRequest}
+                onNewRequest={onNewRequest}
+              />
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
 
 export function RequestsView() {
-  const collections = useCollectionStore((s) => s.collections);
-  const requests = useCollectionStore((s) => s.requests);
+  const getTree = useCollectionStore((s) => s.getTree);
   const createCollection = useCollectionStore((s) => s.createCollection);
   const loadRequests = useCollectionStore((s) => s.loadRequests);
   const activeRequest = useRequestStore((s) => s.activeRequest);
@@ -248,52 +246,37 @@ export function RequestsView() {
     if (activeRequest?.id && !selectedReqId) {
       setSelectedReqId(activeRequest.id);
     }
-  }, [activeRequest?.id, selectedReqId]);
-
+  }, [activeRequest?.id]);
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
+  const tree = getTree();
 
-  const tree = useMemo(() => {
-    const buildNode = (col: typeof collections[number]): CollectionTreeNode => ({
-      collection: col,
-      children: collections
-        .filter((c) => c.parentId === col.id)
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map(buildNode),
-      requests: requests[col.id] || [],
-    });
-    return collections
-      .filter((c) => !c.parentId)
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map(buildNode);
-  }, [collections, requests]);
-
-  const handleSelectRequest = useCallback((req: ApiRequest) => {
+  const handleSelectRequest = (req: ApiRequest) => {
     openTab(req);
     setSelectedReqId(req.id);
-  }, [openTab]);
+  };
 
-  const handleNewRequest = useCallback(async (collectionId: string) => {
+  const handleNewRequest = async (collectionId: string) => {
     newRequest(collectionId);
     const req = useRequestStore.getState().activeRequest;
     await saveRequest();
     setSelectedReqId(req.id);
     loadRequests(collectionId);
-  }, [newRequest, saveRequest, loadRequests]);
+  };
 
-  const handleCreateCollection = useCallback(async () => {
+  const handleCreateCollection = async () => {
     if (newCollectionName.trim()) {
       await createCollection(newCollectionName.trim());
       setNewCollectionName('');
       setIsCreatingCollection(false);
     }
-  }, [newCollectionName, createCollection]);
+  };
 
-  const handleNewFreeRequest = useCallback(() => {
+  const handleNewFreeRequest = () => {
     newRequest();
     const req = useRequestStore.getState().activeRequest;
     setSelectedReqId(req.id);
-  }, [newRequest]);
+  };
 
   const filteredTree = useMemo(() => {
     if (!search.trim()) return tree;
@@ -385,6 +368,7 @@ export function RequestsView() {
             </div>
           )}
 
+          {/* Pending ghost requests (not in a collection) */}
           {pendingUncollectedTabs.map((tab) => (
             <div
               key={tab.id}

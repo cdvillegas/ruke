@@ -15,10 +15,12 @@ export function ConnectionSelector() {
   const linkConnection = useRequestStore((s) => s.linkConnection);
   const linkEndpoint = useRequestStore((s) => s.linkEndpoint);
   const updateActiveRequest = useRequestStore((s) => s.updateActiveRequest);
-  const {
-    environments, activeEnvironmentId, setActiveEnvironment,
-    getGlobalEnvironments, getEnvironmentsByConnection, resolveBaseUrl,
-  } = useEnvironmentStore();
+  const environments = useEnvironmentStore((s) => s.environments);
+  const activeEnvironmentId = useEnvironmentStore((s) => s.activeEnvironmentId);
+  const setActiveEnvironment = useEnvironmentStore((s) => s.setActiveEnvironment);
+  const getGlobalEnvironments = useEnvironmentStore((s) => s.getGlobalEnvironments);
+  const getEnvironmentsByConnection = useEnvironmentStore((s) => s.getEnvironmentsByConnection);
+  const resolveBaseUrl = useEnvironmentStore((s) => s.resolveBaseUrl);
   const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
 
   const [showConnDropdown, setShowConnDropdown] = useState(false);
