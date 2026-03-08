@@ -35,11 +35,33 @@ function SessionTab({ id, title, isActive, onClick, onClose }: {
 }) {
   const textRef = useRef<HTMLSpanElement>(null);
   const [isOverflowing, setIsOverflowing] = useState(false);
+  const [displayTitle, setDisplayTitle] = useState(title);
+  const [titleAnimating, setTitleAnimating] = useState(false);
+  const prevTitleRef = useRef(title);
+
+  useEffect(() => {
+    const prev = prevTitleRef.current;
+    prevTitleRef.current = title;
+    if (prev === title) return;
+
+    const isAiRename = prev !== 'New Chat' && title !== 'New Chat' && prev !== title;
+    const isFirstRename = prev.length > 0 && title !== 'New Chat';
+
+    if (isAiRename || isFirstRename) {
+      setTitleAnimating(true);
+      const timer = setTimeout(() => {
+        setDisplayTitle(title);
+        requestAnimationFrame(() => setTitleAnimating(false));
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+    setDisplayTitle(title);
+  }, [title]);
 
   useEffect(() => {
     const el = textRef.current;
     if (el) setIsOverflowing(el.scrollWidth > el.clientWidth);
-  }, [title]);
+  }, [displayTitle]);
 
   const bg = isActive ? 'var(--color-bg-hover)' : 'var(--color-bg-primary)';
   const fadeMask = isOverflowing
@@ -59,9 +81,14 @@ function SessionTab({ id, title, isActive, onClick, onClose }: {
       <span
         ref={textRef}
         className="min-w-0 overflow-hidden whitespace-nowrap"
-        style={fadeMask}
+        style={{
+          ...fadeMask,
+          transition: 'opacity 300ms ease, transform 300ms ease',
+          opacity: titleAnimating ? 0 : 1,
+          transform: titleAnimating ? 'translateY(4px)' : 'translateY(0)',
+        }}
       >
-        {title}
+        {displayTitle}
       </span>
       <span
         className="absolute right-0 top-0 bottom-0 flex items-center pr-1 pl-3 rounded-r-md opacity-0 group-hover:opacity-100 transition-opacity"

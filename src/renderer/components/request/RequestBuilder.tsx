@@ -8,11 +8,12 @@ import { ParameterEditor } from './ParameterEditor';
 import { HeadersEditor } from './HeadersEditor';
 import { BodyEditor } from './BodyEditor';
 import { AuthEditor } from './AuthEditor';
+import { useCollectionStore } from '../../stores/collectionStore';
 import { HTTP_METHODS, METHOD_COLORS } from '@shared/constants';
 import type { HttpMethod, ApiEndpoint, ApiConnection, KeyValue } from '@shared/types';
 import {
   Send, Loader2, ChevronDown, Search, Shield, Check,
-  FileText, Braces, SlidersHorizontal, Cloud,
+  FileText, Braces, SlidersHorizontal, Cloud, ChevronRight,
 } from 'lucide-react';
 import { VariableInput } from '../shared/VariableInput';
 
@@ -348,7 +349,12 @@ export function RequestBuilder() {
   const pendingTabIds = useRequestStore((s) => s.pendingTabIds);
   const resolveVariables = useEnvironmentStore((s) => s.resolveVariables);
   const connections = useConnectionStore((s) => s.connections);
+  const collections = useCollectionStore((s) => s.collections);
   const pending = pendingTabIds.includes(activeRequest.id);
+
+  const collectionName = activeRequest.collectionId
+    ? collections.find((c) => c.id === activeRequest.collectionId)?.name
+    : null;
 
   const [advancedTab, setAdvancedTab] = useState<'params' | 'headers' | 'body' | 'auth'>('params');
   const [editingName, setEditingName] = useState(false);
@@ -453,8 +459,14 @@ export function RequestBuilder() {
         </div>
       )}
 
-      {/* Request name */}
-      <div className="flex items-center gap-3 mb-2">
+      <div className="flex items-center gap-2 mb-2 min-w-0">
+        {collectionName && (
+          <>
+            <span className="text-text-muted text-xs truncate max-w-40">{collectionName}</span>
+            <ChevronRight size={12} className="text-text-muted/50 shrink-0" />
+          </>
+        )}
+
         <div className="flex-1 min-w-0">
           {editingName ? (
             <input
@@ -467,7 +479,7 @@ export function RequestBuilder() {
                 if (e.key === 'Enter' || e.key === 'Escape') setEditingName(false);
               }}
               placeholder="Request name"
-              className="w-full px-2 py-1.5 text-sm font-medium text-text-primary bg-bg-tertiary border border-accent/50 rounded-lg focus:outline-none focus:border-accent"
+              className="w-full px-1.5 py-0.5 text-sm font-semibold text-text-primary bg-bg-tertiary border border-accent/50 rounded-md focus:outline-none focus:border-accent"
               autoFocus
             />
           ) : (
@@ -476,7 +488,7 @@ export function RequestBuilder() {
                 setEditingName(true);
                 setTimeout(() => nameInputRef.current?.select(), 10);
               }}
-              className="group flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary truncate max-w-full transition-colors"
+              className="group flex items-center gap-1 text-sm font-semibold text-text-primary hover:text-accent truncate max-w-full transition-colors"
               title="Click to rename"
             >
               <span className="truncate">{activeRequest.name || 'New Request'}</span>

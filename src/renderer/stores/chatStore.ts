@@ -232,11 +232,13 @@ interface ChatState {
   sessions: ChatSession[];
   activeSessionId: string;
   openTabIds: string[];
-  isRunning: boolean;
+  runningSessionId: string | null;
   error: string | null;
   streamingMessageId: string | null;
   streamTick: number;
   abortController: AbortController | null;
+
+  isRunning: boolean;
 
   getActiveSession: () => ChatSession;
   setActiveSession: (id: string) => void;
@@ -246,10 +248,10 @@ interface ChatState {
   loadFromHistory: (id: string) => void;
   sendMessage: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
   stopGeneration: () => void;
-  appendMessage: (msg: ChatMessage) => void;
-  updateMessageContent: (messageId: string, delta: string) => void;
-  upsertToolCall: (messageId: string, toolCall: ChatToolCall) => void;
-  updateToolCall: (messageId: string, toolCallId: string, updates: Partial<ChatToolCall>) => void;
+  appendMessage: (sessionId: string, msg: ChatMessage) => void;
+  updateMessageContent: (sessionId: string, messageId: string, delta: string) => void;
+  upsertToolCall: (sessionId: string, messageId: string, toolCall: ChatToolCall) => void;
+  updateToolCall: (sessionId: string, messageId: string, toolCallId: string, updates: Partial<ChatToolCall>) => void;
   setStreamingMessage: (id: string | null) => void;
   setError: (error: string | null) => void;
 }
@@ -260,6 +262,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessions: initialSessions,
   activeSessionId: initialActiveId,
   openTabIds: initialOpenTabIds,
+  runningSessionId: null,
   isRunning: false,
   error: null,
   streamingMessageId: null,
@@ -275,17 +278,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setActiveSession: (id) => {
-    set({ activeSessionId: id, error: null });
+    const { runningSessionId } = get();
+    set({
+      activeSessionId: id,
+      error: null,
+      isRunning: runningSessionId === id,
+    });
     saveTabState(get().openTabIds, id);
   },
 
   newChat: () => {
-    const { sessions, openTabIds } = get();
+    const { sessions, openTabIds, runningSessionId } = get();
     const emptyOpen = openTabIds
       .map(tid => sessions.find(s => s.id === tid))
       .find(s => s && s.messages.length === 0);
     if (emptyOpen) {
-      set({ activeSessionId: emptyOpen.id, error: null, isRunning: false });
+      set({ activeSessionId: emptyOpen.id, error: null, isRunning: runningSessionId === emptyOpen.id });
       saveTabState(openTabIds, emptyOpen.id);
       return;
     }
@@ -298,19 +306,34 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   closeTab: (id) => {
-    const { openTabIds, activeSessionId } = get();
+    const { openTabIds, activeSessionId, runningSessionId, abortController } = get();
+    if (id === runningSessionId && abortController) {
+      abortController.abort();
+    }
     const newTabs = openTabIds.filter(tid => tid !== id);
     let newActive = activeSessionId;
     if (id === activeSessionId) {
       const closedIdx = openTabIds.indexOf(id);
       newActive = newTabs[Math.min(closedIdx, newTabs.length - 1)] || '';
     }
-    set({ openTabIds: newTabs, activeSessionId: newActive, error: null });
+    const nowRunning = id === runningSessionId ? null : runningSessionId;
+    set({
+      openTabIds: newTabs,
+      activeSessionId: newActive,
+      error: null,
+      runningSessionId: nowRunning,
+      isRunning: nowRunning === newActive,
+      abortController: id === runningSessionId ? null : abortController,
+      streamingMessageId: id === runningSessionId ? null : get().streamingMessageId,
+    });
     saveTabState(newTabs, newActive);
   },
 
   deleteSession: (id) => {
-    const { sessions, openTabIds, activeSessionId } = get();
+    const { sessions, openTabIds, activeSessionId, runningSessionId, abortController } = get();
+    if (id === runningSessionId && abortController) {
+      abortController.abort();
+    }
     const remaining = sessions.filter(s => s.id !== id);
     const newTabs = openTabIds.filter(tid => tid !== id);
     let newActive = activeSessionId;
@@ -318,32 +341,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const closedIdx = openTabIds.indexOf(id);
       newActive = newTabs[Math.min(closedIdx, newTabs.length - 1)] || '';
     }
-    set({ sessions: remaining, openTabIds: newTabs, activeSessionId: newActive, error: null });
+    const nowRunning = id === runningSessionId ? null : runningSessionId;
+    set({
+      sessions: remaining,
+      openTabIds: newTabs,
+      activeSessionId: newActive,
+      error: null,
+      runningSessionId: nowRunning,
+      isRunning: nowRunning === newActive,
+      abortController: id === runningSessionId ? null : abortController,
+      streamingMessageId: id === runningSessionId ? null : get().streamingMessageId,
+    });
     saveSessions(remaining);
     saveTabState(newTabs, newActive);
   },
 
   loadFromHistory: (id) => {
-    const { openTabIds, sessions } = get();
+    const { openTabIds, sessions, runningSessionId } = get();
     const session = sessions.find(s => s.id === id);
     if (!session) return;
     if (openTabIds.includes(id)) {
-      set({ activeSessionId: id, error: null });
+      set({ activeSessionId: id, error: null, isRunning: runningSessionId === id });
       saveTabState(openTabIds, id);
       return;
     }
     const newTabs = [...openTabIds, id];
-    set({ openTabIds: newTabs, activeSessionId: id, error: null });
+    set({ openTabIds: newTabs, activeSessionId: id, error: null, isRunning: runningSessionId === id });
     saveTabState(newTabs, id);
   },
 
   sendMessage: async (content: string, attachments?: ChatAttachment[]) => {
-    const { isRunning, activeSessionId, sessions, openTabIds } = get();
-    if (isRunning) return;
+    const { runningSessionId, activeSessionId, sessions, openTabIds } = get();
+    if (runningSessionId) return;
     if (!activeSessionId || !openTabIds.includes(activeSessionId)) return;
 
     const session = sessions.find(s => s.id === activeSessionId);
     if (!session) return;
+
+    const targetSessionId = activeSessionId;
 
     const userMsg: ChatMessage = {
       id: nanoid(),
@@ -370,9 +405,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
           : 'New Chat';
     }
 
-    const updatedSessions = sessions.map(s => s.id === activeSessionId ? updatedSession : s);
+    const updatedSessions = sessions.map(s => s.id === targetSessionId ? updatedSession : s);
     const controller = new AbortController();
-    set({ sessions: updatedSessions, isRunning: true, error: null, abortController: controller });
+    set({
+      sessions: updatedSessions,
+      isRunning: true,
+      runningSessionId: targetSessionId,
+      error: null,
+      abortController: controller,
+    });
     saveSessions(updatedSessions);
 
     if (isFirstMessage) {
@@ -380,7 +421,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (!title) return;
         set(s => {
           const sessions = s.sessions.map(sess =>
-            sess.id === activeSessionId ? { ...sess, title } : sess
+            sess.id === targetSessionId ? { ...sess, title } : sess
           );
           saveSessions(sessions);
           return { sessions };
@@ -395,26 +436,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (msg.role === 'assistant') {
             get().setStreamingMessage(msg.id);
           }
-          get().appendMessage(msg);
+          get().appendMessage(targetSessionId, msg);
         },
         onContentDelta: (messageId, delta) => {
-          get().updateMessageContent(messageId, delta);
+          get().updateMessageContent(targetSessionId, messageId, delta);
         },
         onToolCallDelta: (messageId, toolCall) => {
-          get().upsertToolCall(messageId, toolCall);
+          get().upsertToolCall(targetSessionId, messageId, toolCall);
         },
         onToolStart: (_messageId, toolCall) => {
-          get().upsertToolCall(_messageId, toolCall);
+          get().upsertToolCall(targetSessionId, _messageId, toolCall);
         },
         onToolEnd: (messageId, toolCallId, result) => {
-          get().updateToolCall(messageId, toolCallId, { status: 'done', result });
+          get().updateToolCall(targetSessionId, messageId, toolCallId, { status: 'done', result });
         },
         onError: (error) => {
-          set({ error });
+          if (get().runningSessionId === targetSessionId) {
+            set({ error });
+          }
         },
         onDone: () => {
+          const wasRunning = get().runningSessionId === targetSessionId;
           get().setStreamingMessage(null);
-          set({ isRunning: false, abortController: null });
+          if (wasRunning) {
+            set({
+              runningSessionId: null,
+              isRunning: false,
+              abortController: null,
+            });
+          }
           saveSessions(get().sessions);
         },
       },
@@ -430,23 +480,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { abortController } = get();
     if (abortController) {
       abortController.abort();
+      set({
+        runningSessionId: null,
+        isRunning: false,
+        abortController: null,
+        streamingMessageId: null,
+      });
     }
   },
 
-  appendMessage: (msg) => {
+  appendMessage: (sessionId, msg) => {
     set((s) => {
       const sessions = s.sessions.map(sess => {
-        if (sess.id !== s.activeSessionId) return sess;
+        if (sess.id !== sessionId) return sess;
         return { ...sess, messages: [...sess.messages, msg], updatedAt: new Date().toISOString() };
       });
       return { sessions };
     });
   },
 
-  updateMessageContent: (messageId, delta) => {
+  updateMessageContent: (sessionId, messageId, delta) => {
     set((s) => {
       const sessions = s.sessions.map(sess => {
-        if (sess.id !== s.activeSessionId) return sess;
+        if (sess.id !== sessionId) return sess;
         const messages = sess.messages.map(m =>
           m.id === messageId ? { ...m, content: (m.content || '') + delta } : m
         );
@@ -456,10 +512,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
-  upsertToolCall: (messageId, toolCall) => {
+  upsertToolCall: (sessionId, messageId, toolCall) => {
     set((s) => {
       const sessions = s.sessions.map(sess => {
-        if (sess.id !== s.activeSessionId) return sess;
+        if (sess.id !== sessionId) return sess;
         const messages = sess.messages.map(m => {
           if (m.id !== messageId) return m;
           const existing = (m.toolCalls || []).find(tc => tc.id === toolCall.id);
@@ -479,10 +535,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
-  updateToolCall: (_messageId, toolCallId, updates) => {
+  updateToolCall: (sessionId, _messageId, toolCallId, updates) => {
     set((s) => {
       const sessions = s.sessions.map(sess => {
-        if (sess.id !== s.activeSessionId) return sess;
+        if (sess.id !== sessionId) return sess;
         const messages = sess.messages.map(m => {
           if (!m.toolCalls?.some(tc => tc.id === toolCallId)) return m;
           return {

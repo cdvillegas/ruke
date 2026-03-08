@@ -3,7 +3,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
 import { appEditorTheme, blockEditorExtensions } from '../shared/editorTheme';
 import { useRequestStore } from '../../stores/requestStore';
-import { Copy, Check, WrapText, Download, Play, Pause, Volume2, FileDown, Loader2, RefreshCw } from 'lucide-react';
+import { Copy, Check, WrapText, Download, Play, Pause, Volume2, FileDown, Loader2, RefreshCw, RotateCcw, RotateCw } from 'lucide-react';
 
 interface Props {
   body: string;
@@ -91,6 +91,11 @@ function AudioPlayer({ contentType, body, bodyEncoding }: { contentType: string;
     setPlaying(!playing);
   };
 
+  const skip = (seconds: number) => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = Math.max(0, Math.min(audioRef.current.currentTime + seconds, duration));
+  };
+
   const handleDownload = () => {
     if (!blobUrl) return;
     const a = document.createElement('a');
@@ -108,33 +113,38 @@ function AudioPlayer({ contentType, body, bodyEncoding }: { contentType: string;
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-        <Loader2 size={24} className="text-accent animate-spin" />
-        <span className="text-xs text-text-muted">Loading audio...</span>
+      <div className="flex flex-col items-center justify-center h-full gap-3 p-8">
+        <Loader2 size={20} className="text-text-muted animate-spin" />
+        <span className="text-[11px] text-text-muted/70">Loading audio...</span>
       </div>
     );
   }
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-        <span className="text-xs text-red-400">Failed to load audio: {error}</span>
+      <div className="flex flex-col items-center justify-center h-full gap-3 p-8">
+        <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center">
+          <Volume2 size={18} className="text-text-muted" />
+        </div>
+        <span className="text-[11px] text-text-muted/70">Failed to load audio</span>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-6 p-8">
-      <div className="w-16 h-16 rounded-2xl bg-accent/15 flex items-center justify-center">
-        <Volume2 size={28} className="text-accent" />
-      </div>
-      <div className="flex flex-col items-center gap-1">
-        <span className="text-sm font-medium text-text-primary">Audio Response</span>
-        <span className="text-xs text-text-muted">{mimeType}</span>
-      </div>
+    <div className="flex flex-col items-center justify-center h-full p-8">
+      <div className="w-full max-w-xs">
+        {/* Header */}
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
+            <Volume2 size={18} className="text-text-muted" />
+          </div>
+          <h3 className="text-sm font-semibold text-text-primary mb-0.5">Audio Response</h3>
+          <span className="text-[10px] text-text-muted/60 font-mono">{mimeType}</span>
+        </div>
 
-      <div className="w-full max-w-sm space-y-3">
+        {/* Progress bar */}
         <div
-          className="h-1.5 bg-bg-tertiary rounded-full cursor-pointer overflow-hidden"
+          className="h-1 bg-bg-tertiary rounded-full cursor-pointer overflow-hidden"
           onClick={(e) => {
             if (!audioRef.current || !duration) return;
             const rect = e.currentTarget.getBoundingClientRect();
@@ -142,30 +152,48 @@ function AudioPlayer({ contentType, body, bodyEncoding }: { contentType: string;
           }}
         >
           <div
-            className="h-full bg-accent rounded-full transition-[width] duration-100"
+            className="h-full bg-text-primary rounded-full transition-[width] duration-100"
             style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}
           />
         </div>
-        <div className="flex items-center justify-between text-[10px] text-text-muted font-mono">
-          <span>{formatTime(progress)}</span>
-          <span>{formatTime(duration)}</span>
+        <div className="flex items-center justify-between mt-1.5 mb-1.5">
+          <span className="text-[9px] text-text-muted/40 font-mono tabular-nums">{formatTime(progress)}</span>
+          <span className="text-[9px] text-text-muted/40 font-mono tabular-nums">{formatTime(duration)}</span>
         </div>
-      </div>
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={toggle}
-          className="w-10 h-10 rounded-full bg-accent hover:bg-accent-hover text-white flex items-center justify-center transition-colors"
-        >
-          {playing ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
-        </button>
-        <button
-          onClick={handleDownload}
-          className="p-2 rounded-lg bg-bg-tertiary border border-border hover:bg-bg-hover text-text-secondary hover:text-text-primary transition-colors"
-          title="Download audio"
-        >
-          <Download size={16} />
-        </button>
+        {/* Controls row */}
+        <div className="flex items-center justify-between">
+          <div className="w-8" />
+          <div className="flex items-center gap-5">
+            <button
+              onClick={() => skip(-10)}
+              className="p-1 text-text-muted/60 hover:text-text-primary transition-colors"
+              title="Back 10s"
+            >
+              <RotateCcw size={20} />
+            </button>
+            <button
+              onClick={toggle}
+              className="w-12 h-12 rounded-full bg-accent hover:bg-accent-hover text-white flex items-center justify-center transition-colors"
+            >
+              {playing ? <Pause size={22} /> : <Play size={22} className="ml-0.5" />}
+            </button>
+            <button
+              onClick={() => skip(10)}
+              className="p-1 text-text-muted/60 hover:text-text-primary transition-colors"
+              title="Forward 10s"
+            >
+              <RotateCw size={20} />
+            </button>
+          </div>
+          <button
+            onClick={handleDownload}
+            className="p-2 rounded-lg text-text-muted/50 hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+            title="Download"
+          >
+            <Download size={18} />
+          </button>
+        </div>
       </div>
 
       {blobUrl && (
@@ -196,23 +224,26 @@ function ImageViewer({ contentType, body, bodyEncoding }: { contentType: string;
 
   if (loading || !blobUrl) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-        <Loader2 size={24} className="text-accent animate-spin" />
-        <span className="text-xs text-text-muted">Loading image...</span>
+      <div className="flex flex-col items-center justify-center h-full gap-3 p-8">
+        <Loader2 size={20} className="text-text-muted animate-spin" />
+        <span className="text-[11px] text-text-muted/70">Loading image...</span>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-      <img src={blobUrl} alt="Response" className="max-w-full max-h-[60%] rounded-lg border border-border object-contain" />
-      <button
-        onClick={handleDownload}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-bg-tertiary border border-border hover:bg-bg-hover text-text-secondary hover:text-text-primary text-xs transition-colors"
-      >
-        <Download size={14} />
-        Download
-      </button>
+      <img src={blobUrl} alt="Response" className="max-w-full max-h-[60%] rounded-xl border border-border/60 object-contain" />
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-text-muted/50 font-mono">{mimeType}</span>
+        <button
+          onClick={handleDownload}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-bg-secondary border border-border/60 hover:bg-bg-hover text-text-muted hover:text-text-primary text-[11px] transition-colors"
+        >
+          <Download size={12} />
+          Download
+        </button>
+      </div>
     </div>
   );
 }
@@ -231,18 +262,18 @@ function BinaryViewer({ contentType, body, bodyEncoding }: { contentType: string
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-      <div className="w-14 h-14 rounded-2xl bg-bg-tertiary border border-border flex items-center justify-center">
-        <FileDown size={24} className="text-text-muted" />
-      </div>
-      <div className="flex flex-col items-center gap-1">
-        <span className="text-sm font-medium text-text-primary">Binary Response</span>
-        <span className="text-xs text-text-muted">{mimeType}</span>
+    <div className="flex flex-col items-center justify-center h-full p-8">
+      <div className="flex flex-col items-center mb-5">
+        <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
+          <FileDown size={18} className="text-text-muted" />
+        </div>
+        <h3 className="text-sm font-semibold text-text-primary mb-0.5">Binary Response</h3>
+        <span className="text-[10px] text-text-muted/60 font-mono">{mimeType}</span>
       </div>
       <button
         onClick={handleDownload}
         disabled={loading}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent hover:bg-accent-hover text-white text-sm font-medium transition-colors disabled:opacity-50"
+        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-medium transition-colors disabled:opacity-50"
       >
         {loading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
         {loading ? 'Loading...' : 'Download File'}
