@@ -719,55 +719,73 @@ export function HomeView() {
   const buildApiContext = (): string => {
     if (connections.length === 0) return 'No APIs connected yet. The user needs to connect an API first before you can create requests for it.';
 
-    const parts: string[] = ['Connected APIs with available endpoints:'];
+    const parts: string[] = ['# Connected APIs\n'];
     for (const conn of connections) {
-      parts.push(`\n## ${conn.name}`);
+      parts.push(`## ${conn.name}`);
+      parts.push(`connectionId: "${conn.id}"`);
       parts.push(`Base URL: ${conn.baseUrl}`);
       if (conn.description) parts.push(`Description: ${conn.description}`);
+
+      const authType = conn.auth?.type;
+      if (authType && authType !== 'none') {
+        parts.push(`Auth: ${authType} (already configured — do NOT add Authorization headers)`);
+      } else {
+        parts.push(`Auth: none (you should include Authorization headers if needed)`);
+      }
+
       if (conn.endpoints.length === 0) {
-        parts.push('(no endpoints loaded)');
+        parts.push('(no endpoints loaded)\n');
         continue;
       }
-      parts.push(`Endpoints (${conn.endpoints.length} total):`);
-      for (const ep of conn.endpoints.slice(0, 50)) {
-        let line = `  ${ep.method} ${ep.path}`;
-        if (ep.summary) line += ` — ${ep.summary}`;
-        if (ep.requestBody) line += ' [has body]';
+      parts.push(`\nEndpoints (${conn.endpoints.length} total):`);
+      for (const ep of conn.endpoints.slice(0, 80)) {
+        let line = `  ${ep.method} ${ep.path} [endpointId: "${ep.id}"]`;
+        if (ep.summary && ep.summary !== `${ep.method} ${ep.path}`) line += ` — ${ep.summary}`;
+        if (ep.requestBody) {
+          line += ` [body: ${ep.requestBody.type || 'json'}`;
+          if (ep.requestBody.example) line += `, example available`;
+          line += ']';
+        }
         if (ep.parameters?.length) {
           const params = ep.parameters.filter(p => p.in === 'query' || p.in === 'path');
-          if (params.length) line += ` (params: ${params.map(p => `${p.name}:${p.in}`).join(', ')})`;
+          if (params.length) line += ` (params: ${params.map(p => `${p.name}:${p.in}${p.required ? '*' : ''}`).join(', ')})`;
         }
         parts.push(line);
       }
-      if (conn.endpoints.length > 50) {
-        parts.push(`  ... and ${conn.endpoints.length - 50} more`);
+      if (conn.endpoints.length > 80) {
+        parts.push(`  ... and ${conn.endpoints.length - 80} more`);
       }
+      parts.push('');
     }
     return parts.join('\n');
   };
 
-  const parseAiResponse = (content: string): { action: string; request?: any; collection?: any } | null => {
-    let cleaned = content.trim();
-    const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fenceMatch) cleaned = fenceMatch[1].trim();
+  const parseAiResponse = (content: string): { action: string; request?: any; collection?: any; updates?: any[]; message?: string } | null => {
+    const raw = content.trim();
 
-    const braceStart = cleaned.indexOf('{');
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonSource = fenceMatch ? fenceMatch[1].trim() : raw;
+    const textBeforeFence = fenceMatch ? raw.slice(0, raw.indexOf('```')).trim() : '';
+
+    const braceStart = jsonSource.indexOf('{');
     if (braceStart === -1) return null;
     let depth = 0;
     let braceEnd = -1;
-    for (let i = braceStart; i < cleaned.length; i++) {
-      if (cleaned[i] === '{') depth++;
-      else if (cleaned[i] === '}') { depth--; if (depth === 0) { braceEnd = i; break; } }
+    for (let i = braceStart; i < jsonSource.length; i++) {
+      if (jsonSource[i] === '{') depth++;
+      else if (jsonSource[i] === '}') { depth--; if (depth === 0) { braceEnd = i; break; } }
     }
     if (braceEnd === -1) return null;
 
     try {
-      const obj = JSON.parse(cleaned.slice(braceStart, braceEnd + 1));
-      if (obj.action === 'create_request' && obj.request) return obj;
-      if (obj.action === 'create_collection' && obj.collection) return obj;
-      if (obj.request) return { action: 'create_request', request: obj.request };
-      if (obj.collection) return { action: 'create_collection', collection: obj.collection };
-      if (obj.method && obj.url) return { action: 'create_request', request: obj };
+      const obj = JSON.parse(jsonSource.slice(braceStart, braceEnd + 1));
+      const message = textBeforeFence || undefined;
+      if (obj.action === 'update_requests' && obj.updates) return { ...obj, message };
+      if (obj.action === 'create_request' && obj.request) return { ...obj, message };
+      if (obj.action === 'create_collection' && obj.collection) return { ...obj, message };
+      if (obj.request) return { action: 'create_request', request: obj.request, message };
+      if (obj.collection) return { action: 'create_collection', collection: obj.collection, message };
+      if (obj.method && obj.url) return { action: 'create_request', request: obj, message };
     } catch {}
     return null;
   };
@@ -777,14 +795,38 @@ export function HomeView() {
     const enriched = { ...request };
     const url = request.url;
     const method = (request.method || 'GET').toUpperCase();
-
     const norm = (s: string) => s.replace(/\/+$/, '').replace(/\/+/g, '/');
 
-    for (const conn of connections) {
-      const base = norm(conn.baseUrl);
+    if (enriched.connectionId && enriched.endpointId) {
+      const conn = connections.find(c => c.id === enriched.connectionId);
+      if (conn) {
+        const ep = conn.endpoints.find(e => e.id === enriched.endpointId);
+        if (ep) {
+          if (!url.startsWith('http')) {
+            enriched.url = ep.path;
+          }
+          if (ep.parameters?.length) {
+            const queryParams = ep.parameters.filter(p => p.in === 'query').map(p => ({
+              key: p.name, value: '', enabled: true,
+            }));
+            if (queryParams.length && !enriched.params?.length) enriched.params = queryParams;
+            for (const p of ep.parameters.filter(p => p.in === 'path')) {
+              enriched.url = enriched.url.replace(`{${p.name}}`, `{{${p.name}}}`);
+            }
+          }
+          if (ep.requestBody?.example && (!enriched.body || enriched.body.type === 'none')) {
+            enriched.body = { type: 'json', raw: ep.requestBody.example };
+          }
+          return enriched;
+        }
+      }
+    }
 
+    for (const conn of connections) {
       let extractedPath: string | null = null;
-      if (url.includes(conn.baseUrl)) {
+      if (url.startsWith('/')) {
+        extractedPath = url;
+      } else if (url.includes(conn.baseUrl)) {
         extractedPath = url.slice(url.indexOf(conn.baseUrl) + conn.baseUrl.length);
       } else {
         try {
@@ -793,11 +835,9 @@ export function HomeView() {
           if (urlObj.hostname === baseObj.hostname) {
             const basePath = norm(baseObj.pathname);
             const fullPath = norm(urlObj.pathname);
-            if (fullPath.startsWith(basePath)) {
-              extractedPath = fullPath.slice(basePath.length);
-            } else {
-              extractedPath = fullPath;
-            }
+            extractedPath = fullPath.startsWith(basePath)
+              ? fullPath.slice(basePath.length)
+              : fullPath;
           }
         } catch {}
       }
@@ -813,20 +853,15 @@ export function HomeView() {
 
       enriched.connectionId = conn.id;
       enriched.endpointId = ep.id;
-      enriched.url = conn.baseUrl.replace(/\/+$/, '') + ep.path;
+      enriched.url = ep.path;
 
       if (ep.parameters?.length) {
         const queryParams = ep.parameters.filter(p => p.in === 'query').map(p => ({
-          key: p.name,
-          value: '',
-          enabled: true,
+          key: p.name, value: '', enabled: true,
         }));
-        if (queryParams.length) enriched.params = queryParams;
-        const pathParams = ep.parameters.filter(p => p.in === 'path');
-        if (pathParams.length) {
-          for (const p of pathParams) {
-            enriched.url = enriched.url.replace(`{${p.name}}`, `{{${p.name}}}`);
-          }
+        if (queryParams.length && !enriched.params?.length) enriched.params = queryParams;
+        for (const p of ep.parameters.filter(p => p.in === 'path')) {
+          enriched.url = enriched.url.replace(`{${p.name}}`, `{{${p.name}}}`);
         }
       }
       if (ep.requestBody?.example && (!enriched.body || enriched.body.type === 'none')) {
@@ -867,6 +902,10 @@ export function HomeView() {
       if (result.content) {
         const parsed = parseAiResponse(result.content);
 
+        if (parsed?.message) {
+          setStatus({ type: 'action', text: parsed.message });
+        }
+
         if (parsed?.action === 'create_collection' && parsed.collection) {
           await handleCreateCollection(parsed.collection, prompt);
           return;
@@ -874,6 +913,11 @@ export function HomeView() {
 
         if (parsed?.action === 'create_request' && parsed.request) {
           await handleCreateRequest(parsed.request, prompt);
+          return;
+        }
+
+        if (parsed?.action === 'update_requests' && parsed.updates) {
+          await handleUpdateRequests(parsed.updates, prompt);
           return;
         }
 
@@ -922,9 +966,6 @@ export function HomeView() {
       },
     });
 
-    await new Promise(r => setTimeout(r, 600));
-    store.switchTab(tabId);
-    setActiveView('requests');
     setProcessing(false);
   };
 
@@ -989,8 +1030,55 @@ export function HomeView() {
       onClick: () => setActiveView('requests'),
     });
 
-    await new Promise(r => setTimeout(r, 600));
-    setActiveView('requests');
+    setProcessing(false);
+  };
+
+  const handleUpdateRequests = async (updates: any[], prompt: string) => {
+    const store = useRequestStore.getState();
+    let updated = 0;
+
+    for (const update of updates) {
+      const match = update.match;
+      const tab = store.openTabs.find(t =>
+        (t.name || '').toLowerCase() === match.toLowerCase() ||
+        (t.name || '').toLowerCase().includes(match.toLowerCase()) ||
+        t.id === match
+      );
+
+      if (!tab) continue;
+
+      setStatus({ type: 'action', text: `Updating "${tab.name}"...` });
+
+      const changes: Record<string, any> = {};
+      if (update.changes?.name) changes.name = update.changes.name;
+      if (update.changes?.method) changes.method = update.changes.method;
+      if (update.changes?.url) changes.url = update.changes.url;
+      if (update.changes?.headers) changes.headers = update.changes.headers;
+      if (update.changes?.body) changes.body = update.changes.body;
+      if (update.changes?.params) changes.params = update.changes.params;
+
+      const currentActive = store.activeTabId;
+      store.switchTab(tab.id);
+      store.updateActiveRequest({ ...changes, updatedAt: new Date().toISOString() });
+      if (currentActive !== tab.id) store.switchTab(currentActive);
+
+      try {
+        const savedTab = useRequestStore.getState().openTabs.find(t => t.id === tab.id);
+        if (savedTab && tab.collectionId) {
+          await window.ruke.db.query('updateRequest', savedTab.id, savedTab);
+        }
+      } catch {}
+
+      updated++;
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    setStatus({
+      type: 'result',
+      text: `Updated ${updated} request${updated !== 1 ? 's' : ''}`,
+      onClick: () => setActiveView('requests'),
+    });
+
     setProcessing(false);
   };
 

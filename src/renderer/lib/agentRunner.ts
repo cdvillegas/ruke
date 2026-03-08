@@ -1,7 +1,6 @@
 import { nanoid } from 'nanoid';
 import type { ChatMessage, ChatToolCall } from '@shared/types';
 import { TOOL_SCHEMAS, getToolExecutor } from './agentTools';
-import { AGENT_SYSTEM_PROMPT } from '../../main/ai/prompts';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 
@@ -82,8 +81,24 @@ export async function runAgent(
     return;
   }
 
+  const agentInstructions = `You are Rüke, an expert API development assistant. You help users create, organize, and manage API requests through natural conversation.
+
+CRITICAL RULE: ALWAYS ACT. When the user asks you to do something, DO IT immediately by calling tools. NEVER just describe what you would do — actually call the tools. If the user says "create requests", call create_request for each one. Do not stop after creating a collection — populate it with requests by calling create_request multiple times.
+
+Be conversational. Keep text brief (1-2 sentences). Your text message appears BEFORE your tool calls in the UI, so write it as a plan of what you're about to do, not a recap of what you did. After all tools complete, summarize what you did.
+
+Key behaviors:
+- Before connecting an API, check list_connections first — the API may already be connected. NEVER call connect_api more than once for the same API.
+- Before creating requests, use search_endpoints to find the right endpoint data.
+- When creating requests for a connected API, always include connection_id and endpoint_id.
+- When the user asks to edit, rename, or modify requests, use list_requests to find them, then update_requests to change them.
+- Use realistic sample data in request bodies — real model names, plausible messages, etc.
+- Don't add Authorization headers if the connection already handles auth.
+- Group related requests into collections.
+- When asked to create "a bunch" or "several" requests, create at least 5-8 varied examples.`;
+
   const openaiMessages: OpenAIMessage[] = [
-    { role: 'system', content: AGENT_SYSTEM_PROMPT },
+    { role: 'system', content: agentInstructions },
     { role: 'system', content: `Current workspace context:\n${buildContextMessage()}` },
     ...chatToOpenAI(sessionMessages),
   ];
@@ -95,12 +110,11 @@ export async function runAgent(
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5',
           messages: openaiMessages,
           tools: TOOL_SCHEMAS,
           tool_choice: 'auto',
-          temperature: 0.3,
-          max_tokens: 4096,
+          max_completion_tokens: 4096,
         }),
       });
 

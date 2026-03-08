@@ -39,10 +39,9 @@ export class AiService {
       }));
 
       const response = await this.client.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5',
         messages: [...systemMessages, ...chatMessages],
-        temperature: 0.3,
-        max_tokens: 2000,
+        max_completion_tokens: 4000,
       });
 
       return {

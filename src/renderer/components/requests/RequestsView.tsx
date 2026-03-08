@@ -61,6 +61,118 @@ function ResizableSplit() {
   );
 }
 
+function RequestRow({
+  req,
+  depth,
+  isSelected,
+  onSelect,
+  onDelete,
+}: {
+  req: ApiRequest;
+  depth: number;
+  isSelected: boolean;
+  onSelect: (req: ApiRequest) => void;
+  onDelete: (id: string) => void;
+}) {
+  const connections = useConnectionStore((s) => s.connections);
+  const conn = req.connectionId ? connections.find(c => c.id === req.connectionId) : null;
+  const [showMenu, setShowMenu] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(req.name || '');
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showMenu]);
+
+  const handleRename = async () => {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== req.name) {
+      await window.ruke.db.query('updateRequest', req.id, { ...req, name: trimmed });
+      const { openTabs, activeTabId } = useRequestStore.getState();
+      const updatedTabs = openTabs.map(t => t.id === req.id ? { ...t, name: trimmed } : t);
+      useRequestStore.setState({ openTabs: updatedTabs });
+      if (activeTabId === req.id) {
+        useRequestStore.setState(s => ({ activeRequest: { ...s.activeRequest, name: trimmed } }));
+      }
+    }
+    setIsRenaming(false);
+  };
+
+  return (
+    <div
+      onClick={() => onSelect(req)}
+      className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
+        isSelected
+          ? 'bg-accent/10 text-text-primary cursor-pointer'
+          : 'hover:bg-bg-hover text-text-secondary cursor-pointer'
+      }`}
+      style={{ paddingLeft: `${24 + depth * 16}px` }}
+    >
+      <span
+        className="font-mono font-bold text-[9px] w-8 shrink-0"
+        style={{ color: METHOD_COLORS[req.method] || '#6b7280' }}
+      >
+        {req.method}
+      </span>
+      {isRenaming ? (
+        <input
+          autoFocus
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onBlur={handleRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleRename();
+            if (e.key === 'Escape') setIsRenaming(false);
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="flex-1 text-xs bg-bg-tertiary border border-accent px-1.5 py-0.5 rounded text-text-primary focus:outline-none"
+        />
+      ) : (
+        <span className="text-xs truncate flex-1">{req.name || 'Untitled'}</span>
+      )}
+      {conn && (
+        <span
+          className="w-2 h-2 rounded-full shrink-0"
+          style={{ backgroundColor: conn.iconColor }}
+          title={conn.name}
+        />
+      )}
+      <div className="relative" ref={menuRef}>
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-bg-active text-text-muted transition-all"
+        >
+          <MoreHorizontal size={12} />
+        </button>
+        {showMenu && (
+          <div className="absolute right-0 top-full mt-1 w-36 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 py-1 animate-fade-in">
+            <button
+              onClick={(e) => { e.stopPropagation(); setIsRenaming(true); setRenameValue(req.name || ''); setShowMenu(false); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+            >
+              <Pencil size={12} /> Rename
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(req.id); setShowMenu(false); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-error hover:bg-error/10 transition-colors"
+            >
+              <Trash2 size={12} /> Delete
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CollectionNode({
   node,
   depth,
@@ -162,42 +274,16 @@ function CollectionNode({
 
       {isExpanded && (
         <div>
-          {node.requests.map((req) => {
-            const conn = req.connectionId ? connections.find(c => c.id === req.connectionId) : null;
-            return (
-              <div
-                key={req.id}
-                onClick={() => onSelectRequest(req)}
-                className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
-                  selectedRequestId === req.id
-                    ? 'bg-accent/10 text-text-primary cursor-pointer'
-                    : 'hover:bg-bg-hover text-text-secondary cursor-pointer'
-                }`}
-                style={{ paddingLeft: `${24 + depth * 16}px` }}
-              >
-                <span
-                  className="font-mono font-bold text-[9px] w-8 shrink-0"
-                  style={{ color: METHOD_COLORS[req.method] || '#6b7280' }}
-                >
-                  {req.method}
-                </span>
-                <span className="text-xs truncate flex-1">{req.name || 'Untitled'}</span>
-                {conn && (
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: conn.iconColor }}
-                    title={conn.name}
-                  />
-                )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); deleteRequest(req.id); }}
-                  className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-error/20 text-text-muted hover:text-error transition-all"
-                >
-                  <Trash2 size={11} />
-                </button>
-              </div>
-            );
-          })}
+          {node.requests.map((req) => (
+            <RequestRow
+              key={req.id}
+              req={req}
+              depth={depth}
+              isSelected={selectedRequestId === req.id}
+              onSelect={onSelectRequest}
+              onDelete={deleteRequest}
+            />
+          ))}
           {pendingForCollection.map((tab) => (
             <div
               key={tab.id}

@@ -219,6 +219,22 @@ export const AGENT_TOOLS: ToolDef[] = [
     },
     execute: async (args) => {
       try {
+        const existing = useConnectionStore.getState().connections;
+        const queryLower = (args.query as string).toLowerCase();
+        const alreadyConnected = existing.find(c =>
+          c.name.toLowerCase().includes(queryLower) || queryLower.includes(c.name.toLowerCase())
+        );
+        if (alreadyConnected) {
+          return JSON.stringify({
+            success: true,
+            connectionId: alreadyConnected.id,
+            name: alreadyConnected.name,
+            baseUrl: alreadyConnected.baseUrl,
+            endpointCount: alreadyConnected.endpoints.length,
+            note: 'Already connected — using existing connection.',
+          });
+        }
+
         const results = await window.ruke.agent.discover(args.query as string);
         if (!results.length) return JSON.stringify({ success: false, error: `No API found for "${args.query}"` });
 
@@ -385,6 +401,121 @@ export const AGENT_TOOLS: ToolDef[] = [
       });
     },
   },
+  // ── list_requests ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'list_requests',
+        description: 'List all open request tabs with their names, methods, URLs, and IDs. Use this to find requests before editing or renaming them.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    execute: async () => {
+      const { openTabs } = useRequestStore.getState();
+      return JSON.stringify({
+        requests: openTabs.map(t => ({
+          id: t.id,
+          name: t.name || 'Untitled',
+          method: t.method,
+          url: t.url,
+          connectionId: t.connectionId,
+          collectionId: t.collectionId,
+        })),
+      });
+    },
+  },
+
+  // ── update_requests ──
+  {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'update_requests',
+        description: 'Update one or more existing requests by name or ID. Can rename, change method, URL, headers, body, etc. Use list_requests first to find request names/IDs.',
+        parameters: {
+          type: 'object',
+          properties: {
+            updates: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  match: { type: 'string', description: 'Request name or ID to find and update' },
+                  name: { type: 'string', description: 'New name' },
+                  method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] },
+                  url: { type: 'string', description: 'New URL' },
+                  headers: {
+                    type: 'array',
+                    items: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] },
+                  },
+                  body_type: { type: 'string', enum: ['none', 'json', 'form-data', 'raw'] },
+                  body_content: { type: 'string' },
+                },
+                required: ['match'],
+              },
+            },
+          },
+          required: ['updates'],
+        },
+      },
+    },
+    execute: async (args) => {
+      const store = useRequestStore.getState();
+      const updates = args.updates as Array<{
+        match: string;
+        name?: string;
+        method?: string;
+        url?: string;
+        headers?: Array<{ key: string; value: string }>;
+        body_type?: string;
+        body_content?: string;
+      }>;
+
+      const results: Array<{ match: string; success: boolean; error?: string }> = [];
+
+      for (const update of updates) {
+        const tab = store.openTabs.find(t =>
+          t.id === update.match ||
+          (t.name || '').toLowerCase() === update.match.toLowerCase() ||
+          (t.name || '').toLowerCase().includes(update.match.toLowerCase())
+        );
+
+        if (!tab) {
+          results.push({ match: update.match, success: false, error: 'Request not found' });
+          continue;
+        }
+
+        const changes: Partial<typeof tab> = {};
+        if (update.name) changes.name = update.name;
+        if (update.method) changes.method = update.method as HttpMethod;
+        if (update.url) changes.url = update.url;
+        if (update.headers) changes.headers = kv(update.headers);
+        if (update.body_type || update.body_content) {
+          changes.body = {
+            type: update.body_type || tab.body?.type || 'none',
+            raw: update.body_content || tab.body?.raw || '',
+          } as any;
+        }
+
+        const currentActive = store.activeTabId;
+        store.switchTab(tab.id);
+        store.updateActiveRequest({ ...changes, updatedAt: new Date().toISOString() });
+        if (currentActive !== tab.id) store.switchTab(currentActive);
+
+        try {
+          const updated = useRequestStore.getState().openTabs.find(t => t.id === tab.id);
+          if (updated && tab.collectionId) {
+            await window.ruke.db.query('updateRequest', updated.id, updated);
+          }
+        } catch {}
+
+        results.push({ match: update.match, success: true });
+      }
+
+      return JSON.stringify({ results, updated: results.filter(r => r.success).length });
+    },
+  },
 ];
 
 export const TOOL_SCHEMAS = AGENT_TOOLS.map(t => t.schema);
@@ -403,4 +534,6 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   import_spec: 'Importing spec',
   create_environment: 'Creating environment',
   list_environments: 'Listing environments',
+  list_requests: 'Listing requests',
+  update_requests: 'Updating requests',
 };

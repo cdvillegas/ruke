@@ -8,7 +8,20 @@ const STORAGE_KEY = 'ruke:chat_session';
 function loadSession(): ChatSession | null {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (!saved) return null;
+    const session: ChatSession = JSON.parse(saved);
+    session.messages = session.messages.map(m => {
+      if (!m.toolCalls) return m;
+      return {
+        ...m,
+        toolCalls: m.toolCalls.map(tc =>
+          tc.status === 'running' || tc.status === 'pending'
+            ? { ...tc, status: 'done' as const, result: tc.result || '{"note":"interrupted"}' }
+            : tc
+        ),
+      };
+    });
+    return session;
   } catch {}
   return null;
 }

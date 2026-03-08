@@ -199,10 +199,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className="flex justify-start">
       <div className="max-w-[85%] space-y-2">
+        {message.content && <AssistantMessage content={message.content} />}
         {message.toolCalls?.map(tc => (
           <ToolCallCard key={tc.id} toolCall={tc} />
         ))}
-        {message.content && <AssistantMessage content={message.content} />}
       </div>
     </div>
   );
