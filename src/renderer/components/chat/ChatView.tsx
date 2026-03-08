@@ -441,7 +441,7 @@ export function ChatView() {
               <MessageBubble key={msg.id} message={msg} />
             ))}
 
-            {isRunning && !visibleMessages.some(m => m.role === 'assistant' && m.toolCalls?.some(tc => tc.status === 'running' || tc.status === 'pending')) && (
+            {isRunning && visibleMessages[visibleMessages.length - 1]?.role !== 'assistant' && (
               <div className="flex justify-start">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <Loader2 size={14} className="text-accent animate-spin" />

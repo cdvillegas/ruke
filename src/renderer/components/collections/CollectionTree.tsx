@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { useRequestStore } from '../../stores/requestStore';
 import {
@@ -94,6 +94,18 @@ function CollectionNode({
   const [editName, setEditName] = useState(node.collection.name);
   const openTab = useRequestStore((s) => s.openTab);
   const expanded = expandedIds.includes(node.collection.id);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showMenu]);
 
   const handleRename = async () => {
     if (editName.trim() && editName !== node.collection.name) {
@@ -153,7 +165,7 @@ function CollectionNode({
           >
             <Plus size={12} />
           </button>
-          <div className="relative">
+          <div className="relative" ref={menuRef}>
             <button
               onClick={(e) => {
                 e.stopPropagation();

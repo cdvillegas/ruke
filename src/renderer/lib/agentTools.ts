@@ -3,7 +3,11 @@ import { useConnectionStore } from '../stores/connectionStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 import { useUiStore } from '../stores/uiStore';
-import type { HttpMethod, KeyValue } from '@shared/types';
+import type { HttpMethod, KeyValue, AppView } from '@shared/types';
+
+function notifyView(view: AppView) {
+  useUiStore.getState().incrementBadge(view);
+}
 
 export interface ToolSchema {
   type: 'function';
@@ -23,6 +27,15 @@ const kv = (entries?: Array<{ key: string; value: string }>): KeyValue[] => {
   if (!entries?.length) return [{ key: '', value: '', enabled: true }];
   return entries.map(e => ({ key: e.key, value: e.value, enabled: true }));
 };
+
+function compactJson(raw: string | undefined): string {
+  if (!raw) return '';
+  try {
+    return JSON.stringify(JSON.parse(raw));
+  } catch {
+    return raw;
+  }
+}
 
 export const AGENT_TOOLS: ToolDef[] = [
   // ── list_connections ──
@@ -127,7 +140,7 @@ export const AGENT_TOOLS: ToolDef[] = [
               description: 'Query parameters',
             },
             body_type: { type: 'string', enum: ['none', 'json', 'form-data', 'raw'], description: 'Body type' },
-            body_content: { type: 'string', description: 'Body content (JSON string for json type)' },
+            body_content: { type: 'string', description: 'Body content as a compact single-line JSON string (no newlines or extra whitespace)' },
             connection_id: { type: 'string', description: 'Connection ID to link this request to' },
             endpoint_id: { type: 'string', description: 'Endpoint ID to link this request to' },
             collection_id: { type: 'string', description: 'Collection ID to add this request to' },
@@ -147,13 +160,14 @@ export const AGENT_TOOLS: ToolDef[] = [
         collectionId,
       });
 
+      const bodyRaw = compactJson(args.body_content as string);
       const resolved = {
         method,
         url: args.url as string,
         name: args.name as string,
         headers: kv(args.headers as Array<{ key: string; value: string }>),
         params: kv(args.params as Array<{ key: string; value: string }>),
-        body: { type: (args.body_type as string) || 'none', raw: args.body_content as string } as any,
+        body: { type: (args.body_type as string) || 'none', raw: bodyRaw } as any,
         auth: { type: 'none' as const },
         connectionId: args.connection_id as string | undefined,
         endpointId: args.endpoint_id as string | undefined,
@@ -171,7 +185,7 @@ export const AGENT_TOOLS: ToolDef[] = [
       }
 
       store.switchTab(tabId);
-      useUiStore.getState().setActiveView('requests');
+      notifyView('requests');
 
       return JSON.stringify({ success: true, requestId: tabId, name: args.name, method, url: args.url });
     },
@@ -197,6 +211,7 @@ export const AGENT_TOOLS: ToolDef[] = [
       const store = useCollectionStore.getState();
       const collection = await store.createCollection(args.name as string);
       store.toggleExpanded(collection.id);
+      notifyView('requests');
       return JSON.stringify({ success: true, collectionId: collection.id, name: collection.name });
     },
   },
@@ -248,6 +263,7 @@ export const AGENT_TOOLS: ToolDef[] = [
             description: best.description,
             endpoints: best.endpoints,
           });
+          notifyView('connections');
           return JSON.stringify({
             success: true,
             connectionId: conn.id,
@@ -263,6 +279,7 @@ export const AGENT_TOOLS: ToolDef[] = [
           specType: 'manual',
           description: best.description,
         });
+        notifyView('connections');
         return JSON.stringify({
           success: true,
           connectionId: conn.id,
@@ -362,6 +379,7 @@ export const AGENT_TOOLS: ToolDef[] = [
         await envStore.addVariable(env.id, v.key, v.value, 'global', v.is_secret || false);
       }
 
+      notifyView('environments');
       return JSON.stringify({
         success: true,
         environmentId: env.id,
@@ -450,7 +468,7 @@ export const AGENT_TOOLS: ToolDef[] = [
                     items: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] },
                   },
                   body_type: { type: 'string', enum: ['none', 'json', 'form-data', 'raw'] },
-                  body_content: { type: 'string' },
+                  body_content: { type: 'string', description: 'Compact single-line JSON string' },
                 },
                 required: ['match'],
               },
@@ -494,7 +512,7 @@ export const AGENT_TOOLS: ToolDef[] = [
         if (update.body_type || update.body_content) {
           changes.body = {
             type: update.body_type || tab.body?.type || 'none',
-            raw: update.body_content || tab.body?.raw || '',
+            raw: compactJson(update.body_content) || tab.body?.raw || '',
           } as any;
         }
 

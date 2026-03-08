@@ -62,13 +62,137 @@ function chatToOpenAI(messages: ChatMessage[]): OpenAIMessage[] {
   });
 }
 
+// --- SSE stream parser ---
+
+interface StreamDelta {
+  content?: string | null;
+  tool_calls?: Array<{
+    index: number;
+    id?: string;
+    type?: string;
+    function?: { name?: string; arguments?: string };
+  }>;
+  role?: string;
+}
+
+async function* parseSSEStream(response: Response): AsyncGenerator<StreamDelta> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) continue;
+        if (trimmed === 'data: [DONE]') return;
+        if (!trimmed.startsWith('data: ')) continue;
+
+        try {
+          const json = JSON.parse(trimmed.slice(6));
+          const delta = json.choices?.[0]?.delta;
+          if (delta) yield delta;
+        } catch {}
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+// --- Streaming accumulator ---
+
+interface ToolCallAccumulator {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+interface StreamAccumulator {
+  content: string;
+  toolCalls: Map<number, ToolCallAccumulator>;
+}
+
+function createAccumulator(): StreamAccumulator {
+  return { content: '', toolCalls: new Map() };
+}
+
+function accumulateDelta(acc: StreamAccumulator, delta: StreamDelta): {
+  contentToken?: string;
+  newToolCall?: { index: number; id: string; name: string };
+  toolCallArgDelta?: { index: number; delta: string };
+} {
+  const result: ReturnType<typeof accumulateDelta> = {};
+
+  if (delta.content) {
+    acc.content += delta.content;
+    result.contentToken = delta.content;
+  }
+
+  if (delta.tool_calls) {
+    for (const tc of delta.tool_calls) {
+      const existing = acc.toolCalls.get(tc.index);
+      if (!existing) {
+        const entry: ToolCallAccumulator = {
+          id: tc.id || nanoid(),
+          name: tc.function?.name || '',
+          arguments: tc.function?.arguments || '',
+        };
+        acc.toolCalls.set(tc.index, entry);
+        result.newToolCall = { index: tc.index, id: entry.id, name: entry.name };
+      } else {
+        if (tc.function?.name) existing.name += tc.function.name;
+        if (tc.function?.arguments) {
+          existing.arguments += tc.function.arguments;
+          result.toolCallArgDelta = { index: tc.index, delta: tc.function.arguments };
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+function finalizeToolCalls(acc: StreamAccumulator): ChatToolCall[] {
+  const sorted = [...acc.toolCalls.entries()].sort((a, b) => a[0] - b[0]);
+  return sorted.map(([, tc]) => ({
+    id: tc.id,
+    name: tc.name,
+    arguments: tc.arguments,
+    status: 'pending' as const,
+  }));
+}
+
+function finalizeOpenAIToolCalls(acc: StreamAccumulator) {
+  const sorted = [...acc.toolCalls.entries()].sort((a, b) => a[0] - b[0]);
+  return sorted.map(([, tc]) => ({
+    id: tc.id,
+    type: 'function' as const,
+    function: { name: tc.name, arguments: tc.arguments },
+  }));
+}
+
+// --- Callbacks ---
+
 export interface AgentCallbacks {
   onMessage: (msg: ChatMessage) => void;
+  onContentDelta: (messageId: string, delta: string) => void;
+  onToolCallDelta: (messageId: string, toolCall: ChatToolCall) => void;
   onToolStart: (messageId: string, toolCall: ChatToolCall) => void;
   onToolEnd: (messageId: string, toolCallId: string, result: string) => void;
   onError: (error: string) => void;
   onDone: () => void;
 }
+
+// --- Agent runner ---
 
 export async function runAgent(
   sessionMessages: ChatMessage[],
@@ -104,9 +228,9 @@ Key behaviors:
   ];
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-    let data: any;
+    let res: Response;
     try {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
@@ -115,6 +239,7 @@ Key behaviors:
           tools: TOOL_SCHEMAS,
           tool_choice: 'auto',
           max_completion_tokens: 4096,
+          stream: true,
         }),
       });
 
@@ -124,97 +249,127 @@ Key behaviors:
         callbacks.onDone();
         return;
       }
-
-      data = await res.json();
     } catch (e: any) {
       callbacks.onError(`Network error: ${e.message}`);
       callbacks.onDone();
       return;
     }
 
-    const choice = data.choices?.[0];
-    if (!choice) {
-      callbacks.onError('Empty response from AI.');
+    const msgId = nanoid();
+    const acc = createAccumulator();
+    let messageEmitted = false;
+
+    const emitMessage = () => {
+      if (messageEmitted) return;
+      messageEmitted = true;
+      callbacks.onMessage({
+        id: msgId,
+        role: 'assistant',
+        content: '',
+        toolCalls: [],
+        timestamp: new Date().toISOString(),
+      });
+    };
+
+    for await (const delta of parseSSEStream(res)) {
+      const result = accumulateDelta(acc, delta);
+
+      if (result.contentToken) {
+        emitMessage();
+        callbacks.onContentDelta(msgId, result.contentToken);
+      }
+
+      if (result.newToolCall) {
+        emitMessage();
+        const tc: ChatToolCall = {
+          id: acc.toolCalls.get(result.newToolCall.index)!.id,
+          name: result.newToolCall.name,
+          arguments: '',
+          status: 'pending',
+        };
+        callbacks.onToolCallDelta(msgId, tc);
+      }
+
+      if (result.toolCallArgDelta) {
+        const entry = acc.toolCalls.get(result.toolCallArgDelta.index);
+        if (entry) {
+          callbacks.onToolCallDelta(msgId, {
+            id: entry.id,
+            name: entry.name,
+            arguments: entry.arguments,
+            status: 'pending',
+          });
+        }
+      }
+    }
+
+    const hasToolCalls = acc.toolCalls.size > 0;
+    const hasContent = acc.content.length > 0;
+
+    if (!hasToolCalls && !hasContent) {
+      if (!messageEmitted) {
+        callbacks.onDone();
+        return;
+      }
+    }
+
+    if (!hasToolCalls) {
+      if (!messageEmitted && hasContent) {
+        callbacks.onMessage({
+          id: msgId,
+          role: 'assistant',
+          content: acc.content,
+          timestamp: new Date().toISOString(),
+        });
+      }
       callbacks.onDone();
       return;
     }
 
-    const msg = choice.message;
+    openaiMessages.push({
+      role: 'assistant',
+      content: acc.content || null,
+      tool_calls: finalizeOpenAIToolCalls(acc),
+    });
 
-    if (msg.tool_calls?.length) {
-      const toolCalls: ChatToolCall[] = msg.tool_calls.map((tc: any) => ({
-        id: tc.id,
-        name: tc.function.name,
-        arguments: tc.function.arguments,
-        status: 'pending' as const,
-      }));
+    const toolCalls = finalizeToolCalls(acc);
 
-      const assistantMsg: ChatMessage = {
-        id: nanoid(),
-        role: 'assistant',
-        content: msg.content || null,
-        toolCalls,
-        timestamp: new Date().toISOString(),
-      };
+    for (const tc of toolCalls) {
+      callbacks.onToolStart(msgId, tc);
 
-      callbacks.onMessage(assistantMsg);
-
-      openaiMessages.push({
-        role: 'assistant',
-        content: msg.content || null,
-        tool_calls: msg.tool_calls,
-      });
-
-      for (const tc of toolCalls) {
-        callbacks.onToolStart(assistantMsg.id, tc);
-
-        let result: string;
-        const executor = getToolExecutor(tc.name);
-        if (!executor) {
-          result = JSON.stringify({ error: `Unknown tool: ${tc.name}` });
-        } else {
-          try {
-            const parsedArgs = JSON.parse(tc.arguments);
-            result = await executor(parsedArgs);
-          } catch (e: any) {
-            result = JSON.stringify({ error: e.message });
-          }
+      let result: string;
+      const executor = getToolExecutor(tc.name);
+      if (!executor) {
+        result = JSON.stringify({ error: `Unknown tool: ${tc.name}` });
+      } else {
+        try {
+          const parsedArgs = JSON.parse(tc.arguments);
+          result = await executor(parsedArgs);
+        } catch (e: any) {
+          result = JSON.stringify({ error: e.message });
         }
-
-        callbacks.onToolEnd(assistantMsg.id, tc.id, result);
-
-        const toolMsg: ChatMessage = {
-          id: nanoid(),
-          role: 'tool',
-          content: result,
-          toolCallId: tc.id,
-          timestamp: new Date().toISOString(),
-        };
-
-        callbacks.onMessage(toolMsg);
-
-        openaiMessages.push({
-          role: 'tool',
-          content: result,
-          tool_call_id: tc.id,
-        });
       }
 
-      continue;
-    }
+      callbacks.onToolEnd(msgId, tc.id, result);
 
-    if (msg.content) {
-      const assistantMsg: ChatMessage = {
+      const toolMsg: ChatMessage = {
         id: nanoid(),
-        role: 'assistant',
-        content: msg.content,
+        role: 'tool',
+        content: result,
+        toolCallId: tc.id,
         timestamp: new Date().toISOString(),
       };
-      callbacks.onMessage(assistantMsg);
+
+      callbacks.onMessage(toolMsg);
+
+      openaiMessages.push({
+        role: 'tool',
+        content: result,
+        tool_call_id: tc.id,
+      });
     }
 
-    callbacks.onDone();
-    return;
+    continue;
   }
 
   callbacks.onError('Agent reached maximum iterations. Please try again with a simpler request.');

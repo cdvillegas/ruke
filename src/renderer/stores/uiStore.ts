@@ -25,6 +25,7 @@ interface UiState {
   theme: 'dark' | 'light';
   onboarding: OnboardingState;
   aiModeEnabled: boolean;
+  viewBadges: Partial<Record<AppView, number>>;
 
   setActiveView: (view: AppView) => void;
   setActiveProtocol: (protocol: ProtocolType) => void;
@@ -40,6 +41,8 @@ interface UiState {
   resetOnboarding: () => void;
   setAiMode: (enabled: boolean) => void;
   toggleAiMode: () => void;
+  incrementBadge: (view: AppView) => void;
+  clearBadge: (view: AppView) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -54,8 +57,12 @@ export const useUiStore = create<UiState>((set) => ({
   theme: (localStorage.getItem('ruke:theme') === 'light' ? 'light' : 'dark') as 'dark' | 'light',
   onboarding: loadOnboarding(),
   aiModeEnabled: localStorage.getItem('ruke:ai_mode') !== 'false',
+  viewBadges: {},
 
-  setActiveView: (view) => set({ activeView: view }),
+  setActiveView: (view) => set((s) => ({
+    activeView: view,
+    viewBadges: { ...s.viewBadges, [view]: 0 },
+  })),
   setActiveProtocol: (protocol) => set({ activeProtocol: protocol }),
   setSidebarWidth: (w) => set({ sidebarWidth: w }),
   toggleAiPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
@@ -89,4 +96,11 @@ export const useUiStore = create<UiState>((set) => ({
     localStorage.setItem('ruke:ai_mode', String(next));
     return { aiModeEnabled: next };
   }),
+  incrementBadge: (view) => set((s) => {
+    if (s.activeView === view) return {};
+    return { viewBadges: { ...s.viewBadges, [view]: (s.viewBadges[view] || 0) + 1 } };
+  }),
+  clearBadge: (view) => set((s) => ({
+    viewBadges: { ...s.viewBadges, [view]: 0 },
+  })),
 }));

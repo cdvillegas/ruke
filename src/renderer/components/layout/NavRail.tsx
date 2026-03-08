@@ -13,9 +13,10 @@ const BOTTOM_NAV: { id: AppView; icon: typeof MessageSquare; label: string }[] =
   { id: 'settings', icon: Settings, label: 'Settings' },
 ];
 
-function NavButton({ item, isActive, onClick }: {
+function NavButton({ item, isActive, badge, onClick }: {
   item: { id: AppView; icon: typeof MessageSquare; label: string };
   isActive: boolean;
+  badge?: number;
   onClick: () => void;
 }) {
   return (
@@ -32,6 +33,11 @@ function NavButton({ item, isActive, onClick }: {
       {isActive && (
         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-r" />
       )}
+      {!!badge && badge > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-accent text-white text-[9px] font-bold leading-none">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </button>
   );
 }
@@ -39,6 +45,7 @@ function NavButton({ item, isActive, onClick }: {
 export function NavRail() {
   const activeView = useUiStore((s) => s.activeView);
   const setActiveView = useUiStore((s) => s.setActiveView);
+  const viewBadges = useUiStore((s) => s.viewBadges);
 
   return (
     <div className="w-14 flex flex-col items-center py-4 gap-1 border-r border-border bg-bg-secondary shrink-0">
@@ -51,6 +58,7 @@ export function NavRail() {
           key={item.id}
           item={item}
           isActive={activeView === item.id}
+          badge={viewBadges[item.id]}
           onClick={() => setActiveView(item.id)}
         />
       ))}
@@ -61,6 +69,7 @@ export function NavRail() {
             key={item.id}
             item={item}
             isActive={activeView === item.id}
+            badge={viewBadges[item.id]}
             onClick={() => setActiveView(item.id)}
           />
         ))}

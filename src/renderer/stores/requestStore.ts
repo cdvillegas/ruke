@@ -48,6 +48,7 @@ interface RequestState {
   openTabs: ApiRequest[];
   activeTabId: string;
   pendingTabIds: string[];
+  newRequestIds: string[];
 
   setActiveRequest: (req: ApiRequest) => void;
   updateActiveRequest: (updates: Partial<ApiRequest>) => void;
@@ -69,6 +70,7 @@ interface RequestState {
   switchTab: (id: string) => void;
   addPendingTab: (partial?: Partial<ApiRequest>) => string;
   resolvePendingTab: (id: string, updates: Partial<ApiRequest>) => void;
+  markSeen: (id: string) => void;
   isPending: (id: string) => boolean;
   loadHistory: () => Promise<void>;
   clearHistory: () => Promise<void>;
@@ -88,6 +90,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
     openTabs: [initial],
     activeTabId: initial.id,
     pendingTabIds: [],
+    newRequestIds: [],
 
     setActiveRequest: (req) => set({ activeRequest: req, activeTabId: req.id }),
 
@@ -246,6 +249,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
       set((s) => ({
         openTabs: [...s.openTabs, merged],
         pendingTabIds: [...s.pendingTabIds, merged.id],
+        newRequestIds: [...s.newRequestIds, merged.id],
       }));
       return merged.id;
     },
@@ -263,6 +267,12 @@ export const useRequestStore = create<RequestState>((set, get) => {
           ...(isActive && resolvedTab ? { activeRequest: resolvedTab } : {}),
         };
       });
+    },
+
+    markSeen: (id) => {
+      set((s) => ({
+        newRequestIds: s.newRequestIds.filter(nid => nid !== id),
+      }));
     },
 
     isPending: (id) => get().pendingTabIds.includes(id),
@@ -300,7 +310,13 @@ export const useRequestStore = create<RequestState>((set, get) => {
           await window.ruke.db.query('createRequest', req);
         }
       } catch {
-        await window.ruke.db.query('createRequest', req);
+        try { await window.ruke.db.query('createRequest', req); } catch {}
+      }
+      if (req.collectionId) {
+        try {
+          const { useCollectionStore } = await import('./collectionStore');
+          useCollectionStore.getState().loadRequests(req.collectionId);
+        } catch {}
       }
     },
 
@@ -312,8 +328,15 @@ export const useRequestStore = create<RequestState>((set, get) => {
     },
 
     deleteRequest: async (id) => {
-      await window.ruke.db.query('deleteRequest', id);
+      const req = get().openTabs.find(t => t.id === id);
+      try { await window.ruke.db.query('deleteRequest', id); } catch {}
       get().closeTab(id);
+      if (req?.collectionId) {
+        try {
+          const { useCollectionStore } = await import('./collectionStore');
+          useCollectionStore.getState().loadRequests(req.collectionId);
+        } catch {}
+      }
     },
   };
 });

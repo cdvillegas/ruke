@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { useRequestStore } from '../../stores/requestStore';
-import { useConnectionStore } from '../../stores/connectionStore';
 import { useUiStore } from '../../stores/uiStore';
 import { RequestBuilder } from '../request/RequestBuilder';
 import { GrpcRequestView } from '../request/GrpcRequestView';
@@ -74,8 +73,9 @@ function RequestRow({
   onSelect: (req: ApiRequest) => void;
   onDelete: (id: string) => void;
 }) {
-  const connections = useConnectionStore((s) => s.connections);
-  const conn = req.connectionId ? connections.find(c => c.id === req.connectionId) : null;
+  const newRequestIds = useRequestStore((s) => s.newRequestIds);
+  const markSeen = useRequestStore((s) => s.markSeen);
+  const isNew = newRequestIds.includes(req.id);
   const [showMenu, setShowMenu] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(req.name || '');
@@ -106,9 +106,14 @@ function RequestRow({
     setIsRenaming(false);
   };
 
+  const handleClick = () => {
+    onSelect(req);
+    if (isNew) markSeen(req.id);
+  };
+
   return (
     <div
-      onClick={() => onSelect(req)}
+      onClick={handleClick}
       className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
         isSelected
           ? 'bg-accent/10 text-text-primary cursor-pointer'
@@ -138,12 +143,8 @@ function RequestRow({
       ) : (
         <span className="text-xs truncate flex-1">{req.name || 'Untitled'}</span>
       )}
-      {conn && (
-        <span
-          className="w-2 h-2 rounded-full shrink-0"
-          style={{ backgroundColor: conn.iconColor }}
-          title={conn.name}
-        />
+      {isNew && !isSelected && (
+        <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" title="New" />
       )}
       <div className="relative" ref={menuRef}>
         <button
@@ -191,11 +192,22 @@ function CollectionNode({
   const deleteCollection = useCollectionStore((s) => s.deleteCollection);
   const renameCollection = useCollectionStore((s) => s.renameCollection);
   const deleteRequest = useRequestStore((s) => s.deleteRequest);
-  const connections = useConnectionStore((s) => s.connections);
   const isExpanded = expandedIds.includes(node.collection.id);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(node.collection.name);
   const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showMenu]);
 
   const handleRename = () => {
     if (renameValue.trim()) {
@@ -204,13 +216,14 @@ function CollectionNode({
     setIsRenaming(false);
   };
 
+  const openTabs = useRequestStore((s) => s.openTabs);
+  const pendingTabIds = useRequestStore((s) => s.pendingTabIds);
   const pendingForCollection = useMemo(() => {
-    const { openTabs, pendingTabIds } = useRequestStore.getState();
     return openTabs.filter(
       t => pendingTabIds.includes(t.id) && t.collectionId === node.collection.id &&
         !node.requests.some(r => r.id === t.id)
     );
-  }, [node.collection.id, node.requests]);
+  }, [openTabs, pendingTabIds, node.collection.id, node.requests]);
 
   return (
     <div>
@@ -240,7 +253,7 @@ function CollectionNode({
           <span className="text-xs font-medium text-text-primary truncate flex-1">{node.collection.name}</span>
         )}
         <span className="text-[9px] text-text-muted shrink-0">{node.requests.length}</span>
-        <div className="relative">
+        <div className="relative" ref={menuRef}>
           <button
             onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
             className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-bg-active text-text-muted transition-all"
@@ -331,10 +344,10 @@ export function RequestsView() {
   );
 
   useEffect(() => {
-    if (activeRequest?.id && !selectedReqId) {
+    if (activeRequest?.id) {
       setSelectedReqId(activeRequest.id);
     }
-  }, [activeRequest?.id, selectedReqId]);
+  }, [activeRequest?.id]);
 
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');

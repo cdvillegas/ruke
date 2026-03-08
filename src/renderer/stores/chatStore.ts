@@ -60,6 +60,8 @@ interface ChatState {
   newChat: () => void;
   sendMessage: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
   appendMessage: (msg: ChatMessage) => void;
+  updateMessageContent: (messageId: string, delta: string) => void;
+  upsertToolCall: (messageId: string, toolCall: ChatToolCall) => void;
   updateToolCall: (messageId: string, toolCallId: string, updates: Partial<ChatToolCall>) => void;
   setError: (error: string | null) => void;
 }
@@ -110,6 +112,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       onMessage: (msg) => {
         get().appendMessage(msg);
       },
+      onContentDelta: (messageId, delta) => {
+        get().updateMessageContent(messageId, delta);
+      },
+      onToolCallDelta: (messageId, toolCall) => {
+        get().upsertToolCall(messageId, toolCall);
+      },
       onToolStart: (messageId, toolCall) => {
         get().updateToolCall(messageId, toolCall.id, { status: 'running' });
       },
@@ -133,8 +141,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: [...s.session.messages, msg],
         updatedAt: new Date().toISOString(),
       };
-      saveSession(updated);
       return { session: updated };
+    });
+  },
+
+  updateMessageContent: (messageId, delta) => {
+    set((s) => {
+      const messages = s.session.messages.map(m => {
+        if (m.id !== messageId) return m;
+        return { ...m, content: (m.content || '') + delta };
+      });
+      return { session: { ...s.session, messages, updatedAt: new Date().toISOString() } };
+    });
+  },
+
+  upsertToolCall: (messageId, toolCall) => {
+    set((s) => {
+      const messages = s.session.messages.map(m => {
+        if (m.id !== messageId) return m;
+        const existing = (m.toolCalls || []).find(tc => tc.id === toolCall.id);
+        if (existing) {
+          return {
+            ...m,
+            toolCalls: (m.toolCalls || []).map(tc =>
+              tc.id === toolCall.id ? { ...tc, ...toolCall } : tc
+            ),
+          };
+        }
+        return { ...m, toolCalls: [...(m.toolCalls || []), toolCall] };
+      });
+      return { session: { ...s.session, messages, updatedAt: new Date().toISOString() } };
     });
   },
 
