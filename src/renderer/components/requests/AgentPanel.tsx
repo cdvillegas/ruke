@@ -63,7 +63,7 @@ function SessionTab({ id, title, isActive, onClick, onClose }: {
     if (el) setIsOverflowing(el.scrollWidth > el.clientWidth);
   }, [displayTitle]);
 
-  const bg = isActive ? 'var(--color-bg-hover)' : 'var(--color-bg-primary)';
+  const bg = isActive ? 'var(--color-bg-hover)' : 'var(--color-bg-secondary)';
   const fadeMask = isOverflowing
     ? { maskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent)', WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent)' }
     : undefined;
@@ -513,14 +513,14 @@ export function AgentPanel() {
 
   return (
     <div
-      className="h-full flex flex-col bg-bg-primary border-l border-border relative"
+      className="h-full flex flex-col bg-bg-secondary border-l border-border relative"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleFileDrop}
     >
       {isDragging && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-secondary/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 p-8 rounded-2xl border-2 border-dashed border-accent/50 bg-accent/5">
             <FileUp size={32} className="text-accent" />
             <p className="text-sm font-medium text-text-primary">Drop files here</p>
@@ -529,7 +529,7 @@ export function AgentPanel() {
       )}
 
       {/* Session tabs */}
-      <div className="flex items-center gap-1 px-1.5 py-1 border-b border-border shrink-0">
+      <div className="flex items-center gap-1 px-1.5 py-1 border-b border-border shrink-0 bg-bg-secondary/40">
         <div ref={tabsRef} className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none">
           {openTabs.map(s => (
             <SessionTab

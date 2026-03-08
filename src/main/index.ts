@@ -6,9 +6,12 @@ import { HttpEngine } from './http/engine';
 import { GrpcEngine } from './grpc/engine';
 import { AiService } from './ai/service';
 import { DiscoveryAgent } from './agent/discovery';
+import { runScript } from './scripting/engine';
 import { IPC_CHANNELS } from '../shared/constants';
+import type { ScriptContext } from '../shared/types';
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
+import { WebSocket } from 'ws';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -120,6 +123,104 @@ app.whenReady().then(() => {
 
   ipcMain.handle(IPC_CHANNELS.GRPC_CANCEL_STREAM, async (_event, streamId: string) => {
     grpcEngine.cancelStream(streamId);
+    return { success: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.RUN_SCRIPT, async (_event, { script, context, phase }: { script: string; context: ScriptContext; phase: 'pre-request' | 'post-response' }) => {
+    return runScript(script, context, phase);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.OAUTH2_AUTHORIZE, async (_event, { authorizationUrl }: { authorizationUrl: string }) => {
+    return new Promise((resolve) => {
+      const authWindow = new BrowserWindow({
+        width: 600,
+        height: 700,
+        parent: mainWindow!,
+        modal: true,
+        webPreferences: { nodeIntegration: false, contextIsolation: true },
+      });
+
+      authWindow.loadURL(authorizationUrl);
+
+      authWindow.webContents.on('will-redirect', (_e, redirectUrl) => {
+        try {
+          const url = new URL(redirectUrl);
+          const code = url.searchParams.get('code');
+          const error = url.searchParams.get('error');
+          if (code || error) {
+            resolve({ code, error, redirectUrl });
+            authWindow.close();
+          }
+        } catch {}
+      });
+
+      authWindow.webContents.on('will-navigate', (_e, navUrl) => {
+        try {
+          const url = new URL(navUrl);
+          const code = url.searchParams.get('code');
+          const error = url.searchParams.get('error');
+          if (code || error) {
+            resolve({ code, error, redirectUrl: navUrl });
+            authWindow.close();
+          }
+        } catch {}
+      });
+
+      authWindow.on('closed', () => {
+        resolve({ error: 'User cancelled authorization' });
+      });
+    });
+  });
+
+  const wsConnections = new Map<string, WebSocket>();
+
+  ipcMain.handle(IPC_CHANNELS.WS_CONNECT, async (_event, { id, url, protocols, headers }: { id: string; url: string; protocols?: string[]; headers?: Record<string, string> }) => {
+    return new Promise((resolve) => {
+      try {
+        const ws = new WebSocket(url, protocols || [], { headers: headers || {} });
+        wsConnections.set(id, ws);
+
+        ws.on('open', () => {
+          mainWindow?.webContents.send(`ws:event:${id}`, { type: 'open' });
+          resolve({ success: true });
+        });
+
+        ws.on('message', (data: Buffer | string) => {
+          const msg = typeof data === 'string' ? data : data.toString();
+          mainWindow?.webContents.send(`ws:event:${id}`, { type: 'message', data: msg });
+        });
+
+        ws.on('close', (code: number, reason: Buffer) => {
+          mainWindow?.webContents.send(`ws:event:${id}`, { type: 'close', code, reason: reason.toString() });
+          wsConnections.delete(id);
+        });
+
+        ws.on('error', (err: Error) => {
+          mainWindow?.webContents.send(`ws:event:${id}`, { type: 'error', error: err.message });
+          wsConnections.delete(id);
+          resolve({ success: false, error: err.message });
+        });
+      } catch (e: any) {
+        resolve({ success: false, error: e.message });
+      }
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WS_SEND, async (_event, { id, data }: { id: string; data: string }) => {
+    const ws = wsConnections.get(id);
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return { success: false, error: 'WebSocket not connected' };
+    }
+    ws.send(data);
+    return { success: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WS_CLOSE, async (_event, { id }: { id: string }) => {
+    const ws = wsConnections.get(id);
+    if (ws) {
+      ws.close();
+      wsConnections.delete(id);
+    }
     return { success: true };
   });
 

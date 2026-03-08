@@ -403,7 +403,9 @@ function CollectionNode({
         ) : (
           <span className="text-xs font-medium text-text-primary truncate flex-1">{node.collection.name}</span>
         )}
-        <span className="text-[9px] text-text-muted shrink-0">{node.requests.length}</span>
+        {node.requests.length > 0 && (
+          <span className="text-[9px] text-text-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">{node.requests.length}</span>
+        )}
         <div className="relative" ref={menuRef}>
           <button
             onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
@@ -483,7 +485,6 @@ export function RequestSidebar() {
   const [search, setSearch] = useState('');
   const [showAllRecent, setShowAllRecent] = useState(false);
   const [archiveExpanded, setArchiveExpanded] = useState(false);
-  const [collectionsExpanded, setCollectionsExpanded] = useState(true);
   const [isCreatingCollection, setIsCreatingCollection] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
 
@@ -594,12 +595,6 @@ export function RequestSidebar() {
     }
   }, [newCollectionName, createCollection]);
 
-  const totalCollectionRequests = useMemo(() => {
-    let count = 0;
-    for (const reqs of Object.values(requests)) count += reqs.length;
-    return count;
-  }, [requests]);
-
   return (
     <>
       {/* Header */}
@@ -685,58 +680,36 @@ export function RequestSidebar() {
           </button>
         )}
 
-        {/* Collections section */}
-        {(collections.length > 0 || isCreatingCollection) && (
-          <div className="mt-2 pt-2 border-t border-border/60">
-            <button
-              onClick={() => setCollectionsExpanded(!collectionsExpanded)}
-              onDragOver={(e) => {
-                if (e.dataTransfer.types.includes('application/ruke-request-id')) {
-                  e.preventDefault();
-                  if (!collectionsExpanded) setCollectionsExpanded(true);
-                }
+        {/* Collections — inline in the main list */}
+        {isCreatingCollection && (
+          <div className="flex items-center gap-1.5 px-2 py-1.5 mb-1">
+            <FolderPlus size={13} className="text-accent shrink-0" />
+            <input
+              autoFocus
+              value={newCollectionName}
+              onChange={(e) => setNewCollectionName(e.target.value)}
+              onBlur={handleCreateCollection}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateCollection();
+                if (e.key === 'Escape') setIsCreatingCollection(false);
               }}
-              className="flex items-center gap-1.5 w-full px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider hover:text-text-secondary transition-colors"
-            >
-              {collectionsExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-              <FolderOpen size={10} />
-              Collections ({totalCollectionRequests})
-            </button>
-            {collectionsExpanded && (
-              <div className="mt-1">
-                {isCreatingCollection && (
-                  <div className="flex items-center gap-1.5 px-2 py-1.5 mb-1">
-                    <FolderPlus size={13} className="text-accent shrink-0" />
-                    <input
-                      autoFocus
-                      value={newCollectionName}
-                      onChange={(e) => setNewCollectionName(e.target.value)}
-                      onBlur={handleCreateCollection}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleCreateCollection();
-                        if (e.key === 'Escape') setIsCreatingCollection(false);
-                      }}
-                      placeholder="Collection name..."
-                      className="flex-1 text-xs bg-bg-tertiary border border-accent px-2 py-1 rounded text-text-primary placeholder:text-text-muted focus:outline-none"
-                    />
-                  </div>
-                )}
-                {filteredTree.map((node) => (
-                  <CollectionNode
-                    key={node.collection.id}
-                    node={node}
-                    depth={0}
-                    selectedRequestId={activeRequest.id}
-                    onSelectRequest={handleSelectCollectionRequest}
-                    onNewRequest={handleNewCollectionRequest}
-                  />
-                ))}
-              </div>
-            )}
+              placeholder="Collection name..."
+              className="flex-1 text-xs bg-bg-tertiary border border-accent px-2 py-1 rounded text-text-primary placeholder:text-text-muted focus:outline-none"
+            />
           </div>
         )}
+        {filteredTree.map((node) => (
+          <CollectionNode
+            key={node.collection.id}
+            node={node}
+            depth={0}
+            selectedRequestId={activeRequest.id}
+            onSelectRequest={handleSelectCollectionRequest}
+            onNewRequest={handleNewCollectionRequest}
+          />
+        ))}
 
-        {/* Archive section */}
+        {/* Archive */}
         {archivedRequests.length > 0 && (
           <div className="mt-2 pt-2 border-t border-border/60">
             <button

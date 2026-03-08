@@ -66,3 +66,45 @@ export function AssistantMessage({ content }: { content: string }) {
     </div>
   );
 }
+
+const tooltipMarkdownComponents: Record<string, React.ComponentType<any>> = {
+  p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-text-primary">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-1 space-y-0.5">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-1 space-y-0.5">{children}</ol>,
+  li: ({ children }) => <li>{children}</li>,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+      {children}
+    </a>
+  ),
+  code: ({ className, children, ...props }) => {
+    const isBlock = className?.includes('language-');
+    if (isBlock) {
+      return <code className="text-[10px] font-mono text-text-primary" {...props}>{children}</code>;
+    }
+    return (
+      <code className="bg-bg-tertiary px-1 py-px rounded text-[10px] font-mono text-accent" {...props}>
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }) => (
+    <pre className="bg-bg-tertiary rounded p-2 text-[10px] font-mono overflow-x-auto mb-1 border border-border/40">
+      {children}
+    </pre>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-2 border-accent/40 pl-2 italic mb-1">{children}</blockquote>
+  ),
+  hr: () => <hr className="border-border my-1.5" />,
+};
+
+export function TooltipMarkdown({ content }: { content: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={tooltipMarkdownComponents}>
+      {content.length > 500 ? content.slice(0, 500) + '...' : content}
+    </ReactMarkdown>
+  );
+}

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Rüke — The AI-Native API Client. Talk to your APIs. Share with your team. Works offline. Always.",
   "main": "dist/main/index.js",
+  "bin": {
+    "ruke": "dist/cli/index.js"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
     "dev:main": "tsc -p tsconfig.main.json --watch",
@@ -10,6 +13,7 @@
     "build": "npm run build:main && npm run build:renderer",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
+    "build:cli": "tsc -p tsconfig.cli.json",
     "start": "electron dist/main/index.js",
     "dist": "npm run build && electron-builder",
     "typecheck": "tsc --noEmit"
@@ -22,6 +26,7 @@
   "license": "MIT",
   "dependencies": {
     "@ai-sdk/openai": "^3.0.41",
+    "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.1",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@grpc/grpc-js": "^1.14.3",
@@ -51,6 +56,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "undici": "^7.2.0",
+    "ws": "^8.18.0",
     "zod": "^4.3.6",
     "zustand": "^5.0.3"
   },
@@ -61,6 +67,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",

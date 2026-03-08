@@ -35,6 +35,11 @@ export const IPC_CHANNELS = {
   GRPC_SEND_REQUEST: 'grpc:send-request',
   GRPC_SERVER_REFLECTION: 'grpc:server-reflection',
   GRPC_CANCEL_STREAM: 'grpc:cancel-stream',
+  RUN_SCRIPT: 'scripting:run',
+  OAUTH2_AUTHORIZE: 'oauth2:authorize',
+  WS_CONNECT: 'ws:connect',
+  WS_SEND: 'ws:send',
+  WS_CLOSE: 'ws:close',
 } as const;
 
 export const GRPC_STATUS_CODES: Record<number, string> = {

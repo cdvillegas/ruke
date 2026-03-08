@@ -10,6 +10,7 @@ import { json } from '@codemirror/lang-json';
 import { EditorView } from '@codemirror/view';
 import { appEditorTheme, blockEditorExtensions } from '../shared/editorTheme';
 import { Info, Plus, X } from 'lucide-react';
+import { TooltipMarkdown } from '../shared/markdownComponents';
 import yaml from 'js-yaml';
 
 const RAW_PREF_KEY = 'ruke:body_show_raw';
@@ -194,7 +195,7 @@ function BodyFieldRowView({
                     sideOffset={4}
                     className="max-w-sm px-3 py-2 rounded-lg bg-bg-secondary border border-border text-[11px] text-text-secondary leading-relaxed shadow-xl z-[100]"
                   >
-                    {row.description.slice(0, 500)}{row.description.length > 500 ? '...' : ''}
+                    <TooltipMarkdown content={row.description} />
                     <Tooltip.Arrow className="fill-border" />
                   </Tooltip.Content>
                 </Tooltip.Portal>

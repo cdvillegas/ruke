@@ -2,10 +2,116 @@ import { useEffect, useRef, useState } from 'react';
 import { useUiStore } from '../../stores/uiStore';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useRequestStore } from '../../stores/requestStore';
-import { Settings, Lock, Unlock, Moon, Sun, Info, Plug, Eye, EyeOff, Pencil, Trash2, Check, AlertTriangle, History, Unplug } from 'lucide-react';
+import { Settings, Lock, Unlock, Moon, Sun, Info, Plug, Eye, EyeOff, Pencil, Trash2, Check, AlertTriangle, History, Unplug, Globe, Timer } from 'lucide-react';
 import { ConnectionIcon } from '../connections/ConnectionsView';
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
+const PROXY_STORAGE = 'ruke:proxy';
+const TIMEOUT_STORAGE = 'ruke:default_timeout';
+
+function ProxySettings() {
+  const [proxy, setProxy] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(PROXY_STORAGE) || '{}'); } catch { return {}; }
+  });
+  const [enabled, setEnabled] = useState(!!proxy.host);
+
+  const save = (updates: Record<string, any>) => {
+    const next = { ...proxy, ...updates };
+    setProxy(next);
+    localStorage.setItem(PROXY_STORAGE, JSON.stringify(next));
+  };
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Proxy</h3>
+      <div className="p-4 rounded-2xl bg-bg-secondary border border-border space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Globe size={14} className="text-accent" />
+            <span className="text-sm text-text-primary">HTTP Proxy</span>
+          </div>
+          <button
+            onClick={() => {
+              const next = !enabled;
+              setEnabled(next);
+              if (!next) {
+                localStorage.removeItem(PROXY_STORAGE);
+                setProxy({});
+              }
+            }}
+            className={`relative w-9 h-5 rounded-full transition-colors ${enabled ? 'bg-accent' : 'bg-bg-tertiary border border-border'}`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </button>
+        </div>
+        {enabled && (
+          <div className="space-y-2 pt-1">
+            <div className="flex gap-2">
+              <input
+                value={proxy.host || ''}
+                onChange={(e) => save({ host: e.target.value })}
+                placeholder="Proxy host (e.g. 127.0.0.1)"
+                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-accent font-mono"
+              />
+              <input
+                value={proxy.port || ''}
+                onChange={(e) => save({ port: e.target.value })}
+                placeholder="Port"
+                className="w-20 px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-accent font-mono"
+              />
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={proxy.username || ''}
+                onChange={(e) => save({ username: e.target.value })}
+                placeholder="Username (optional)"
+                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-accent font-mono"
+              />
+              <input
+                type="password"
+                value={proxy.password || ''}
+                onChange={(e) => save({ password: e.target.value })}
+                placeholder="Password (optional)"
+                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-accent font-mono"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function RequestDefaults() {
+  const [timeout, setTimeout_] = useState(() => {
+    return localStorage.getItem(TIMEOUT_STORAGE) || '30000';
+  });
+
+  const saveTimeout = (v: string) => {
+    setTimeout_(v);
+    localStorage.setItem(TIMEOUT_STORAGE, v);
+  };
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Request Defaults</h3>
+      <div className="p-4 rounded-2xl bg-bg-secondary border border-border">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Timer size={14} className="text-accent" />
+            <span className="text-sm text-text-primary">Timeout</span>
+          </div>
+          <input
+            value={timeout}
+            onChange={(e) => saveTimeout(e.target.value)}
+            className="w-24 px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary border border-border text-text-primary focus:outline-none focus:border-accent font-mono text-right"
+          />
+          <span className="text-xs text-text-muted">ms</span>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function maskKey(key: string): string {
   if (key.length <= 8) return '\u2022'.repeat(key.length);
@@ -320,6 +426,12 @@ export function SettingsView() {
             </button>
           </div>
         </section>
+
+        {/* Proxy */}
+        <ProxySettings />
+
+        {/* Request Defaults */}
+        <RequestDefaults />
 
         {/* Connections Summary */}
         <section className="space-y-3">

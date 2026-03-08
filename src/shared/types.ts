@@ -2,7 +2,7 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 
 
 export type BodyType = 'none' | 'json' | 'form-data' | 'x-www-form-urlencoded' | 'raw' | 'binary' | 'graphql';
 
-export type AuthType = 'none' | 'bearer' | 'basic' | 'api-key';
+export type AuthType = 'none' | 'bearer' | 'basic' | 'api-key' | 'oauth2';
 
 export type VariableScope = 'global' | 'collection' | 'folder' | 'request';
 
@@ -12,11 +12,29 @@ export interface KeyValue {
   enabled: boolean;
 }
 
+export interface OAuth2Config {
+  grantType: 'authorization_code' | 'client_credentials' | 'password' | 'implicit';
+  clientId: string;
+  clientSecret?: string;
+  authorizationUrl?: string;
+  tokenUrl?: string;
+  redirectUri?: string;
+  scope?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  tokenExpiry?: string;
+  usePkce?: boolean;
+  codeVerifier?: string;
+  username?: string;
+  password?: string;
+}
+
 export interface AuthConfig {
   type: AuthType;
   bearer?: { token: string };
   basic?: { username: string; password: string };
   apiKey?: { key: string; value: string; addTo: 'header' | 'query' };
+  oauth2?: OAuth2Config;
 }
 
 export interface RequestBody {
@@ -26,6 +44,36 @@ export interface RequestBody {
   urlEncoded?: KeyValue[];
   binary?: string;
   graphql?: { query: string; variables: string; operationName?: string };
+}
+
+export interface ScriptConfig {
+  preRequest?: string;
+  postResponse?: string;
+}
+
+export interface TestResult {
+  name: string;
+  passed: boolean;
+  error?: string;
+  duration?: number;
+}
+
+export interface ScriptContext {
+  request: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body?: string;
+  };
+  response?: {
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    body: string;
+    duration: number;
+  };
+  variables: Record<string, string>;
+  testResults: TestResult[];
 }
 
 export interface ApiRequest {
@@ -40,10 +88,19 @@ export interface ApiRequest {
   params: KeyValue[];
   body: RequestBody;
   auth: AuthConfig;
+  scripts?: ScriptConfig;
+  options?: RequestOptions;
   archived?: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RequestOptions {
+  timeout?: number;
+  followRedirects?: boolean;
+  maxRedirects?: number;
+  proxy?: { host: string; port: number; auth?: { username: string; password: string } };
 }
 
 export interface ApiResponse {
@@ -56,6 +113,8 @@ export interface ApiResponse {
   size: number;
   duration: number;
   timestamp: string;
+  redirected?: boolean;
+  finalUrl?: string;
 }
 
 export interface HistoryEntry {
@@ -347,5 +406,51 @@ export interface DiscoveryResult {
   endpointCount: number;
   endpoints: ApiEndpoint[];
   protoDefinition?: ProtoDefinition;
+  error?: string;
+}
+
+export interface WebSocketMessage {
+  id: string;
+  direction: 'sent' | 'received';
+  data: string;
+  type: 'text' | 'binary' | 'ping' | 'pong';
+  timestamp: string;
+}
+
+export interface WebSocketConnection {
+  id: string;
+  url: string;
+  status: 'connecting' | 'open' | 'closing' | 'closed' | 'error';
+  protocols?: string[];
+  headers?: KeyValue[];
+  messages: WebSocketMessage[];
+  connectedAt?: string;
+  disconnectedAt?: string;
+  error?: string;
+}
+
+export interface CollectionRunResult {
+  collectionId: string;
+  collectionName: string;
+  startedAt: string;
+  completedAt: string;
+  duration: number;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  results: CollectionRunEntry[];
+}
+
+export interface CollectionRunEntry {
+  requestId: string;
+  requestName: string;
+  method: HttpMethod;
+  url: string;
+  status: number;
+  statusText: string;
+  duration: number;
+  testResults: TestResult[];
+  passed: boolean;
   error?: string;
 }

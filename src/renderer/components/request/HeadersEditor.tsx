@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useRequestStore } from '../../stores/requestStore';
 import { useEnvironmentStore } from '../../stores/environmentStore';
 import { Plus, Trash2, Code2, Table, Eye, EyeOff, ChevronDown, Info } from 'lucide-react';
+import { TooltipMarkdown } from '../shared/markdownComponents';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import type { KeyValue } from '@shared/types';
 
@@ -222,7 +223,7 @@ function HeaderRow({
                     sideOffset={4}
                     className="max-w-xs px-3 py-2 rounded-lg bg-bg-secondary border border-border text-[11px] text-text-secondary leading-relaxed shadow-xl z-[100]"
                   >
-                    {headerInfo.description}
+                    <TooltipMarkdown content={headerInfo.description} />
                     <Tooltip.Arrow className="fill-border" />
                   </Tooltip.Content>
                 </Tooltip.Portal>

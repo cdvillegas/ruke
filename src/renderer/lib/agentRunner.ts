@@ -8,10 +8,71 @@ import { useEnvironmentStore } from '../stores/environmentStore';
 
 const MAX_STEPS = 25;
 const AI_KEY_STORAGE = 'ruke:ai_key';
+const AI_PROVIDER_STORAGE = 'ruke:ai_provider';
+const AI_MODEL_STORAGE = 'ruke:ai_model';
+const AI_BASE_URL_STORAGE = 'ruke:ai_base_url';
+
+export type AiProvider = 'openai' | 'anthropic' | 'google' | 'ollama' | 'custom';
+
+export interface AiModelConfig {
+  provider: AiProvider;
+  model: string;
+  apiKey: string;
+  baseUrl?: string;
+}
+
+export function getModelConfig(): AiModelConfig | null {
+  const apiKey = localStorage.getItem(AI_KEY_STORAGE);
+  if (!apiKey) return null;
+  return {
+    provider: (localStorage.getItem(AI_PROVIDER_STORAGE) as AiProvider) || 'openai',
+    model: localStorage.getItem(AI_MODEL_STORAGE) || 'gpt-4o',
+    apiKey,
+    baseUrl: localStorage.getItem(AI_BASE_URL_STORAGE) || undefined,
+  };
+}
+
+export function setModelConfig(config: Partial<AiModelConfig>) {
+  if (config.provider) localStorage.setItem(AI_PROVIDER_STORAGE, config.provider);
+  if (config.model) localStorage.setItem(AI_MODEL_STORAGE, config.model);
+  if (config.apiKey) localStorage.setItem(AI_KEY_STORAGE, config.apiKey);
+  if (config.baseUrl !== undefined) {
+    if (config.baseUrl) localStorage.setItem(AI_BASE_URL_STORAGE, config.baseUrl);
+    else localStorage.removeItem(AI_BASE_URL_STORAGE);
+  }
+}
+
+export function createModelProvider(config: AiModelConfig) {
+  const providerOpts: Record<string, unknown> = { apiKey: config.apiKey };
+
+  switch (config.provider) {
+    case 'anthropic':
+      providerOpts.baseURL = config.baseUrl || 'https://api.anthropic.com/v1';
+      break;
+    case 'google':
+      providerOpts.baseURL = config.baseUrl || 'https://generativelanguage.googleapis.com/v1beta/openai/';
+      break;
+    case 'ollama':
+      providerOpts.baseURL = config.baseUrl || 'http://localhost:11434/v1';
+      providerOpts.apiKey = config.apiKey || 'ollama';
+      break;
+    case 'custom':
+      if (config.baseUrl) providerOpts.baseURL = config.baseUrl;
+      break;
+    default:
+      if (config.baseUrl) providerOpts.baseURL = config.baseUrl;
+      break;
+  }
+
+  const provider = createOpenAI(providerOpts as any);
+  return provider(config.model);
+}
 
 function getApiKey(): string | null {
   return localStorage.getItem(AI_KEY_STORAGE) || null;
 }
+
+const MEMORY_STORAGE_KEY = 'ruke:agent_memory';
 
 function buildContextMessage(): string {
   const conns = useConnectionStore.getState().connections;
@@ -34,6 +95,16 @@ function buildContextMessage(): string {
     parts.push(`\nEnvironments (${envs.length}): ${envs.map(e => e.name).join(', ')}`);
     if (active) parts.push(`Active environment: ${active.name}`);
   }
+
+  try {
+    const memories = JSON.parse(localStorage.getItem(MEMORY_STORAGE_KEY) || '[]');
+    if (memories.length > 0) {
+      parts.push(`\nRemembered preferences and knowledge (${memories.length}):`);
+      for (const m of memories.slice(-20)) {
+        parts.push(`- [${m.type}] ${m.content}`);
+      }
+    }
+  } catch {}
 
   return parts.join('\n');
 }
@@ -103,24 +174,57 @@ export interface AgentRunOptions {
   abortSignal?: AbortSignal;
 }
 
-const DEFAULT_AGENT_INSTRUCTIONS = `You are Rüke, an expert API development assistant. You help users create, organize, and manage API requests through natural conversation.
+const DEFAULT_AGENT_INSTRUCTIONS = `You are Rüke, an expert API development assistant. You help users build, test, debug, and automate API workflows through natural conversation.
 
-CRITICAL RULE: ALWAYS ACT. When the user asks you to do something, DO IT immediately by calling tools. NEVER just describe what you would do — actually call the tools. If the user says "create requests", call create_requests (plural) with all requests in a single batch. Do not stop after creating a collection — populate it with requests using create_requests.
+CRITICAL RULE: ALWAYS ACT. When the user asks you to do something, DO IT immediately by calling tools. NEVER just describe what you would do — actually call the tools.
 
 Be conversational. Keep text brief (1-2 sentences). Your text message appears BEFORE your tool calls in the UI, so write it as a plan of what you're about to do, not a recap of what you did. After all tools complete, summarize what you did.
 
-Key behaviors:
-- Before connecting an API, check list_connections first — the API may already be connected. NEVER call connect_api more than once for the same API.
+Core behaviors:
+- Before connecting an API, check list_connections first — the API may already be connected.
 - Before creating requests, use search_endpoints to find the right endpoint data.
 - When creating requests for a connected API, always include connection_id and endpoint_id.
-- When the user asks to edit, rename, or modify requests, use list_requests to find them, then update_requests to change them.
-- Use realistic sample data in request bodies — real model names, plausible messages, etc.
-- Don't add Authorization headers manually. Instead, use set_connection_auth to configure auth on the connection (all linked requests inherit it), or set auth_type on create_request/edit_current_request for per-request auth.
-- When the user provides an API key or token, use set_connection_auth to configure it on the connection so all requests use it automatically.
-- Use list_connections to check if auth is already configured (authConfigured field) before adding auth.
+- When the user asks to edit, rename, or modify multiple requests, use update_requests (batch edit) to change them all at once.
+- Use realistic sample data in request bodies.
+- Don't add Authorization headers manually — use set_connection_auth for connection-level auth, or auth_type on create_request/edit_current_request for per-request auth.
+- Use list_connections to check if auth is already configured before adding auth.
 - Group related requests into collections.
-- When asked to create "a bunch" or "several" requests, create at least 5-8 varied examples.
-- ALWAYS use create_requests (plural) to create multiple requests in a single tool call. NEVER call create_request multiple times in a row — batch them into one create_requests call.`;
+- ALWAYS use create_requests (plural) to create multiple requests in a single tool call.
+
+Request execution and debugging:
+- Use send_request to execute the active request and get the full response.
+- Use send_request_by_id to select and send any request in one step.
+- After sending, use get_response, get_response_body, or get_response_headers to inspect results.
+- When a request fails (4xx/5xx), diagnose the error from the response body, fix the request with edit_current_request, and retry with send_request. Repeat up to 3 times before giving up.
+- Common fixes: 401/403 = auth issue (check set_connection_auth), 400 = malformed body/params, 404 = wrong URL/path, 422 = validation error in body.
+
+Testing:
+- Use create_test to define assertions for requests (status codes, JSON paths, headers, response time).
+- Use run_tests to execute and validate assertions. Use run_collection_tests to test an entire collection.
+- When creating tests, include meaningful descriptions and cover status, body content, and timing.
+
+Workflows:
+- Use create_workflow to chain requests together with variable extraction between steps.
+- Use run_workflow to execute chains. Variables extracted from one step's response are available in subsequent steps via {{variable}} syntax.
+
+Environments:
+- Use set_active_environment, update_environment, add_variable, update_variable, delete_variable for full environment management.
+- Suggest creating environments when you see hardcoded base URLs or API keys.
+
+gRPC:
+- Use create_grpc_request and send_grpc_request for gRPC workflows.
+- Use import_grpc_proto or import_grpc_reflection to connect gRPC services.
+- Use list_grpc_services to explore available services and methods.
+
+History and replay:
+- Use search_history to find past requests. Use replay_request to re-execute a historical request.
+
+Documentation:
+- Use generate_docs to create markdown API documentation from a connection's spec and history.
+
+Connections:
+- Use import_graphql for GraphQL APIs, import_grpc_proto/import_grpc_reflection for gRPC.
+- Use update_connection, delete_connection, reimport_spec for connection management.`;
 
 const DELTA_BATCH_MS = 40;
 
@@ -129,14 +233,14 @@ export async function runAgent(
   callbacks: AgentCallbacks,
   options?: AgentRunOptions,
 ): Promise<void> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    callbacks.onError('No API key configured. Add your OpenAI API key in Settings.');
+  const config = getModelConfig();
+  if (!config) {
+    callbacks.onError('No API key configured. Add your AI provider key in Settings.');
     callbacks.onDone();
     return;
   }
 
-  const provider = createOpenAI({ apiKey });
+  const model = createModelProvider(config);
   const systemPrompt = options?.systemPrompt || DEFAULT_AGENT_INSTRUCTIONS;
 
   let contextBlock = buildContextMessage();
@@ -184,7 +288,7 @@ export async function runAgent(
 
   try {
     const result = streamText({
-      model: provider('gpt-5'),
+      model,
       system: fullSystem,
       messages: convertMessages(sessionMessages),
       tools: AGENT_TOOLS,

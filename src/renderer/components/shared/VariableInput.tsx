@@ -6,12 +6,13 @@ interface VariableInputProps {
   value: string;
   onChange: (value: string) => void;
   onKeyDown?: (e: React.KeyboardEvent) => void;
+  onPaste?: (e: React.ClipboardEvent) => void;
   placeholder?: string;
   className?: string;
   type?: string;
 }
 
-export function VariableInput({ value, onChange, onKeyDown, placeholder, className = '', type = 'text' }: VariableInputProps) {
+export function VariableInput({ value, onChange, onKeyDown, onPaste, placeholder, className = '', type = 'text' }: VariableInputProps) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [cursorPos, setCursorPos] = useState(0);
@@ -113,6 +114,7 @@ export function VariableInput({ value, onChange, onKeyDown, placeholder, classNa
         onChange={handleChange}
         onSelect={handleSelect}
         onKeyDown={handleKeyDown}
+        onPaste={onPaste}
         placeholder={placeholder}
         className={className}
       />

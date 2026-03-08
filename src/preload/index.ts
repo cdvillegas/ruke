@@ -33,6 +33,31 @@ const api = {
       ipcRenderer.invoke(IPC_CHANNELS.GRPC_CANCEL_STREAM, streamId),
   },
 
+  scripting: {
+    run: (script: string, context: any, phase: 'pre-request' | 'post-response') =>
+      ipcRenderer.invoke(IPC_CHANNELS.RUN_SCRIPT, { script, context, phase }),
+  },
+
+  oauth2: {
+    authorize: (authorizationUrl: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.OAUTH2_AUTHORIZE, { authorizationUrl }),
+  },
+
+  ws: {
+    connect: (id: string, url: string, protocols?: string[], headers?: Record<string, string>) =>
+      ipcRenderer.invoke(IPC_CHANNELS.WS_CONNECT, { id, url, protocols, headers }),
+    send: (id: string, data: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.WS_SEND, { id, data }),
+    close: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.WS_CLOSE, { id }),
+    onEvent: (id: string, callback: (event: any) => void) => {
+      const channel = `ws:event:${id}`;
+      const handler = (_event: any, data: any) => callback(data);
+      ipcRenderer.on(channel, handler);
+      return () => ipcRenderer.removeListener(channel, handler);
+    },
+  },
+
   file: {
     export: (data: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EXPORT_FILE, data),

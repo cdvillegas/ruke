@@ -8,14 +8,16 @@ import { ParameterEditor } from './ParameterEditor';
 import { HeadersEditor } from './HeadersEditor';
 import { BodyEditor } from './BodyEditor';
 import { AuthEditor } from './AuthEditor';
+import { ScriptEditor } from './ScriptEditor';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { HTTP_METHODS, METHOD_COLORS } from '@shared/constants';
 import type { HttpMethod, ApiEndpoint, ApiConnection, KeyValue } from '@shared/types';
 import {
   Send, Loader2, ChevronDown, Search, Shield, Check,
-  FileText, Braces, SlidersHorizontal, Cloud, ChevronRight,
+  FileText, Braces, SlidersHorizontal, Cloud, ChevronRight, Copy, ClipboardPaste, Code,
 } from 'lucide-react';
 import { VariableInput } from '../shared/VariableInput';
+import { parseCurl, toCurl } from '@shared/curl';
 
 const MUTED_METHOD_COLORS: Record<string, string> = {
   GET: '#6bc98f',
@@ -356,7 +358,7 @@ export function RequestBuilder() {
     ? collections.find((c) => c.id === activeRequest.collectionId)?.name
     : null;
 
-  const [advancedTab, setAdvancedTab] = useState<'params' | 'headers' | 'body' | 'auth'>('params');
+  const [advancedTab, setAdvancedTab] = useState<'params' | 'headers' | 'body' | 'auth' | 'scripts'>('params');
   const [editingName, setEditingName] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const paramRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -373,9 +375,38 @@ export function RequestBuilder() {
     [activeRequest.url, activeRequest.connectionId, activeRequest.params, connections]
   );
 
+  const [curlCopied, setCurlCopied] = useState(false);
+
   const handleSend = () => {
     const vars = resolveVariables();
     sendRequest(vars);
+  };
+
+  const handleCopyCurl = () => {
+    const resolvedUrlVal = useRequestStore.getState().getResolvedUrl();
+    const curl = toCurl(activeRequest, resolvedUrlVal);
+    navigator.clipboard.writeText(curl);
+    setCurlCopied(true);
+    setTimeout(() => setCurlCopied(false), 2000);
+  };
+
+  const handlePasteCurl = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith('curl ') && !trimmed.startsWith('curl\t')) return false;
+    try {
+      const parsed = parseCurl(trimmed);
+      const updates: Partial<ApiRequest> = {
+        method: parsed.method,
+        url: parsed.url,
+        headers: parsed.headers.length > 0 ? parsed.headers : activeRequest.headers,
+        body: parsed.body,
+        auth: parsed.auth,
+      };
+      updateActiveRequest(updates);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const handleSelectEndpoint = (ep: ApiEndpoint) => {
@@ -449,6 +480,7 @@ export function RequestBuilder() {
   const headerCount = activeRequest.headers.filter((h) => h.enabled && h.key).length;
   const hasBody = activeRequest.body.type !== 'none';
   const hasAuth = activeRequest.auth.type !== 'none';
+  const hasScripts = !!(activeRequest.scripts?.preRequest || activeRequest.scripts?.postResponse);
 
   return (
     <div className="relative">
@@ -530,6 +562,15 @@ export function RequestBuilder() {
         )}
 
         <button
+          onClick={handleCopyCurl}
+          title="Copy as cURL"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all bg-bg-tertiary border-border text-text-muted hover:bg-bg-hover hover:text-text-primary shrink-0"
+        >
+          {curlCopied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+          <span className="hidden sm:inline">{curlCopied ? 'Copied' : 'cURL'}</span>
+        </button>
+
+        <button
           onClick={handleSend}
           disabled={loading || pending}
           className={`flex items-center gap-2 px-5 py-2 rounded-lg text-white font-medium text-sm transition-all shrink-0 ${
@@ -567,6 +608,12 @@ export function RequestBuilder() {
               value={activeRequest.url}
               onChange={(v) => setUrl(v)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              onPaste={(e) => {
+                const text = e.clipboardData.getData('text');
+                if (handlePasteCurl(text)) {
+                  e.preventDefault();
+                }
+              }}
               placeholder="Enter URL or paste cURL..."
               className="w-full px-4 py-2 rounded-xl bg-bg-secondary border border-border text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/40 transition-colors"
             />
@@ -594,6 +641,7 @@ export function RequestBuilder() {
             { id: 'headers' as const, label: 'Headers', icon: FileText, active: headerCount > 0 },
             { id: 'body' as const, label: 'Body', icon: Braces, active: hasBody },
             { id: 'auth' as const, label: 'Auth', icon: Shield, active: hasAuth },
+            { id: 'scripts' as const, label: 'Scripts', icon: Code, active: hasScripts },
           ]).map((tab) => (
             <button
               key={tab.id}
@@ -616,9 +664,8 @@ export function RequestBuilder() {
           {advancedTab === 'params' && <ParameterEditor paramRefs={paramRefs} simpleMode={isLinked} />}
           {advancedTab === 'headers' && <HeadersEditor />}
           {advancedTab === 'body' && <BodyEditor />}
-          {advancedTab === 'auth' && (
-            <AuthEditor />
-          )}
+          {advancedTab === 'auth' && <AuthEditor />}
+          {advancedTab === 'scripts' && <ScriptEditor />}
         </div>
       </div>
     </div>

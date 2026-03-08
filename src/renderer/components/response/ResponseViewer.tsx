@@ -30,6 +30,62 @@ function timeAgo(timestamp: string): string {
   return `${days}d ago`;
 }
 
+interface ParsedCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires: string;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: string;
+}
+
+function parseSetCookieHeader(headerValue: string): ParsedCookie | null {
+  const parts = headerValue.split(';').map((p) => p.trim());
+  if (parts.length === 0) return null;
+  const [namePart, ...attrParts] = parts;
+  const eqIdx = namePart.indexOf('=');
+  if (eqIdx < 0) return null;
+  const name = namePart.slice(0, eqIdx).trim();
+  const value = namePart.slice(eqIdx + 1).trim();
+  let domain = '';
+  let path = '';
+  let expires = '';
+  let httpOnly = false;
+  let secure = false;
+  let sameSite = '';
+  for (const attr of attrParts) {
+    const i = attr.indexOf('=');
+    if (i < 0) {
+      const lower = attr.toLowerCase();
+      if (lower === 'httponly') httpOnly = true;
+      else if (lower === 'secure') secure = true;
+      continue;
+    }
+    const key = attr.slice(0, i).trim().toLowerCase();
+    const val = attr.slice(i + 1).trim();
+    if (key === 'domain') domain = val;
+    else if (key === 'path') path = val;
+    else if (key === 'expires') expires = val;
+    else if (key === 'samesite') sameSite = val;
+  }
+  return { name, value, domain, path, expires, httpOnly, secure, sameSite };
+}
+
+function parseCookiesFromHeaders(headers: Record<string, string>): ParsedCookie[] {
+  const cookies: ParsedCookie[] = [];
+  const setCookieKey = Object.keys(headers).find((k) => k.toLowerCase() === 'set-cookie');
+  if (!setCookieKey) return cookies;
+  const raw = headers[setCookieKey];
+  const segments = raw.split(/\r?\n/);
+  for (const seg of segments) {
+    const parsed = parseSetCookieHeader(seg.trim());
+    if (parsed && parsed.name) cookies.push(parsed);
+  }
+  return cookies;
+}
+
 function HistoryDropdown() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -162,6 +218,7 @@ export function ResponseViewer() {
   }
 
   const headerCount = Object.keys(response.headers).length;
+  const cookies = parseCookiesFromHeaders(response.headers);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -192,6 +249,7 @@ export function ResponseViewer() {
         {[
           { id: 'body', label: 'Body' },
           { id: 'headers', label: `Headers (${headerCount})` },
+          { id: 'cookies', label: `Cookies (${cookies.length})` },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -220,6 +278,59 @@ export function ResponseViewer() {
           />
         )}
         {activeResponseTab === 'headers' && <ResponseHeaders headers={response.headers} />}
+        {activeResponseTab === 'cookies' && (
+          <div className="p-4">
+            {cookies.length === 0 ? (
+              <p className="text-xs text-text-muted text-center py-4">No cookies in response</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 px-3 font-semibold text-text-secondary">Name</th>
+                      <th className="text-left py-2 px-3 font-semibold text-text-secondary">Value</th>
+                      <th className="text-left py-2 px-3 font-semibold text-text-secondary">Domain</th>
+                      <th className="text-left py-2 px-3 font-semibold text-text-secondary">Path</th>
+                      <th className="text-left py-2 px-3 font-semibold text-text-secondary">Expires</th>
+                      <th className="text-left py-2 px-3 font-semibold text-text-secondary">Flags</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cookies.map((c, i) => (
+                      <tr key={i} className="border-b border-border/50 hover:bg-bg-hover/50 transition-colors">
+                        <td className="py-2 px-3 font-mono font-semibold text-accent">{c.name}</td>
+                        <td className="py-2 px-3 font-mono text-text-secondary break-all max-w-[200px]">{c.value}</td>
+                        <td className="py-2 px-3 font-mono text-text-muted">{c.domain || '—'}</td>
+                        <td className="py-2 px-3 font-mono text-text-muted">{c.path || '—'}</td>
+                        <td className="py-2 px-3 font-mono text-text-muted">{c.expires || '—'}</td>
+                        <td className="py-2 px-3">
+                          <div className="flex flex-wrap gap-1">
+                            {c.httpOnly && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent/20 text-accent">
+                                HttpOnly
+                              </span>
+                            )}
+                            {c.secure && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-success/20 text-success">
+                                Secure
+                              </span>
+                            )}
+                            {c.sameSite && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-warning/20 text-warning">
+                                SameSite={c.sameSite}
+                              </span>
+                            )}
+                            {!c.httpOnly && !c.secure && !c.sameSite && <span className="text-text-muted">—</span>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

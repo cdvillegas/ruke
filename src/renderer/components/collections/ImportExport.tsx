@@ -18,18 +18,43 @@ export function ImportExport() {
   const handleExport = async () => {
     setStatus('exporting');
     try {
+      const colStore = useCollectionStore.getState();
+      const reqStore = useRequestStore.getState();
+      const envStore = useEnvironmentStore.getState();
+
+      const allCollections = colStore.collections;
+      const allRequests: ApiRequest[] = [
+        ...reqStore.uncollectedRequests,
+        ...reqStore.archivedRequests,
+      ];
+      for (const col of allCollections) {
+        const colReqs = colStore.requests[col.id] || [];
+        for (const r of colReqs) {
+          if (!allRequests.find((ar) => ar.id === r.id)) {
+            allRequests.push(r);
+          }
+        }
+      }
+
+      const allEnvironments = envStore.environments;
+      const allVariables: EnvVariable[] = [];
+      for (const env of allEnvironments) {
+        const vars = envStore.getEnvironmentVariables(env.id);
+        allVariables.push(...vars);
+      }
+
       const data: RukeExport = {
         version: APP_VERSION,
         exportedAt: new Date().toISOString(),
-        collections: [],
-        requests: [],
-        environments: [],
-        variables: [],
+        collections: allCollections,
+        requests: allRequests,
+        environments: allEnvironments,
+        variables: allVariables,
       };
       const result = await window.ruke.file.export(JSON.stringify(data, null, 2));
       if (result.success) {
         setStatus('success');
-        setMessage('Collection exported successfully');
+        setMessage(`Exported ${allRequests.length} requests, ${allCollections.length} collections`);
       } else {
         setStatus('idle');
       }
@@ -180,5 +205,53 @@ async function importPostmanItem(item: any, collectionId: string) {
 }
 
 async function importRukeFile(data: RukeExport) {
-  // TODO: full import logic
+  const wsId = useCollectionStore.getState().activeWorkspaceId;
+  if (!wsId) return;
+
+  const idMap = new Map<string, string>();
+
+  if (data.collections?.length) {
+    const sorted = [...data.collections].sort((a, b) => {
+      const aDepth = a.parentId ? 1 : 0;
+      const bDepth = b.parentId ? 1 : 0;
+      return aDepth - bDepth;
+    });
+    for (const col of sorted) {
+      const newId = nanoid();
+      idMap.set(col.id, newId);
+      const parentId = col.parentId ? (idMap.get(col.parentId) || null) : null;
+      await window.ruke.db.query('createCollection', newId, wsId, col.name, parentId, col.sortOrder || 0);
+    }
+  }
+
+  if (data.requests?.length) {
+    for (const req of data.requests) {
+      const newReq: ApiRequest = {
+        ...req,
+        id: nanoid(),
+        collectionId: req.collectionId ? (idMap.get(req.collectionId) || null) : null,
+      };
+      await window.ruke.db.query('createRequest', newReq);
+    }
+  }
+
+  if (data.environments?.length) {
+    const envStore = useEnvironmentStore.getState();
+    for (const env of data.environments) {
+      const newEnvId = nanoid();
+      idMap.set(env.id, newEnvId);
+      await window.ruke.db.query('createEnvironment', newEnvId, wsId, env.name, env.sortOrder || 0, env.connectionId, env.baseUrl);
+
+      const envVars = (data.variables || []).filter((v) => v.environmentId === env.id);
+      for (const v of envVars) {
+        const newVar: EnvVariable = {
+          ...v,
+          id: nanoid(),
+          environmentId: newEnvId,
+        };
+        await window.ruke.db.query('createVariable', newVar);
+      }
+    }
+    await envStore.loadEnvironments(wsId);
+  }
 }
