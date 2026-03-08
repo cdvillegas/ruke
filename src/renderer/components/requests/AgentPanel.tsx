@@ -109,14 +109,7 @@ export function AgentPanel() {
   const isEmpty = visibleMessages.length === 0 && !isRunning;
   const canSend = hasActiveTab && !isRunning && (input.trim() || attachedFiles.length > 0);
 
-  const hasToolsRunning = useMemo(() => {
-    const last = visibleMessages[visibleMessages.length - 1];
-    if (!last || last.role !== 'assistant') return false;
-    return last.toolCalls?.some(tc => tc.status === 'pending' || tc.status === 'running') ?? false;
-  }, [visibleMessages]);
-
-  const showThinking = isRunning && !streamingMessageId && !hasToolsRunning &&
-    visibleMessages[visibleMessages.length - 1]?.role !== 'assistant';
+  const showThinking = isRunning && !streamingMessageId;
 
   useEffect(() => {
     if (openTabIds.length === 0) {

@@ -4,7 +4,16 @@ import { VARIABLE_REGEX } from '../../shared/constants';
 export class HttpEngine {
   async send(request: ApiRequest & { resolvedVariables?: Record<string, string> }): Promise<ApiResponse> {
     const vars = request.resolvedVariables || {};
-    const url = this.resolveVariables(request.url, vars);
+    const rawUrl = this.resolveVariables(request.url, vars);
+    const pathParamKeys = new Set<string>();
+
+    let url = rawUrl;
+    for (const p of request.params) {
+      if (p.enabled && p.key && p.value && rawUrl.includes(`{${p.key}}`)) {
+        url = url.replace(`{${p.key}}`, encodeURIComponent(this.resolveVariables(p.value, vars)));
+        pathParamKeys.add(p.key);
+      }
+    }
     const startTime = performance.now();
 
     try {
@@ -18,7 +27,7 @@ export class HttpEngine {
       this.applyAuth(request, headers, vars);
 
       let queryString = '';
-      const enabledParams = request.params.filter(p => p.enabled && p.key && p.value !== '');
+      const enabledParams = request.params.filter(p => p.enabled && p.key && p.value !== '' && !pathParamKeys.has(p.key));
       if (enabledParams.length > 0) {
         const searchParams = new URLSearchParams();
         for (const p of enabledParams) {

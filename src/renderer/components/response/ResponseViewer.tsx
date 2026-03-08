@@ -44,7 +44,7 @@ function HistoryDropdown() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  if (requestHistory.length <= 1) return null;
+  if (requestHistory.length === 0) return null;
 
   return (
     <div ref={ref} className="relative">

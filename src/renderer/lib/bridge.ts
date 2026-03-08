@@ -306,7 +306,17 @@ async function browserSendRequest(request: any): Promise<ApiResponse> {
   const vars: Record<string, string> = request.resolvedVariables || {};
   const resolve = (s: string) => s.replace(/\{\{([^}]+)\}\}/g, (_, k) => vars[k.trim()] ?? `{{${k}}}`);
 
-  let url = resolve(request.url);
+  const rawUrl = resolve(request.url);
+  const pathParamKeys = new Set<string>();
+
+  let url = rawUrl;
+  for (const p of request.params || []) {
+    if (p.enabled && p.key && p.value && rawUrl.includes(`{${p.key}}`)) {
+      url = url.replace(`{${p.key}}`, encodeURIComponent(resolve(p.value)));
+      pathParamKeys.add(p.key);
+    }
+  }
+
   const headers: Record<string, string> = {};
 
   for (const h of request.headers || []) {
@@ -321,7 +331,7 @@ async function browserSendRequest(request: any): Promise<ApiResponse> {
     headers[resolve(request.auth.apiKey.key)] = resolve(request.auth.apiKey.value);
   }
 
-  const enabledParams = (request.params || []).filter((p: any) => p.enabled && p.key && p.value !== '');
+  const enabledParams = (request.params || []).filter((p: any) => p.enabled && p.key && p.value !== '' && !pathParamKeys.has(p.key));
   if (enabledParams.length > 0) {
     const sp = new URLSearchParams();
     for (const p of enabledParams) sp.append(resolve(p.key), resolve(p.value));

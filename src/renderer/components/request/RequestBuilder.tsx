@@ -9,7 +9,7 @@ import { HeadersEditor } from './HeadersEditor';
 import { BodyEditor } from './BodyEditor';
 import { AuthEditor } from './AuthEditor';
 import { HTTP_METHODS, METHOD_COLORS } from '@shared/constants';
-import type { HttpMethod, ApiEndpoint, ApiConnection } from '@shared/types';
+import type { HttpMethod, ApiEndpoint, ApiConnection, KeyValue } from '@shared/types';
 import {
   Send, Loader2, ChevronDown, Search, Shield, Check,
   FileText, Braces, SlidersHorizontal, Cloud,
@@ -26,12 +26,23 @@ const MUTED_METHOD_COLORS: Record<string, string> = {
   OPTIONS: '#8b8fa0',
 };
 
+function resolvePathParams(path: string, params: KeyValue[]): string {
+  let resolved = path;
+  for (const p of params) {
+    if (p.enabled && p.key && p.value) {
+      resolved = resolved.replace(`{${p.key}}`, p.value);
+    }
+  }
+  return resolved;
+}
+
 function EndpointPicker({
   connection,
   onSelect,
   selectedEndpointId,
   requestMethod,
   requestUrl,
+  requestParams,
   onHealEndpointId,
 }: {
   connection: ApiConnection;
@@ -39,6 +50,7 @@ function EndpointPicker({
   selectedEndpointId?: string;
   requestMethod?: string;
   requestUrl?: string;
+  requestParams?: KeyValue[];
   onHealEndpointId?: (newId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -102,7 +114,7 @@ function EndpointPicker({
               {selectedEndpoint.method}
             </span>
             <span className="text-xs font-mono text-text-primary truncate flex-1">
-              {selectedEndpoint.path}
+              {requestParams ? resolvePathParams(selectedEndpoint.path, requestParams) : selectedEndpoint.path}
             </span>
             {selectedEndpoint.summary && selectedEndpoint.summary !== `${selectedEndpoint.method} ${selectedEndpoint.path}` && (
               <span className="text-[10px] text-text-muted truncate max-w-48">
@@ -242,36 +254,63 @@ function MethodSelect({ value, onChange }: { value: HttpMethod; onChange: (m: Ht
 function ResolvedUrlPreview({
   resolvedUrl,
   rawPath,
+  params,
   onParamClick,
 }: {
   resolvedUrl: string;
   rawPath: string;
+  params: KeyValue[];
   onParamClick: (paramName: string) => void;
 }) {
   const segments = useMemo(() => {
-    const parts: Array<{ text: string; isParam: boolean; paramName?: string }> = [];
-    let baseUrl = resolvedUrl;
+    const parts: Array<{ text: string; isParam: boolean; paramName?: string; hasValue: boolean }> = [];
 
-    try {
-      const u = new URL(resolvedUrl);
-      baseUrl = `${u.protocol}//${u.host}`;
-    } catch {
-      return [{ text: resolvedUrl, isParam: false }];
+    const paramMap = new Map<string, string>();
+    for (const p of params) {
+      if (p.enabled && p.key && p.value) paramMap.set(p.key, p.value);
     }
 
-    parts.push({ text: baseUrl, isParam: false });
+    let basePrefix = resolvedUrl;
+    try {
+      const u = new URL(resolvedUrl);
+      const normalizedRaw = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+      const strippedRawPath = normalizedRaw.replace(/\{[^}]+\}/g, '');
+      const firstStaticSegment = strippedRawPath.split('/').find(s => s.length > 0);
+      if (firstStaticSegment) {
+        const idx = u.pathname.indexOf(`/${firstStaticSegment}`);
+        if (idx > 0) {
+          basePrefix = `${u.protocol}//${u.host}${u.pathname.slice(0, idx)}`;
+        } else {
+          basePrefix = `${u.protocol}//${u.host}`;
+        }
+      } else {
+        basePrefix = `${u.protocol}//${u.host}`;
+      }
+    } catch {
+      const resolved = resolvePathParams(resolvedUrl, Array.from(paramMap.entries()).map(([key, value]) => ({ key, value, enabled: true })));
+      return [{ text: resolved, isParam: false, hasValue: false }];
+    }
+
+    parts.push({ text: basePrefix, isParam: false, hasValue: false });
 
     const regex = /(\{[^}]+\})|([^{]+)/g;
     let match;
     while ((match = regex.exec(rawPath)) !== null) {
       if (match[1]) {
-        parts.push({ text: match[1], isParam: true, paramName: match[1].slice(1, -1) });
+        const name = match[1].slice(1, -1);
+        const value = paramMap.get(name);
+        parts.push({
+          text: value || match[1],
+          isParam: true,
+          paramName: name,
+          hasValue: !!value,
+        });
       } else {
-        parts.push({ text: match[2], isParam: false });
+        parts.push({ text: match[2], isParam: false, hasValue: false });
       }
     }
     return parts;
-  }, [resolvedUrl, rawPath]);
+  }, [resolvedUrl, rawPath, params]);
 
   return (
     <div className="flex items-center flex-wrap text-[11px] font-mono leading-relaxed">
@@ -280,7 +319,11 @@ function ResolvedUrlPreview({
           <button
             key={i}
             onClick={() => onParamClick(seg.paramName!)}
-            className="px-1 rounded bg-accent/12 text-accent hover:bg-accent/20 transition-colors cursor-pointer"
+            className={`px-1 rounded transition-colors cursor-pointer ${
+              seg.hasValue
+                ? 'bg-accent/8 text-text-secondary hover:bg-accent/15 hover:text-accent'
+                : 'bg-accent/12 text-accent hover:bg-accent/20'
+            }`}
           >
             {seg.text}
           </button>
@@ -321,7 +364,7 @@ export function RequestBuilder() {
   const resolvedUrl = useMemo(
     () => useRequestStore.getState().getResolvedUrl(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeRequest.url, activeRequest.connectionId, connections]
+    [activeRequest.url, activeRequest.connectionId, activeRequest.params, connections]
   );
 
   const handleSend = () => {
@@ -364,11 +407,11 @@ export function RequestBuilder() {
     }
 
     const specParams = (ep.parameters || [])
-      .filter((p) => p.in === 'query')
+      .filter((p) => p.in === 'query' || p.in === 'path')
       .map((p) => {
         const existing = activeRequest.params.find((ap) => ap.key === p.name);
         const hasValue = !!(existing?.value);
-        return { key: p.name, value: existing?.value || '', enabled: hasValue ? (existing?.enabled ?? true) : false };
+        return { key: p.name, value: existing?.value || '', enabled: p.in === 'path' ? true : (hasValue ? (existing?.enabled ?? true) : false) };
       });
 
     const updates: Record<string, any> = {
@@ -411,36 +454,38 @@ export function RequestBuilder() {
       )}
 
       {/* Request name */}
-      <div className="mb-2">
-        {editingName ? (
-          <input
-            ref={nameInputRef}
-            type="text"
-            value={activeRequest.name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={() => setEditingName(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === 'Escape') setEditingName(false);
-            }}
-            placeholder="Request name"
-            className="w-full px-2 py-1.5 text-sm font-medium text-text-primary bg-bg-tertiary border border-accent/50 rounded-lg focus:outline-none focus:border-accent"
-            autoFocus
-          />
-        ) : (
-          <button
-            onClick={() => {
-              setEditingName(true);
-              setTimeout(() => nameInputRef.current?.select(), 10);
-            }}
-            className="group flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary truncate max-w-full transition-colors"
-            title="Click to rename"
-          >
-            <span className="truncate">{activeRequest.name || 'New Request'}</span>
-          </button>
-        )}
+      <div className="flex items-center gap-3 mb-2">
+        <div className="flex-1 min-w-0">
+          {editingName ? (
+            <input
+              ref={nameInputRef}
+              type="text"
+              value={activeRequest.name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => setEditingName(false)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === 'Escape') setEditingName(false);
+              }}
+              placeholder="Request name"
+              className="w-full px-2 py-1.5 text-sm font-medium text-text-primary bg-bg-tertiary border border-accent/50 rounded-lg focus:outline-none focus:border-accent"
+              autoFocus
+            />
+          ) : (
+            <button
+              onClick={() => {
+                setEditingName(true);
+                setTimeout(() => nameInputRef.current?.select(), 10);
+              }}
+              className="group flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary truncate max-w-full transition-colors"
+              title="Click to rename"
+            >
+              <span className="truncate">{activeRequest.name || 'New Request'}</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Connection + Env on left, Save + Send on right */}
+      {/* Connection + Env on left, Save status + Send on right */}
       <div className="flex items-center gap-2 mb-3">
         <ConnectionSelector />
         <EnvironmentPill />
@@ -448,22 +493,26 @@ export function RequestBuilder() {
         <div className="flex-1" />
 
         {saveStatus !== 'idle' && (
-          <div className={`flex items-center gap-1.5 text-[11px] shrink-0 transition-opacity duration-300 ${
-            saveStatus === 'saved' ? 'opacity-60' : 'opacity-100'
+          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md shrink-0 transition-all duration-300 ${
+            saveStatus === 'unsaved'
+              ? 'bg-warning/10'
+              : saveStatus === 'saving'
+                ? 'bg-bg-tertiary'
+                : 'bg-success/10 opacity-70'
           }`}>
             {saveStatus === 'unsaved' && (
               <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
             )}
             {saveStatus === 'saving' && (
-              <Loader2 size={11} className="text-text-muted animate-spin" />
+              <Loader2 size={12} className="text-text-muted animate-spin" />
             )}
             {saveStatus === 'saved' && (
-              <Check size={11} className="text-success" />
+              <Check size={12} className="text-success" />
             )}
-            <span className={
-              saveStatus === 'saved' ? 'text-success/80' : 'text-text-muted'
-            }>
-              {saveStatus === 'unsaved' ? 'Editing' : saveStatus === 'saving' ? 'Saving...' : 'Saved'}
+            <span className={`text-[11px] font-medium ${
+              saveStatus === 'unsaved' ? 'text-warning' : saveStatus === 'saved' ? 'text-success' : 'text-text-muted'
+            }`}>
+              {saveStatus === 'unsaved' ? 'Unsaved' : saveStatus === 'saving' ? 'Saving...' : 'Saved'}
             </span>
           </div>
         )}
@@ -471,7 +520,7 @@ export function RequestBuilder() {
         <button
           onClick={handleSend}
           disabled={loading || pending}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white font-medium text-sm transition-all shrink-0 ${
+          className={`flex items-center gap-2 px-5 py-2 rounded-lg text-white font-medium text-sm transition-all shrink-0 ${
             loading
               ? 'bg-accent send-btn-waiting cursor-wait'
               : pending
@@ -479,7 +528,7 @@ export function RequestBuilder() {
                 : 'bg-accent hover:bg-accent-hover'
           }`}
         >
-          {loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+          {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
           {loading ? 'Sending' : 'Send'}
         </button>
       </div>
@@ -493,6 +542,7 @@ export function RequestBuilder() {
             selectedEndpointId={activeRequest.endpointId}
             requestMethod={activeRequest.method}
             requestUrl={activeRequest.url}
+            requestParams={activeRequest.params}
             onHealEndpointId={(newId) => linkEndpoint(newId)}
           />
         ) : (
@@ -518,6 +568,7 @@ export function RequestBuilder() {
           <ResolvedUrlPreview
             resolvedUrl={resolvedUrl}
             rawPath={activeRequest.url}
+            params={activeRequest.params}
             onParamClick={handleParamChipClick}
           />
         </div>

@@ -186,16 +186,22 @@ export const useRequestStore = create<RequestState>((set, get) => {
 
     getResolvedUrl: () => {
       const req = get().activeRequest;
+      let resolved = req.url;
       if (req.connectionId) {
         const conn = useConnectionStore.getState().getConnection(req.connectionId);
         if (conn) {
           const envBaseUrl = useEnvironmentStore.getState().resolveBaseUrl(conn.id, conn.baseUrl);
           const base = envBaseUrl.replace(/\/+$/, '');
           const path = req.url.startsWith('/') ? req.url : `/${req.url}`;
-          return req.url.startsWith('http') ? req.url : `${base}${path}`;
+          resolved = req.url.startsWith('http') ? req.url : `${base}${path}`;
         }
       }
-      return req.url;
+      for (const p of req.params) {
+        if (p.enabled && p.key && p.value) {
+          resolved = resolved.replace(`{${p.key}}`, encodeURIComponent(p.value));
+        }
+      }
+      return resolved;
     },
 
     getEffectiveAuth: () => {
