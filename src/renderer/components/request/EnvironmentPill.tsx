@@ -59,10 +59,7 @@ export function EnvironmentPill() {
         <div className="absolute top-full right-0 mt-1 w-56 bg-bg-secondary border border-border rounded-xl shadow-2xl z-50 py-1 animate-fade-in">
           <button
             onClick={() => {
-              if (activeWorkspaceId) {
-                setActiveEnvironment(activeWorkspaceId, '');
-                useEnvironmentStore.setState({ activeEnvironmentId: null });
-              }
+              if (activeWorkspaceId) setActiveEnvironment(activeWorkspaceId, '');
               setOpen(false);
             }}
             className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors ${

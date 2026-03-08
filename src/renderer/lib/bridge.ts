@@ -405,7 +405,7 @@ export function initBridge() {
     ai: {
       chat: async (messages: any[], context?: string) => {
         if (!aiKeyStore) {
-          return { content: '', error: 'No API key configured. Add your OpenAI API key in Settings to use AI features.' };
+          return { content: '', error: 'No API key configured. Connect an AI provider in Settings to use AI features.' };
         }
         try {
           const res = await fetch('https://api.openai.com/v1/chat/completions', {

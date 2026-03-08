@@ -649,9 +649,10 @@ export interface QuickExample {
   color: string;
 }
 
-export function SmartAddPanel({ onConnected, quickExamples }: {
+export function SpecInput({ onConnected, quickExamples, className }: {
   onConnected?: (name: string, count: number, type: 'openapi' | 'graphql' | 'grpc') => void;
   quickExamples?: QuickExample[];
+  className?: string;
 } = {}) {
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<ResolveStatus>('idle');
@@ -1072,15 +1073,13 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
 
   return (
     <div
-      className={onConnected ? 'relative' : 'relative h-full flex flex-col items-center justify-center'}
+      className={`relative ${className || ''}`}
       onDragOver={(e) => e.preventDefault()}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className={onConnected ? 'w-full' : 'w-full max-w-lg px-8'}>
-
-        {/* Drop overlay — scoped to this panel */}
+        {/* Drop overlay */}
         {dragging && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-primary/80 backdrop-blur-sm rounded-2xl">
             <div className="flex flex-col items-center gap-3 animate-fade-in">
@@ -1092,19 +1091,6 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
             </div>
           </div>
         )}
-
-        {/* Header — always visible, decoupled */}
-        <div className="flex flex-col items-center mb-6">
-          <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
-            {showManual ? <Plus size={18} className="text-text-muted" /> : showGrpcSetup ? <Radio size={18} className="text-text-muted" /> : <Plug size={18} className="text-text-muted" />}
-          </div>
-          <h2 className="text-base font-semibold text-text-primary mb-1">
-            {showManual ? 'Add Connection' : showGrpcSetup ? 'Connect gRPC' : 'Connect an API'}
-          </h2>
-          <p className="text-[11px] text-text-muted/70">
-            {showManual ? 'Enter a name and base URL for your API' : showGrpcSetup ? 'Configure your gRPC service connection' : 'Search by name, paste a URL, or import a spec file'}
-          </p>
-        </div>
 
         {/* Search bar — hidden in manual/grpc modes */}
         {!showManual && !showGrpcSetup && (
@@ -1378,9 +1364,9 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
         )}
 
         {/* Quick examples */}
-        {quickExamples && quickExamples.length > 0 && status === 'idle' && (
+        {quickExamples && quickExamples.length > 0 && status === 'idle' && !showManual && !showGrpcSetup && (
           <div className="mt-5">
-            <p className="text-[10px] text-text-muted mb-2.5 text-center">Or try one of these:</p>
+            <p className="text-[10px] text-text-muted mb-2.5 text-center">Quick start</p>
             <div className="flex flex-col gap-1.5">
               {quickExamples.map((example) => {
                 const isLoading = loadingExample === example.url;
@@ -1408,6 +1394,27 @@ export function SmartAddPanel({ onConnected, quickExamples }: {
           </div>
         )}
 
+    </div>
+  );
+}
+
+export function SmartAddPanel({ onConnected, quickExamples }: {
+  onConnected?: (name: string, count: number, type: 'openapi' | 'graphql' | 'grpc') => void;
+  quickExamples?: QuickExample[];
+} = {}) {
+  return (
+    <div className="relative h-full flex flex-col items-center justify-center">
+      <div className="w-full max-w-lg px-8">
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
+            <Plug size={18} className="text-text-muted" />
+          </div>
+          <h2 className="text-base font-semibold text-text-primary mb-1">Connect an API</h2>
+          <p className="text-[11px] text-text-muted/70">
+            Search by name, paste a URL, or import a spec file
+          </p>
+        </div>
+        <SpecInput onConnected={onConnected} quickExamples={quickExamples} />
       </div>
     </div>
   );

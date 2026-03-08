@@ -513,7 +513,7 @@ export function AgentPanel() {
 
   return (
     <div
-      className="h-full flex flex-col bg-bg-secondary border-l border-border relative"
+      className="h-full flex flex-col bg-bg-secondary relative"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -591,9 +591,9 @@ export function AgentPanel() {
           <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center mb-3">
             <Key size={20} className="text-accent" />
           </div>
-          <h2 className="text-sm font-semibold text-text-primary mb-1">Set up AI</h2>
+          <h2 className="text-sm font-semibold text-text-primary mb-1">Connect a provider</h2>
           <p className="text-xs text-text-muted text-center max-w-xs mb-3">
-            Add your OpenAI API key in Settings to start using the AI assistant.
+            Add an API key for OpenAI, Anthropic, or Google in Settings to start using the AI assistant.
           </p>
           <button
             onClick={() => useUiStore.getState().setActiveView('settings')}

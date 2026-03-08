@@ -21,21 +21,110 @@ export interface AiModelConfig {
   baseUrl?: string;
 }
 
+export const MANAGED_PROVIDERS = ['openai', 'anthropic', 'google'] as const;
+export type ManagedProvider = (typeof MANAGED_PROVIDERS)[number];
+
+export const DEFAULT_MODELS: Record<ManagedProvider, string> = {
+  openai: 'gpt-4o',
+  anthropic: 'claude-sonnet-4-20250514',
+  google: 'gemini-2.0-flash',
+};
+
+export const PROVIDER_META: Record<ManagedProvider, { label: string; description: string; placeholder: string }> = {
+  openai: { label: 'OpenAI', description: 'GPT-4o, o3, GPT-4.5', placeholder: 'sk-...' },
+  anthropic: { label: 'Anthropic', description: 'Claude Sonnet, Opus', placeholder: 'sk-ant-...' },
+  google: { label: 'Google AI', description: 'Gemini 2.0 Flash, Pro', placeholder: 'AIza...' },
+};
+
+function providerKeySlot(provider: ManagedProvider): string {
+  return `ruke:ai_key:${provider}`;
+}
+
+export function getProviderKey(provider: ManagedProvider): string | null {
+  return localStorage.getItem(providerKeySlot(provider)) || null;
+}
+
+export function setProviderKey(provider: ManagedProvider, key: string) {
+  if (key) {
+    localStorage.setItem(providerKeySlot(provider), key);
+  } else {
+    localStorage.removeItem(providerKeySlot(provider));
+  }
+
+  const activeProvider = localStorage.getItem(AI_PROVIDER_STORAGE) || 'openai';
+  if (provider === activeProvider) {
+    if (key) {
+      localStorage.setItem(AI_KEY_STORAGE, key);
+      window.ruke?.ai?.setKey?.(key);
+    } else {
+      localStorage.removeItem(AI_KEY_STORAGE);
+      window.ruke?.ai?.setKey?.('');
+    }
+  }
+}
+
+export function removeProviderKey(provider: ManagedProvider) {
+  localStorage.removeItem(providerKeySlot(provider));
+
+  const activeProvider = localStorage.getItem(AI_PROVIDER_STORAGE) || 'openai';
+  if (provider === activeProvider) {
+    localStorage.removeItem(AI_KEY_STORAGE);
+    window.ruke?.ai?.setKey?.('');
+
+    const fallback = MANAGED_PROVIDERS.find(p => p !== provider && getProviderKey(p));
+    if (fallback) {
+      activateProvider(fallback);
+    }
+  }
+}
+
+export function getConfiguredProviders(): ManagedProvider[] {
+  return MANAGED_PROVIDERS.filter(p => {
+    const key = localStorage.getItem(providerKeySlot(p));
+    return key && key.length >= 10;
+  });
+}
+
+export function activateProvider(provider: ManagedProvider) {
+  const key = getProviderKey(provider);
+  if (!key) return;
+  localStorage.setItem(AI_PROVIDER_STORAGE, provider);
+  localStorage.setItem(AI_MODEL_STORAGE, DEFAULT_MODELS[provider]);
+  localStorage.setItem(AI_KEY_STORAGE, key);
+  localStorage.removeItem(AI_BASE_URL_STORAGE);
+  window.ruke?.ai?.setKey?.(key);
+}
+
 export function getModelConfig(): AiModelConfig | null {
   const apiKey = localStorage.getItem(AI_KEY_STORAGE);
-  if (!apiKey) return null;
-  return {
-    provider: (localStorage.getItem(AI_PROVIDER_STORAGE) as AiProvider) || 'openai',
-    model: localStorage.getItem(AI_MODEL_STORAGE) || 'gpt-4o',
-    apiKey,
-    baseUrl: localStorage.getItem(AI_BASE_URL_STORAGE) || undefined,
-  };
+  if (apiKey) {
+    return {
+      provider: (localStorage.getItem(AI_PROVIDER_STORAGE) as AiProvider) || 'openai',
+      model: localStorage.getItem(AI_MODEL_STORAGE) || 'gpt-4o',
+      apiKey,
+      baseUrl: localStorage.getItem(AI_BASE_URL_STORAGE) || undefined,
+    };
+  }
+
+  const configured = getConfiguredProviders();
+  if (configured.length > 0) {
+    activateProvider(configured[0]);
+    return getModelConfig();
+  }
+
+  return null;
 }
 
 export function setModelConfig(config: Partial<AiModelConfig>) {
   if (config.provider) localStorage.setItem(AI_PROVIDER_STORAGE, config.provider);
   if (config.model) localStorage.setItem(AI_MODEL_STORAGE, config.model);
-  if (config.apiKey) localStorage.setItem(AI_KEY_STORAGE, config.apiKey);
+  if (config.apiKey) {
+    localStorage.setItem(AI_KEY_STORAGE, config.apiKey);
+    const provider = (config.provider || localStorage.getItem(AI_PROVIDER_STORAGE) || 'openai') as string;
+    if (MANAGED_PROVIDERS.includes(provider as ManagedProvider)) {
+      localStorage.setItem(providerKeySlot(provider as ManagedProvider), config.apiKey);
+    }
+  }
   if (config.baseUrl !== undefined) {
     if (config.baseUrl) localStorage.setItem(AI_BASE_URL_STORAGE, config.baseUrl);
     else localStorage.removeItem(AI_BASE_URL_STORAGE);

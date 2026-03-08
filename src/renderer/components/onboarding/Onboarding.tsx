@@ -1,56 +1,32 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useUiStore } from '../../stores/uiStore';
+import { ChevronRight, Sparkles, Lock, Zap, Globe, Check, ExternalLink } from 'lucide-react';
+import { ProviderKeyCard, KEY_URLS } from '../shared/ProviderKeyCard';
 import {
-  ArrowRight, Sparkles, Globe, ChevronRight, Zap, Send, Braces,
-} from 'lucide-react';
-import { SmartAddPanel, type QuickExample } from '../connections/ConnectionsView';
-
-const QUICK_EXAMPLES: QuickExample[] = [
-  {
-    label: 'Swagger Petstore',
-    desc: 'Classic REST API — OpenAPI 3.0',
-    type: 'openapi',
-    url: 'https://petstore3.swagger.io/api/v3/openapi.json',
-    icon: Globe,
-    color: 'text-success',
-  },
-  {
-    label: 'GitHub API',
-    desc: 'REST API — OpenAPI 3.0',
-    type: 'openapi',
-    url: 'https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json',
-    icon: Globe,
-    color: 'text-accent',
-  },
-  {
-    label: 'Star Wars API',
-    desc: 'GraphQL — introspection',
-    type: 'graphql',
-    url: 'https://swapi-graphql.netlify.app/graphql',
-    icon: Braces,
-    color: 'text-warning',
-  },
-];
-
-type Step = 'welcome' | 'connect' | 'ready';
+  MANAGED_PROVIDERS,
+  PROVIDER_META,
+  getConfiguredProviders,
+  getProviderKey,
+  type ManagedProvider,
+} from '../../lib/agentRunner';
 
 export function Onboarding() {
-  const [step, setStep] = useState<Step>('welcome');
-  const [connectedName, setConnectedName] = useState('');
-  const [endpointCount, setEndpointCount] = useState(0);
-  const [connectedType, setConnectedType] = useState<'openapi' | 'graphql' | 'grpc'>('openapi');
   const completeOnboarding = useUiStore((s) => s.completeOnboarding);
+  const [connectedCount, setConnectedCount] = useState(() => getConfiguredProviders().length);
+  const [activeTab, setActiveTab] = useState<ManagedProvider>('openai');
 
-  const handleConnected = (name: string, count: number, type: 'openapi' | 'graphql' | 'grpc') => {
-    setConnectedName(name);
-    setEndpointCount(count);
-    setConnectedType(type);
-    setTimeout(() => setStep('ready'), 1200);
-  };
+  const handleKeyChange = useCallback(() => {
+    setConnectedCount(getConfiguredProviders().length);
+  }, []);
 
-  const handleSkipToApp = () => {
+  const handleEnterApp = () => {
     completeOnboarding();
     useUiStore.getState().setActiveView('chats');
+  };
+
+  const isConnected = (p: ManagedProvider) => {
+    const key = getProviderKey(p);
+    return !!key && key.length >= 10;
   };
 
   return (
@@ -60,128 +36,119 @@ export function Onboarding() {
         <div className="absolute bottom-[20%] right-[20%] w-[400px] h-[400px] bg-accent/[0.03] rounded-full blur-[100px]" />
       </div>
 
-      <div className="relative w-full max-w-lg px-8">
-        {/* Progress */}
-        <div className="flex items-center gap-2 mb-10 justify-center">
-          {['welcome', 'connect', 'ready'].map((s, i) => (
-            <div
-              key={s}
-              className={`h-1 rounded-full transition-all duration-500 ${
-                ['welcome', 'connect', 'ready'].indexOf(step) >= i ? 'bg-accent w-10' : 'bg-border w-6'
-              }`}
-            />
-          ))}
-        </div>
+      <div className="relative w-full max-w-[560px] px-8">
+        <div className="animate-fade-in space-y-8">
 
-        {/* Welcome */}
-        {step === 'welcome' && (
-          <div className="text-center space-y-8 animate-fade-in max-w-md mx-auto">
-            <div>
-              <div className="w-16 h-16 rounded-2xl bg-accent flex items-center justify-center mx-auto mb-5">
-                <span className="text-white text-2xl font-bold">R</span>
-              </div>
-              <h1 className="text-2xl font-bold text-text-primary mb-2">Welcome to Rüke</h1>
-              <p className="text-sm text-text-secondary leading-relaxed max-w-sm mx-auto">
-                The API client that understands your APIs. Just tell it what you want, drop in a spec, and go.
-              </p>
+          {/* Brand + headline */}
+          <div className="text-center">
+            <div className="w-14 h-14 rounded-2xl bg-accent flex items-center justify-center mx-auto mb-5">
+              <span className="text-white text-xl font-bold">R</span>
+            </div>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">Welcome to Ruke</h1>
+            <p className="text-[13px] text-text-secondary leading-relaxed max-w-sm mx-auto">
+              Connect an AI provider to power natural-language API workflows, smart request generation, and automated testing.
+            </p>
+          </div>
+
+          {/* Provider panel */}
+          <div className="rounded-2xl bg-bg-secondary border border-border overflow-hidden">
+            {/* Tabs */}
+            <div className="flex border-b border-border">
+              {MANAGED_PROVIDERS.map((provider) => {
+                const meta = PROVIDER_META[provider];
+                const connected = isConnected(provider);
+                const active = activeTab === provider;
+
+                return (
+                  <button
+                    key={provider}
+                    onClick={() => setActiveTab(provider)}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-3 text-xs font-medium transition-all relative ${
+                      active
+                        ? 'text-text-primary'
+                        : 'text-text-muted hover:text-text-secondary'
+                    }`}
+                  >
+                    {connected && (
+                      <span className="w-4 h-4 rounded-full bg-success/15 flex items-center justify-center shrink-0">
+                        <Check size={9} className="text-success" strokeWidth={3} />
+                      </span>
+                    )}
+                    <span>{meta.label}</span>
+                    {active && (
+                      <div className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-accent" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="space-y-3 text-left">
-              {[
-                { icon: Sparkles, color: 'text-accent', title: 'AI-first', desc: 'Describe requests in plain English. AI does the rest.' },
-                { icon: Globe, color: 'text-success', title: 'Spec-native', desc: 'Import OpenAPI or GraphQL specs — every endpoint is ready to use.' },
-                { icon: Zap, color: 'text-warning', title: 'Works offline', desc: 'Everything runs locally. No cloud required. Ever.' },
-              ].map((f) => (
-                <div key={f.title} className="flex items-start gap-3 p-3 rounded-xl bg-bg-secondary/60 border border-border/50">
-                  <f.icon size={16} className={`${f.color} mt-0.5 shrink-0`} />
-                  <div>
-                    <p className="text-sm font-medium text-text-primary">{f.title}</p>
-                    <p className="text-xs text-text-muted">{f.desc}</p>
-                  </div>
+            {/* Active tab content */}
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <p className="text-[13px] text-text-secondary tracking-tight">
+                    {PROVIDER_META[activeTab].description}
+                  </p>
+                  {isConnected(activeTab) && (
+                    <span className="flex items-center gap-1 text-[11px] text-success/80 font-medium">
+                      <Check size={10} strokeWidth={2.5} /> Connected
+                    </span>
+                  )}
                 </div>
-              ))}
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => setStep('connect')}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-accent hover:bg-accent-hover text-white font-medium text-sm transition-all"
-              >
-                Connect your first API <ArrowRight size={16} />
-              </button>
-              <button
-                onClick={handleSkipToApp}
-                className="text-xs text-text-muted hover:text-text-secondary transition-colors"
-              >
-                Skip — I'll explore on my own
-              </button>
+                <a
+                  href={KEY_URLS[activeTab]}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-md text-text-muted hover:text-accent border border-border hover:border-accent/30 transition-colors"
+                >
+                  {isConnected(activeTab) ? 'Dashboard' : 'Get a key'} <ExternalLink size={9} />
+                </a>
+              </div>
+              <ProviderKeyCard
+                key={activeTab}
+                provider={activeTab}
+                onKeyChange={handleKeyChange}
+              />
             </div>
           </div>
-        )}
 
-        {/* Connect — uses the same SmartAddPanel as the main app */}
-        {step === 'connect' && (
-          <div className="animate-fade-in space-y-6">
-            <h2 className="text-xl font-bold text-text-primary text-center">Connect your first API</h2>
-
-            <SmartAddPanel
-              onConnected={handleConnected}
-              quickExamples={QUICK_EXAMPLES}
-            />
-
-            <div className="text-center">
-              <button
-                onClick={handleSkipToApp}
-                className="text-xs text-text-muted hover:text-text-secondary transition-colors"
-              >
-                Skip for now
-              </button>
-            </div>
+          {/* Value props */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { icon: Zap, label: 'Ship faster', desc: 'Go from idea to working request in seconds' },
+              { icon: Sparkles, label: 'Automate everything', desc: 'Generate tests, docs, and mocks with one prompt' },
+              { icon: Globe, label: 'Zero context-switching', desc: 'AI already knows your endpoints and schemas' },
+            ].map((f) => (
+              <div key={f.label} className="text-center p-3 rounded-xl bg-bg-secondary/40 border border-border/40">
+                <f.icon size={16} className="text-accent mx-auto mb-2" />
+                <p className="text-[11px] font-medium text-text-primary mb-0.5">{f.label}</p>
+                <p className="text-[10px] text-text-muted leading-snug">{f.desc}</p>
+              </div>
+            ))}
           </div>
-        )}
 
-        {/* Ready */}
-        {step === 'ready' && (
-          <div className="text-center space-y-8 animate-fade-in max-w-md mx-auto">
-            <div>
-              <div className="w-14 h-14 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-4">
-                <Sparkles size={24} className="text-accent" />
-              </div>
-              <h2 className="text-xl font-bold text-text-primary mb-2">You're all set</h2>
-              <p className="text-sm text-text-secondary max-w-sm mx-auto">
-                {connectedName} is connected with {endpointCount} {connectedType === 'graphql' ? 'operations' : connectedType === 'grpc' ? 'methods' : 'endpoints'}.
-                Just type what you want to do and Rüke handles the rest.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-bg-secondary border border-border text-left">
-              <p className="text-[10px] text-text-muted uppercase tracking-wider font-semibold mb-3">Try typing:</p>
-              <div className="space-y-2">
-                {(connectedType === 'graphql' ? [
-                  'List all films',
-                  'Get details for Luke Skywalker',
-                  'Show me all starships',
-                ] : [
-                  'GET all pets',
-                  'Create a new pet named "Max"',
-                  'Find pets by status: available',
-                ]).map((hint) => (
-                  <div key={hint} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-bg-tertiary border border-border">
-                    <Send size={10} className="text-accent shrink-0" />
-                    <span className="text-xs text-text-secondary italic">{hint}</span>
-                  </div>
-                ))}
-              </div>
+          {/* Privacy + CTA */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-center gap-1.5">
+              <Lock size={10} className="text-text-muted" />
+              <span className="text-[10px] text-text-muted">
+                Your keys stay local — never sent to our servers.
+              </span>
             </div>
 
             <button
-              onClick={handleSkipToApp}
-              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-accent hover:bg-accent-hover text-white font-medium text-sm transition-all"
+              onClick={handleEnterApp}
+              className={`w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-medium text-sm cursor-pointer transition-all ${
+                connectedCount > 0
+                  ? 'bg-accent hover:bg-accent-hover text-white'
+                  : 'bg-bg-secondary border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+              }`}
             >
-              Start using Rüke <ChevronRight size={16} />
+              Start using Ruke <ChevronRight size={16} />
             </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

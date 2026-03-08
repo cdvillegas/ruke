@@ -419,7 +419,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const apiKey = localStorage.getItem(AI_KEY_STORAGE);
     if (!apiKey || apiKey.length < 10) {
-      set({ error: 'No API key found. Add your OpenAI API key in Settings.' });
+      set({ error: 'No API key found. Connect an AI provider in Settings.' });
       return;
     }
 

@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useUiStore } from '../../stores/uiStore';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useRequestStore } from '../../stores/requestStore';
-import { Settings, Lock, Unlock, Moon, Sun, Info, Plug, Eye, EyeOff, Pencil, Trash2, Check, AlertTriangle, History, Unplug, Globe, Timer } from 'lucide-react';
+import { Settings, Lock, Moon, Sun, Info, Plug, Check, AlertTriangle, History, Unplug, Globe, Timer, ExternalLink } from 'lucide-react';
 import { ConnectionIcon } from '../connections/ConnectionsView';
-
-const AI_KEY_STORAGE = 'ruke:ai_key';
+import { ProviderKeyCard, KEY_URLS } from '../shared/ProviderKeyCard';
+import { MANAGED_PROVIDERS, PROVIDER_META, removeProviderKey, getProviderKey, type ManagedProvider } from '../../lib/agentRunner';
 const PROXY_STORAGE = 'ruke:proxy';
 const TIMEOUT_STORAGE = 'ruke:default_timeout';
 
@@ -113,172 +113,6 @@ function RequestDefaults() {
   );
 }
 
-function maskKey(key: string): string {
-  if (key.length <= 8) return '\u2022'.repeat(key.length);
-  return key.slice(0, 3) + '\u2022'.repeat(Math.min(key.length - 7, 24)) + key.slice(-4);
-}
-
-type KeyMode = 'empty' | 'locked' | 'editing';
-
-function ApiKeyCard() {
-  const [storedKey, setStoredKey] = useState(() => localStorage.getItem(AI_KEY_STORAGE) || '');
-  const [mode, setMode] = useState<KeyMode>(() => storedKey ? 'locked' : 'empty');
-  const [draft, setDraft] = useState('');
-  const [revealed, setRevealed] = useState(false);
-  const [flash, setFlash] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  useEffect(() => {
-    const key = localStorage.getItem(AI_KEY_STORAGE) || '';
-    setStoredKey(key);
-    setMode(key ? 'locked' : 'empty');
-  }, []);
-
-  const canSave = draft.trim().length >= 10;
-
-  async function handleSave() {
-    if (!canSave) return;
-    const key = draft.trim();
-    await window.ruke.ai.setKey(key);
-    setStoredKey(key);
-    setDraft('');
-    setRevealed(false);
-    setMode('locked');
-    setFlash(true);
-    clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => setFlash(false), 2500);
-  }
-
-  function handleRemove() {
-    localStorage.removeItem(AI_KEY_STORAGE);
-    window.ruke.ai.setKey('');
-    setStoredKey('');
-    setDraft('');
-    setRevealed(false);
-    setMode('empty');
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }
-
-  function handleEdit() {
-    setDraft('');
-    setRevealed(false);
-    setMode('editing');
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }
-
-  const showInput = mode === 'empty' || mode === 'editing';
-
-  return (
-    <div className="p-4 rounded-2xl bg-bg-secondary border border-border space-y-3">
-      {/* Header */}
-      <div className="flex items-start gap-3">
-        {mode === 'locked' ? (
-          <Lock size={14} className="text-success mt-0.5" />
-        ) : (
-          <Unlock size={14} className="text-accent mt-0.5" />
-        )}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-text-primary">OpenAI API Key</p>
-          <p className="text-[10px] text-text-muted mt-0.5">
-            {mode === 'locked'
-              ? 'Key configured and stored locally'
-              : mode === 'editing'
-                ? 'Enter a new key to replace the current one'
-                : 'Required for AI features. Stored locally only.'}
-          </p>
-        </div>
-      </div>
-
-      {/* Locked: show masked key + actions */}
-      {mode === 'locked' && (
-        <>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 px-3 py-2 text-xs font-mono rounded-xl bg-bg-tertiary border border-border text-text-secondary overflow-hidden text-ellipsis whitespace-nowrap select-none">
-              {revealed ? storedKey : maskKey(storedKey)}
-            </div>
-            <button
-              onClick={() => setRevealed(r => !r)}
-              className="p-2 rounded-lg bg-bg-tertiary border border-border text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-              title={revealed ? 'Hide key' : 'Reveal key'}
-            >
-              {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
-            </button>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleEdit}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-lg bg-bg-tertiary border border-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors"
-            >
-              <Pencil size={11} />
-              Change key
-            </button>
-            <button
-              onClick={handleRemove}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-colors"
-            >
-              <Trash2 size={11} />
-              Remove
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* Input: empty or editing */}
-      {showInput && (
-        <div className="space-y-2">
-          <input
-            ref={inputRef}
-            type="password"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSave();
-              if (e.key === 'Escape' && mode === 'editing') { setDraft(''); setMode('locked'); }
-            }}
-            placeholder="sk-..."
-            spellCheck={false}
-            autoComplete="off"
-            autoFocus
-            className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-bg-tertiary border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={handleSave}
-              disabled={!canSave}
-              className="px-4 py-1.5 text-xs rounded-xl font-medium bg-accent hover:bg-accent-hover text-white transition-colors disabled:opacity-40 disabled:cursor-default"
-            >
-              Save key
-            </button>
-            {mode === 'editing' && (
-              <button
-                onClick={() => { setDraft(''); setMode('locked'); }}
-                className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-hover transition-colors"
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Flash confirmation */}
-      {flash && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-success/10 border border-success/20 text-success text-xs font-medium animate-in fade-in slide-in-from-top-1 duration-200">
-          <Check size={12} />
-          API key saved securely
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="flex items-center gap-1.5 pt-1 border-t border-border">
-        <Lock size={9} className="text-text-muted" />
-        <span className="text-[10px] text-text-muted">Stored locally in your browser. Never sent to our servers.</span>
-      </div>
-    </div>
-  );
-}
-
 function ClearDataSection() {
   const resetOnboarding = useUiStore((s) => s.resetOnboarding);
   const connections = useConnectionStore((s) => s.connections);
@@ -305,9 +139,8 @@ function ClearDataSection() {
     flash('connections');
   }
 
-  function handleClearApiKey() {
-    localStorage.removeItem('ruke:ai_key');
-    window.ruke.ai.setKey('');
+  function handleClearApiKeys() {
+    for (const p of MANAGED_PROVIDERS) removeProviderKey(p);
     flash('apikey');
   }
 
@@ -321,8 +154,7 @@ function ClearDataSection() {
     const ids = connections.map(c => c.id);
     ids.forEach(id => deleteConnection(id));
     clearHistory();
-    localStorage.removeItem('ruke:ai_key');
-    window.ruke.ai.setKey('');
+    for (const p of MANAGED_PROVIDERS) removeProviderKey(p);
     resetOnboarding();
     window.location.reload();
   }
@@ -357,13 +189,13 @@ function ClearDataSection() {
         </button>
 
         <button
-          onClick={handleClearApiKey}
+          onClick={handleClearApiKeys}
           className="w-full flex items-center gap-3 px-3 py-2.5 text-xs rounded-xl hover:bg-bg-hover text-text-secondary transition-colors text-left"
         >
           <Lock size={13} className="text-text-muted shrink-0" />
           <div className="flex-1">
-            <span className="text-text-primary">Remove API key</span>
-            <span className="block text-[10px] text-text-muted">Deletes the stored OpenAI key</span>
+            <span className="text-text-primary">Remove all AI keys</span>
+            <span className="block text-[10px] text-text-muted">Deletes all stored provider keys</span>
           </div>
           {cleared === 'apikey' && <Check size={13} className="text-success shrink-0" />}
         </button>
@@ -395,19 +227,73 @@ export function SettingsView() {
   const theme = useUiStore((s) => s.theme);
   const toggleTheme = useUiStore((s) => s.toggleTheme);
   const connections = useConnectionStore((s) => s.connections);
+  const [aiTab, setAiTab] = useState<ManagedProvider>('openai');
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-lg mx-auto p-8 space-y-8">
+      <div className="max-w-[560px] mx-auto p-8 space-y-8">
         <div className="flex items-center gap-3">
           <Settings size={18} className="text-accent" />
           <h2 className="text-lg font-semibold text-text-primary">Settings</h2>
         </div>
 
-        {/* AI */}
+        {/* AI Providers */}
         <section className="space-y-3">
-          <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">AI Assistant</h3>
-          <ApiKeyCard />
+          <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">AI Providers</h3>
+          <div className="rounded-2xl bg-bg-secondary border border-border overflow-hidden">
+            <div className="flex border-b border-border">
+              {MANAGED_PROVIDERS.map((provider) => {
+                const connected = !!getProviderKey(provider);
+                const active = aiTab === provider;
+                return (
+                  <button
+                    key={provider}
+                    onClick={() => setAiTab(provider)}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-3 text-xs font-medium transition-all relative ${
+                      active ? 'text-text-primary' : 'text-text-muted hover:text-text-secondary'
+                    }`}
+                  >
+                    {connected && (
+                      <span className="w-4 h-4 rounded-full bg-success/15 flex items-center justify-center shrink-0">
+                        <Check size={9} className="text-success" strokeWidth={3} />
+                      </span>
+                    )}
+                    <span>{PROVIDER_META[provider].label}</span>
+                    {active && (
+                      <div className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-accent" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <p className="text-[13px] text-text-secondary tracking-tight">
+                    {PROVIDER_META[aiTab].description}
+                  </p>
+                  {!!getProviderKey(aiTab) && (
+                    <span className="flex items-center gap-1 text-[11px] text-success/80 font-medium">
+                      <Check size={10} strokeWidth={2.5} /> Connected
+                    </span>
+                  )}
+                </div>
+                <a
+                  href={KEY_URLS[aiTab]}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-md text-text-muted hover:text-accent border border-border hover:border-accent/30 transition-colors"
+                >
+                  {getProviderKey(aiTab) ? 'Dashboard' : 'Get a key'} <ExternalLink size={9} />
+                </a>
+              </div>
+              <ProviderKeyCard key={aiTab} provider={aiTab} />
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 px-1">
+            <Lock size={9} className="text-text-muted" />
+            <span className="text-[10px] text-text-muted">Stored locally. Never sent to our servers.</span>
+          </div>
         </section>
 
         {/* Appearance */}

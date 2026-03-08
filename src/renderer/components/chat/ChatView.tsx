@@ -36,9 +36,9 @@ function EmptyState({ onSuggestion }: { onSuggestion: (prompt: string) => void }
         <div className="w-12 h-12 rounded-2xl bg-accent/15 flex items-center justify-center mb-4">
           <Key size={24} className="text-accent" />
         </div>
-        <h2 className="text-lg font-semibold text-text-primary mb-2">Set up AI</h2>
+        <h2 className="text-lg font-semibold text-text-primary mb-2">Connect a provider</h2>
         <p className="text-sm text-text-muted text-center max-w-sm mb-4">
-          Add your OpenAI API key in Settings to start chatting with Ruke.
+          Add an API key for OpenAI, Anthropic, or Google in Settings to start chatting with Ruke.
         </p>
         <button
           onClick={() => setActiveView('settings')}

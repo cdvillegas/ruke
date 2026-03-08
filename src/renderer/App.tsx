@@ -56,6 +56,8 @@ function AppInner() {
     localStorage.setItem('ruke:theme', theme);
   }, [theme]);
 
+  const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
+
   useEffect(() => {
     loadWorkspaces().then(() => {
       const wsId = useCollectionStore.getState().activeWorkspaceId;
@@ -66,6 +68,10 @@ function AppInner() {
     useRequestStore.getState().loadUncollectedRequests();
     useRequestStore.getState().loadArchivedRequests();
   }, []);
+
+  useEffect(() => {
+    if (activeWorkspaceId) useEnvironmentStore.getState().loadEnvironments(activeWorkspaceId);
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

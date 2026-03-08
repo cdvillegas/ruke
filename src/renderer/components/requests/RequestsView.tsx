@@ -16,46 +16,51 @@ function EmptyState() {
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
-      <div className="flex flex-col items-center text-center max-w-md">
-        <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mb-5">
-          <Send size={24} className="text-accent" />
-        </div>
-        <h2 className="text-lg font-semibold text-text-primary mb-2">
-          No request selected
-        </h2>
-        <p className="text-sm text-text-muted mb-8 leading-relaxed">
-          Create a new request to start exploring your APIs, or organize your work with collections.
-        </p>
-
-        <div className="flex items-center gap-3 mb-8">
-          <button
-            onClick={() => newRequest()}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white font-medium text-sm transition-colors shadow-lg shadow-accent/20"
-          >
-            <Plus size={16} />
-            New Request
-          </button>
-          <button
-            onClick={handleNewCollection}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-bg-tertiary hover:bg-bg-hover border border-border text-text-secondary hover:text-text-primary font-medium text-sm transition-colors"
-          >
-            <FolderPlus size={16} />
-            New Collection
-          </button>
+    <div className="flex-1 flex items-center justify-center">
+      <div className="w-full max-w-md px-8">
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-10 h-10 rounded-xl bg-bg-secondary border border-border/60 flex items-center justify-center mb-3">
+            <Send size={18} className="text-text-muted" />
+          </div>
+          <h3 className="text-base font-semibold text-text-primary mb-1">No request selected</h3>
+          <p className="text-[11px] text-text-muted/70 text-center">
+            Create a new request to start exploring your APIs, or organize your work with collections
+          </p>
         </div>
 
-        <div className="flex flex-col gap-2 text-[11px] text-text-muted/60">
-          <div className="flex items-center gap-2">
-            <kbd className="px-1.5 py-0.5 rounded bg-bg-tertiary border border-border/60 font-mono text-[10px]">
-              &#8984;N
-            </kbd>
+        <button
+          onClick={() => newRequest()}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-secondary border border-border hover:border-accent/30 hover:bg-bg-hover transition-all text-left group"
+        >
+          <div className="w-8 h-8 rounded-lg bg-accent/10 group-hover:bg-accent/15 flex items-center justify-center shrink-0 transition-colors">
+            <Plus size={14} className="text-accent" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-text-primary">New request</p>
+            <p className="text-[10px] text-text-muted/60 mt-0.5">Start with a blank HTTP request</p>
+          </div>
+        </button>
+
+        <button
+          onClick={handleNewCollection}
+          className="w-full flex items-center gap-3 px-4 py-3 mt-2 rounded-xl bg-bg-secondary border border-border hover:border-accent/30 hover:bg-bg-hover transition-all text-left group"
+        >
+          <div className="w-8 h-8 rounded-lg bg-bg-tertiary/60 group-hover:bg-accent/10 flex items-center justify-center shrink-0 transition-colors">
+            <FolderPlus size={14} className="text-text-muted/50 group-hover:text-accent/70 transition-colors" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-text-primary">New collection</p>
+            <p className="text-[10px] text-text-muted/60 mt-0.5">Organize requests into groups</p>
+          </div>
+        </button>
+
+        <div className="flex items-center justify-center gap-8 mt-5 text-xs text-text-muted/60">
+          <div className="flex items-center gap-1.5">
+            <kbd className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-bg-tertiary border border-border/60 font-mono"><span className="text-[13px] leading-none">&#8984;</span><span className="text-[11px] leading-none">N</span></kbd>
             <span>New request</span>
           </div>
-          <div className="flex items-center gap-2">
-            <kbd className="px-1.5 py-0.5 rounded bg-bg-tertiary border border-border/60 font-mono text-[10px]">
-              &#8984;K
-            </kbd>
+          <div className="flex items-center gap-1.5">
+            <kbd className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-bg-tertiary border border-border/60 font-mono"><span className="text-[13px] leading-none">&#8984;</span><span className="text-[11px] leading-none">K</span></kbd>
             <span>Command palette</span>
           </div>
         </div>

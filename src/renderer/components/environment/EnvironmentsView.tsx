@@ -6,14 +6,14 @@ import { useUiStore } from '../../stores/uiStore';
 import { ConnectionIcon } from '../connections/ConnectionsView';
 import {
   Plus, Trash2, Eye, EyeOff, Globe, Edit3, Check, X,
-  Layers, Link, ExternalLink, Search, Upload, FileText,
+  Layers, Link, ExternalLink, Search, Upload, FileText, Copy,
 } from 'lucide-react';
 import type { Environment, ApiConnection } from '@shared/types';
 
 function useEnvironmentsShared() {
   const {
     environments, activeEnvironmentId, createEnvironment,
-    deleteEnvironment, renameEnvironment, updateEnvironmentBaseUrl,
+    deleteEnvironment, duplicateEnvironment, renameEnvironment, updateEnvironmentBaseUrl,
     addVariable, updateVariable, deleteVariable,
     getEnvironmentVariables, setActiveEnvironment,
     getGlobalEnvironments, getEnvironmentsByConnection,
@@ -24,7 +24,7 @@ function useEnvironmentsShared() {
 
   return {
     environments, activeEnvironmentId, createEnvironment,
-    deleteEnvironment, renameEnvironment, updateEnvironmentBaseUrl,
+    deleteEnvironment, duplicateEnvironment, renameEnvironment, updateEnvironmentBaseUrl,
     addVariable, updateVariable, deleteVariable,
     getEnvironmentVariables, setActiveEnvironment,
     getGlobalEnvironments, getEnvironmentsByConnection,
@@ -35,7 +35,7 @@ function useEnvironmentsShared() {
 export function EnvironmentsSidebar() {
   const {
     environments, activeEnvironmentId, createEnvironment,
-    deleteEnvironment, getGlobalEnvironments, getEnvironmentsByConnection,
+    deleteEnvironment, duplicateEnvironment, getGlobalEnvironments, getEnvironmentsByConnection,
     connections, activeWorkspaceId, renameEnvironment,
   } = useEnvironmentsShared();
 
@@ -94,6 +94,13 @@ export function EnvironmentsSidebar() {
     setEditingName(null);
   };
 
+  const handleDuplicate = async (envId: string) => {
+    const newEnv = await duplicateEnvironment(envId);
+    setSelectedEnvId(newEnv.id);
+    setEditingName(newEnv.id);
+    setEditNameValue(newEnv.name);
+  };
+
   return (
     <>
       <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
@@ -138,6 +145,7 @@ export function EnvironmentsSidebar() {
               onEditNameChange={setEditNameValue}
               onCommitRename={() => commitRename(env.id)}
               onCancelRename={() => setEditingName(null)}
+              onDuplicate={() => handleDuplicate(env.id)}
               onDelete={() => deleteEnvironment(env.id)}
             />
           ))}
@@ -151,7 +159,7 @@ export function EnvironmentsSidebar() {
 
         {filteredConnectionGroups.map(({ connection, environments: connEnvs }) => (
           <div key={connection.id} className="mt-2 pt-2 border-t border-border/60">
-            <div className="px-3 py-1.5 flex items-center gap-2">
+            <div className="group px-3 py-1.5 flex items-center gap-2">
               <ConnectionIcon conn={connection} size="xs" />
               <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider truncate flex-1">
                 {connection.name}
@@ -177,6 +185,7 @@ export function EnvironmentsSidebar() {
                 onEditNameChange={setEditNameValue}
                 onCommitRename={() => commitRename(env.id)}
                 onCancelRename={() => setEditingName(null)}
+                onDuplicate={() => handleDuplicate(env.id)}
                 onDelete={() => deleteEnvironment(env.id)}
               />
             ))}
@@ -224,14 +233,13 @@ export function EnvironmentsMain() {
     if (!activeWorkspaceId) return;
     const env = await createEnvironment(activeWorkspaceId, 'Development');
     setSelectedEnvId(env.id);
-    await addVariable(env.id, 'api_key', '', 'global', true);
-    await addVariable(env.id, 'base_url', '', 'global', false);
-    await addVariable(env.id, 'token', '', 'global', true);
+    await addVariable(env.id, 'api_key', '', undefined, true);
+    await addVariable(env.id, 'token', '', undefined, true);
   };
 
   const handleAddVariable = async () => {
     if (selectedEnvId) {
-      await addVariable(selectedEnvId, '', '', 'global', false);
+      await addVariable(selectedEnvId, '', '');
     }
   };
 
@@ -363,7 +371,7 @@ export function EnvironmentsMain() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-text-primary">Quick start template</p>
-                    <p className="text-[10px] text-text-muted/60 mt-0.5">Create with common variables like API key, base URL, and token</p>
+                    <p className="text-[10px] text-text-muted/60 mt-0.5">Create with common variables like API key and token</p>
                   </div>
                 </button>
               </>
@@ -388,7 +396,7 @@ export function EnvironmentsView() {
   );
 }
 
-function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSelect, onStartRename, onEditNameChange, onCommitRename, onCancelRename, onDelete }: {
+function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSelect, onStartRename, onEditNameChange, onCommitRename, onCancelRename, onDuplicate, onDelete }: {
   env: Environment;
   isSelected: boolean;
   isActive: boolean;
@@ -399,15 +407,39 @@ function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSe
   onEditNameChange: (v: string) => void;
   onCommitRename: () => void;
   onCancelRename: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
 }) {
   const isAiCreated = useUiStore(s => s.aiCreatedItems.includes(env.id));
   const clearAiCreated = useUiStore(s => s.clearAiCreated);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const handleSelect = () => {
     if (isAiCreated) clearAiCreated(env.id);
     onSelect();
   };
+
+  if (confirmingDelete) {
+    return (
+      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-error/10 border border-error/20">
+        <span className="text-xs text-error truncate">Delete "{env.name}"?</span>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="px-2 py-0.5 text-[10px] font-medium rounded bg-error/20 text-error hover:bg-error/30 transition-colors"
+          >
+            Delete
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setConfirmingDelete(false); }}
+            className="px-2 py-0.5 text-[10px] font-medium rounded bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -449,12 +481,21 @@ function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSe
         <button
           onClick={(e) => { e.stopPropagation(); onStartRename(); }}
           className="p-0.5 rounded hover:bg-bg-active text-text-muted"
+          title="Rename"
         >
           <Edit3 size={11} />
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+          className="p-0.5 rounded hover:bg-bg-active text-text-muted"
+          title="Duplicate"
+        >
+          <Copy size={11} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setConfirmingDelete(true); }}
           className="p-0.5 rounded hover:bg-error/20 text-text-muted hover:text-error"
+          title="Delete"
         >
           <Trash2 size={11} />
         </button>

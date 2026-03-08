@@ -448,7 +448,7 @@ function AiCallToAction({ onEnable }: { onEnable: () => void }) {
           <p className="text-[11px] text-text-muted leading-relaxed mb-3">
             {keyExists
               ? 'AI mode lets you discover APIs, generate requests from natural language, and get intelligent suggestions.'
-              : 'Add your OpenAI API key to unlock AI-powered discovery, natural language request generation, and smart suggestions.'}
+              : 'Connect an AI provider to unlock AI-powered discovery, natural language request generation, and smart suggestions.'}
           </p>
           <div className="flex items-center gap-2">
             {keyExists ? (
@@ -669,7 +669,7 @@ export function HomeView() {
     } catch {
       setDiscoveryResults([{
         name: 'Error',
-        description: 'Discovery failed. Make sure your OpenAI API key is configured in Settings.',
+        description: 'Discovery failed. Make sure an AI provider key is configured in Settings.',
         baseUrl: '',
         specType: 'openapi',
         endpointCount: 0,
