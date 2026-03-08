@@ -1,11 +1,13 @@
 import { useState, useRef, useCallback } from 'react';
 import { useUiStore } from '../../stores/uiStore';
+import { useRequestStore } from '../../stores/requestStore';
+import { useCollectionStore } from '../../stores/collectionStore';
 import { RequestBuilder } from '../request/RequestBuilder';
 import { GrpcRequestView } from '../request/GrpcRequestView';
 import { ResponseViewer } from '../response/ResponseViewer';
 import { RequestSidebar } from './RequestSidebar';
 import { AgentPanel } from './AgentPanel';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Send, FolderPlus, Plus } from 'lucide-react';
 
 const AGENT_WIDTH_KEY = 'ruke:agent_panel_width';
 const DEFAULT_AGENT_WIDTH = 380;
@@ -16,6 +18,63 @@ const SIDEBAR_WIDTH_KEY = 'ruke:sidebar_width';
 const DEFAULT_SIDEBAR_WIDTH = 256;
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 480;
+
+function EmptyState() {
+  const newRequest = useRequestStore((s) => s.newRequest);
+  const createCollection = useCollectionStore((s) => s.createCollection);
+
+  const handleNewCollection = async () => {
+    await createCollection('New Collection');
+  };
+
+  return (
+    <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex flex-col items-center text-center max-w-md">
+        <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mb-5">
+          <Send size={24} className="text-accent" />
+        </div>
+        <h2 className="text-lg font-semibold text-text-primary mb-2">
+          No request selected
+        </h2>
+        <p className="text-sm text-text-muted mb-8 leading-relaxed">
+          Create a new request to start exploring your APIs, or organize your work with collections.
+        </p>
+
+        <div className="flex items-center gap-3 mb-8">
+          <button
+            onClick={() => newRequest()}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white font-medium text-sm transition-colors shadow-lg shadow-accent/20"
+          >
+            <Plus size={16} />
+            New Request
+          </button>
+          <button
+            onClick={handleNewCollection}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-bg-tertiary hover:bg-bg-hover border border-border text-text-secondary hover:text-text-primary font-medium text-sm transition-colors"
+          >
+            <FolderPlus size={16} />
+            New Collection
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-2 text-[11px] text-text-muted/60">
+          <div className="flex items-center gap-2">
+            <kbd className="px-1.5 py-0.5 rounded bg-bg-tertiary border border-border/60 font-mono text-[10px]">
+              &#8984;N
+            </kbd>
+            <span>New request</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <kbd className="px-1.5 py-0.5 rounded bg-bg-tertiary border border-border/60 font-mono text-[10px]">
+              &#8984;K
+            </kbd>
+            <span>Command palette</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ResizableSplit() {
   const [topRatio, setTopRatio] = useState(0.45);
@@ -69,6 +128,7 @@ export function RequestsView() {
   const activeProtocol = useUiStore((s) => s.activeProtocol);
   const showAgent = useUiStore((s) => s.aiPanelOpen);
   const toggleAgent = useUiStore((s) => s.toggleAiPanel);
+  const hasActiveRequest = useRequestStore((s) => s.hasSelection);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -145,7 +205,9 @@ export function RequestsView() {
 
       <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          {activeProtocol === 'grpc' ? (
+          {!hasActiveRequest ? (
+            <EmptyState />
+          ) : activeProtocol === 'grpc' ? (
             <GrpcRequestView />
           ) : (
             <ResizableSplit />

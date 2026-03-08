@@ -1,10 +1,12 @@
+import { streamText, stepCountIs, type ModelMessage } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { nanoid } from 'nanoid';
 import type { ChatMessage, ChatToolCall } from '@shared/types';
-import { TOOL_SCHEMAS, getToolExecutor } from './agentTools';
+import { AGENT_TOOLS } from './agentTools';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 
-const MAX_ITERATIONS = 25;
+const MAX_STEPS = 25;
 const AI_KEY_STORAGE = 'ruke:ai_key';
 
 function getApiKey(): string | null {
@@ -36,148 +38,49 @@ function buildContextMessage(): string {
   return parts.join('\n');
 }
 
-interface OpenAIMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
-  tool_calls?: Array<{
-    id: string;
-    type: 'function';
-    function: { name: string; arguments: string };
-  }>;
-  tool_call_id?: string;
-}
+function convertMessages(messages: ChatMessage[]): ModelMessage[] {
+  const result: ModelMessage[] = [];
 
-function chatToOpenAI(messages: ChatMessage[]): OpenAIMessage[] {
-  return messages.map(m => {
-    const msg: OpenAIMessage = { role: m.role as OpenAIMessage['role'], content: m.content };
-    if (m.toolCalls?.length) {
-      msg.tool_calls = m.toolCalls.map(tc => ({
-        id: tc.id,
-        type: 'function' as const,
-        function: { name: tc.name, arguments: tc.arguments },
-      }));
-    }
-    if (m.toolCallId) msg.tool_call_id = m.toolCallId;
-    return msg;
-  });
-}
-
-// --- SSE stream parser ---
-
-interface StreamDelta {
-  content?: string | null;
-  tool_calls?: Array<{
-    index: number;
-    id?: string;
-    type?: string;
-    function?: { name?: string; arguments?: string };
-  }>;
-  role?: string;
-}
-
-async function* parseSSEStream(response: Response): AsyncGenerator<StreamDelta> {
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith(':')) continue;
-        if (trimmed === 'data: [DONE]') return;
-        if (!trimmed.startsWith('data: ')) continue;
-
-        try {
-          const json = JSON.parse(trimmed.slice(6));
-          const delta = json.choices?.[0]?.delta;
-          if (delta) yield delta;
-        } catch {}
+  for (const m of messages) {
+    if (m.role === 'user') {
+      result.push({ role: 'user', content: m.content || '' });
+    } else if (m.role === 'assistant') {
+      const parts: Array<
+        | { type: 'text'; text: string }
+        | { type: 'tool-call'; toolCallId: string; toolName: string; input: unknown }
+      > = [];
+      if (m.content) {
+        parts.push({ type: 'text', text: m.content });
       }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-// --- Streaming accumulator ---
-
-interface ToolCallAccumulator {
-  id: string;
-  name: string;
-  arguments: string;
-}
-
-interface StreamAccumulator {
-  content: string;
-  toolCalls: Map<number, ToolCallAccumulator>;
-}
-
-function createAccumulator(): StreamAccumulator {
-  return { content: '', toolCalls: new Map() };
-}
-
-function accumulateDelta(acc: StreamAccumulator, delta: StreamDelta): {
-  contentToken?: string;
-  newToolCall?: { index: number; id: string; name: string };
-  toolCallArgDelta?: { index: number; delta: string };
-} {
-  const result: ReturnType<typeof accumulateDelta> = {};
-
-  if (delta.content) {
-    acc.content += delta.content;
-    result.contentToken = delta.content;
-  }
-
-  if (delta.tool_calls) {
-    for (const tc of delta.tool_calls) {
-      const existing = acc.toolCalls.get(tc.index);
-      if (!existing) {
-        const entry: ToolCallAccumulator = {
-          id: tc.id || nanoid(),
-          name: tc.function?.name || '',
-          arguments: tc.function?.arguments || '',
-        };
-        acc.toolCalls.set(tc.index, entry);
-        result.newToolCall = { index: tc.index, id: entry.id, name: entry.name };
-      } else {
-        if (tc.function?.name) existing.name += tc.function.name;
-        if (tc.function?.arguments) {
-          existing.arguments += tc.function.arguments;
-          result.toolCallArgDelta = { index: tc.index, delta: tc.function.arguments };
+      if (m.toolCalls?.length) {
+        for (const tc of m.toolCalls) {
+          let input: unknown;
+          try { input = JSON.parse(tc.arguments); } catch { input = {}; }
+          parts.push({
+            type: 'tool-call',
+            toolCallId: tc.id,
+            toolName: tc.name,
+            input,
+          });
         }
       }
+      if (parts.length > 0) {
+        result.push({ role: 'assistant', content: parts });
+      }
+    } else if (m.role === 'tool') {
+      result.push({
+        role: 'tool',
+        content: [{
+          type: 'tool-result',
+          toolCallId: m.toolCallId!,
+          toolName: '',
+          output: { type: 'text' as const, value: m.content || '' },
+        }],
+      });
     }
   }
 
   return result;
-}
-
-function finalizeToolCalls(acc: StreamAccumulator): ChatToolCall[] {
-  const sorted = [...acc.toolCalls.entries()].sort((a, b) => a[0] - b[0]);
-  return sorted.map(([, tc]) => ({
-    id: tc.id,
-    name: tc.name,
-    arguments: tc.arguments,
-    status: 'pending' as const,
-  }));
-}
-
-function finalizeOpenAIToolCalls(acc: StreamAccumulator) {
-  const sorted = [...acc.toolCalls.entries()].sort((a, b) => a[0] - b[0]);
-  return sorted.map(([, tc]) => ({
-    id: tc.id,
-    type: 'function' as const,
-    function: { name: tc.name, arguments: tc.arguments },
-  }));
 }
 
 // --- Callbacks ---
@@ -201,7 +104,7 @@ export interface AgentRunOptions {
 
 const DEFAULT_AGENT_INSTRUCTIONS = `You are Rüke, an expert API development assistant. You help users create, organize, and manage API requests through natural conversation.
 
-CRITICAL RULE: ALWAYS ACT. When the user asks you to do something, DO IT immediately by calling tools. NEVER just describe what you would do — actually call the tools. If the user says "create requests", call create_request for each one. Do not stop after creating a collection — populate it with requests by calling create_request multiple times.
+CRITICAL RULE: ALWAYS ACT. When the user asks you to do something, DO IT immediately by calling tools. NEVER just describe what you would do — actually call the tools. If the user says "create requests", call create_requests (plural) with all requests in a single batch. Do not stop after creating a collection — populate it with requests using create_requests.
 
 Be conversational. Keep text brief (1-2 sentences). Your text message appears BEFORE your tool calls in the UI, so write it as a plan of what you're about to do, not a recap of what you did. After all tools complete, summarize what you did.
 
@@ -215,7 +118,13 @@ Key behaviors:
 - When the user provides an API key or token, use set_connection_auth to configure it on the connection so all requests use it automatically.
 - Use list_connections to check if auth is already configured (authConfigured field) before adding auth.
 - Group related requests into collections.
-- When asked to create "a bunch" or "several" requests, create at least 5-8 varied examples.`;
+- When asked to create "a bunch" or "several" requests, create at least 5-8 varied examples.
+- ALWAYS use create_requests (plural) to create multiple requests in a single tool call. NEVER call create_request multiple times in a row — batch them into one create_requests call.`;
+
+// Yield to the browser so React can flush state updates to the DOM.
+// Uses rAF + setTimeout to guarantee we cross a paint boundary.
+const yieldToPaint = () =>
+  new Promise<void>(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
 
 export async function runAgent(
   sessionMessages: ChatMessage[],
@@ -229,6 +138,7 @@ export async function runAgent(
     return;
   }
 
+  const provider = createOpenAI({ apiKey });
   const systemPrompt = options?.systemPrompt || DEFAULT_AGENT_INSTRUCTIONS;
 
   let contextBlock = buildContextMessage();
@@ -236,157 +146,124 @@ export async function runAgent(
     contextBlock += `\n\n${options.extraContext}`;
   }
 
-  const openaiMessages: OpenAIMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'system', content: `Current workspace context:\n${contextBlock}` },
-    ...chatToOpenAI(sessionMessages),
-  ];
+  const fullSystem = `${systemPrompt}\n\nCurrent workspace context:\n${contextBlock}`;
 
-  for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-    let res: Response;
-    try {
-      res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: 'gpt-5',
-          messages: openaiMessages,
-          tools: TOOL_SCHEMAS,
-          tool_choice: 'auto',
-          max_completion_tokens: 4096,
-          stream: true,
-        }),
-      });
+  let currentMsgId = nanoid();
+  let currentMsgEmitted = false;
+  let stepHasContent = false;
 
-      if (!res.ok) {
-        const errText = await res.text();
-        callbacks.onError(`API error (${res.status}): ${errText.slice(0, 200)}`);
-        callbacks.onDone();
-        return;
-      }
-    } catch (e: any) {
-      callbacks.onError(`Network error: ${e.message}`);
-      callbacks.onDone();
-      return;
-    }
+  const emitMessage = () => {
+    if (currentMsgEmitted) return;
+    currentMsgEmitted = true;
+    callbacks.onMessage({
+      id: currentMsgId,
+      role: 'assistant',
+      content: '',
+      toolCalls: [],
+      timestamp: new Date().toISOString(),
+    });
+  };
 
-    const msgId = nanoid();
-    const acc = createAccumulator();
-    let messageEmitted = false;
+  try {
+    const result = streamText({
+      model: provider('gpt-5'),
+      system: fullSystem,
+      messages: convertMessages(sessionMessages),
+      tools: AGENT_TOOLS,
+      toolChoice: 'auto',
+      stopWhen: stepCountIs(MAX_STEPS),
+      maxOutputTokens: 4096,
 
-    const emitMessage = () => {
-      if (messageEmitted) return;
-      messageEmitted = true;
-      callbacks.onMessage({
-        id: msgId,
-        role: 'assistant',
-        content: '',
-        toolCalls: [],
-        timestamp: new Date().toISOString(),
-      });
-    };
+      experimental_onToolCallStart(event) {
+        callbacks.onToolStart(currentMsgId, {
+          id: event.toolCall.toolCallId,
+          name: event.toolCall.toolName as string,
+          arguments: typeof event.toolCall.input === 'string'
+            ? event.toolCall.input
+            : JSON.stringify(event.toolCall.input),
+          status: 'running',
+        });
+      },
 
-    for await (const delta of parseSSEStream(res)) {
-      const result = accumulateDelta(acc, delta);
+      experimental_onToolCallFinish(event) {
+        const output = event.success
+          ? (typeof event.output === 'string' ? event.output : JSON.stringify(event.output))
+          : JSON.stringify({ error: String(event.error) });
 
-      if (result.contentToken) {
-        emitMessage();
-        callbacks.onContentDelta(msgId, result.contentToken);
-      }
+        callbacks.onToolEnd(currentMsgId, event.toolCall.toolCallId, output);
 
-      if (result.newToolCall) {
-        emitMessage();
-        const tc: ChatToolCall = {
-          id: acc.toolCalls.get(result.newToolCall.index)!.id,
-          name: result.newToolCall.name,
-          arguments: '',
-          status: 'pending',
-        };
-        callbacks.onToolCallDelta(msgId, tc);
-      }
+        callbacks.onMessage({
+          id: nanoid(),
+          role: 'tool',
+          content: output,
+          toolCallId: event.toolCall.toolCallId,
+          timestamp: new Date().toISOString(),
+        });
+      },
+    });
 
-      if (result.toolCallArgDelta) {
-        const entry = acc.toolCalls.get(result.toolCallArgDelta.index);
-        if (entry) {
-          callbacks.onToolCallDelta(msgId, {
-            id: entry.id,
-            name: entry.name,
-            arguments: entry.arguments,
+    // Process the stream chunk by chunk, yielding to the browser between
+    // UI-visible events so React can paint each update individually.
+    // This is what makes text appear token-by-token instead of in bursts.
+    for await (const part of result.fullStream) {
+      switch (part.type) {
+        case 'start-step':
+          if (stepHasContent) {
+            currentMsgId = nanoid();
+            currentMsgEmitted = false;
+            stepHasContent = false;
+          }
+          break;
+
+        case 'text-delta':
+          if (part.text) {
+            emitMessage();
+            stepHasContent = true;
+            callbacks.onContentDelta(currentMsgId, part.text);
+            await yieldToPaint();
+          }
+          break;
+
+        case 'tool-input-start':
+          emitMessage();
+          stepHasContent = true;
+          callbacks.onToolCallDelta(currentMsgId, {
+            id: part.id,
+            name: part.toolName,
+            arguments: '',
             status: 'pending',
           });
-        }
+          await yieldToPaint();
+          break;
+
+        case 'tool-call':
+          emitMessage();
+          stepHasContent = true;
+          callbacks.onToolCallDelta(currentMsgId, {
+            id: part.toolCallId,
+            name: part.toolName,
+            arguments: JSON.stringify(part.input),
+            status: 'pending',
+          });
+          await yieldToPaint();
+          break;
       }
     }
 
-    const hasToolCalls = acc.toolCalls.size > 0;
-    const hasContent = acc.content.length > 0;
-
-    if (!hasToolCalls && !hasContent) {
-      if (!messageEmitted) {
-        callbacks.onDone();
-        return;
-      }
-    }
-
-    if (!hasToolCalls) {
-      if (!messageEmitted && hasContent) {
+    if (!currentMsgEmitted && !stepHasContent) {
+      const text = await result.text;
+      if (text) {
         callbacks.onMessage({
-          id: msgId,
+          id: currentMsgId,
           role: 'assistant',
-          content: acc.content,
+          content: text,
           timestamp: new Date().toISOString(),
         });
       }
-      callbacks.onDone();
-      return;
     }
-
-    openaiMessages.push({
-      role: 'assistant',
-      content: acc.content || null,
-      tool_calls: finalizeOpenAIToolCalls(acc),
-    });
-
-    const toolCalls = finalizeToolCalls(acc);
-
-    for (const tc of toolCalls) {
-      callbacks.onToolStart(msgId, tc);
-
-      let result: string;
-      const executor = getToolExecutor(tc.name);
-      if (!executor) {
-        result = JSON.stringify({ error: `Unknown tool: ${tc.name}` });
-      } else {
-        try {
-          const parsedArgs = JSON.parse(tc.arguments);
-          result = await executor(parsedArgs);
-        } catch (e: any) {
-          result = JSON.stringify({ error: e.message });
-        }
-      }
-
-      callbacks.onToolEnd(msgId, tc.id, result);
-
-      const toolMsg: ChatMessage = {
-        id: nanoid(),
-        role: 'tool',
-        content: result,
-        toolCallId: tc.id,
-        timestamp: new Date().toISOString(),
-      };
-
-      callbacks.onMessage(toolMsg);
-
-      openaiMessages.push({
-        role: 'tool',
-        content: result,
-        tool_call_id: tc.id,
-      });
-    }
-
-    continue;
+  } catch (e: any) {
+    callbacks.onError(e.message || 'Agent error');
   }
 
-  callbacks.onError('Agent reached maximum iterations. Please try again with a simpler request.');
   callbacks.onDone();
 }

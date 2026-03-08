@@ -1,20 +1,25 @@
+import { generateText } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
 import OpenAI from 'openai';
 import { SYSTEM_PROMPT } from './prompts';
 import type { AiMessage } from '../../shared/types';
 
 export class AiService {
-  private client: OpenAI | null = null;
+  private provider: ReturnType<typeof createOpenAI> | null = null;
+  private rawClient: OpenAI | null = null;
 
   setApiKey(key: string) {
-    this.client = new OpenAI({ apiKey: key });
+    this.provider = createOpenAI({ apiKey: key });
+    this.rawClient = new OpenAI({ apiKey: key });
   }
 
+  /** Raw OpenAI client for modules that need it directly (e.g. DiscoveryAgent). */
   getClient(): OpenAI | null {
-    return this.client;
+    return this.rawClient;
   }
 
   async chat(messages: AiMessage[], context?: string): Promise<{ content: string; error?: string }> {
-    if (!this.client) {
+    if (!this.provider) {
       return {
         content: '',
         error: 'No API key configured. Add your OpenAI API key in Settings to use AI features.',
@@ -22,31 +27,21 @@ export class AiService {
     }
 
     try {
-      const systemMessages: OpenAI.ChatCompletionMessageParam[] = [
-        { role: 'system', content: SYSTEM_PROMPT },
-      ];
+      const systemContent = context
+        ? `${SYSTEM_PROMPT}\n\nCurrent context:\n${context}`
+        : SYSTEM_PROMPT;
 
-      if (context) {
-        systemMessages.push({
-          role: 'system',
-          content: `Current context:\n${context}`,
-        });
-      }
-
-      const chatMessages: OpenAI.ChatCompletionMessageParam[] = messages.map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      }));
-
-      const response = await this.client.chat.completions.create({
-        model: 'gpt-5',
-        messages: [...systemMessages, ...chatMessages],
-        max_completion_tokens: 4000,
+      const { text } = await generateText({
+        model: this.provider('gpt-5'),
+        system: systemContent,
+        messages: messages.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+        maxOutputTokens: 4000,
       });
 
-      return {
-        content: response.choices[0]?.message?.content || 'No response generated.',
-      };
+      return { content: text || 'No response generated.' };
     } catch (error: any) {
       return {
         content: '',

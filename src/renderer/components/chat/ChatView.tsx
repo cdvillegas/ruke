@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useUiStore } from '../../stores/uiStore';
@@ -24,7 +24,16 @@ const SUGGESTIONS = [
   { label: 'Set up environments', prompt: 'Help me set up dev and production environments with different API keys' },
 ];
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function StreamingText({ content }: { content: string }) {
+  return (
+    <div className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
+      {content}
+      <span className="inline-block w-[2px] h-[1em] bg-accent/70 align-text-bottom ml-0.5 animate-pulse" />
+    </div>
+  );
+}
+
+function MessageBubble({ message, isStreaming }: { message: ChatMessage; isStreaming: boolean }) {
   if (message.role === 'tool') return null;
 
   if (message.role === 'user') {
@@ -53,7 +62,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className="flex justify-start">
       <div className="max-w-[85%] space-y-2">
-        {message.content && <AssistantMessage content={message.content} />}
+        {message.content && (
+          isStreaming
+            ? <StreamingText content={message.content} />
+            : <AssistantMessage content={message.content} />
+        )}
         {message.toolCalls?.map(tc => (
           <ToolCallCard key={tc.id} toolCall={tc} />
         ))}
@@ -126,6 +139,8 @@ function EmptyState({ onSuggestion }: { onSuggestion: (prompt: string) => void }
 function ChatPanel() {
   const session = useChatStore(s => s.getActiveSession());
   const { isRunning, error, sendMessage, newChat, activeSessionId } = useChatStore();
+  const streamingMessageId = useChatStore(s => s.streamingMessageId);
+  const streamTick = useChatStore(s => s.streamTick);
   const connections = useConnectionStore(s => s.connections);
   const [input, setInput] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
@@ -138,11 +153,11 @@ function ChatPanel() {
   const isEmpty = visibleMessages.length === 0 && !isRunning;
   const canSend = (!isRunning) && (input.trim() || attachedFiles.length > 0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [session.messages, isRunning]);
+  }, [session.messages, isRunning, streamTick]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -293,10 +308,14 @@ function ChatPanel() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
           <div className="max-w-2xl mx-auto space-y-4">
             {visibleMessages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                isStreaming={msg.id === streamingMessageId}
+              />
             ))}
 
-            {isRunning && visibleMessages[visibleMessages.length - 1]?.role !== 'assistant' && (
+            {isRunning && !streamingMessageId && visibleMessages[visibleMessages.length - 1]?.role !== 'assistant' && (
               <div className="flex justify-start">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <Loader2 size={14} className="text-accent animate-spin" />

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
 import {
   Send, Plus, Loader2, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, X,
@@ -26,7 +26,16 @@ const SUGGESTIONS = [
   { label: 'Organize requests', prompt: 'Help me organize my requests into collections' },
 ];
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function StreamingText({ content }: { content: string }) {
+  return (
+    <div className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
+      {content}
+      <span className="inline-block w-[2px] h-[1em] bg-accent/70 align-text-bottom ml-0.5 animate-pulse" />
+    </div>
+  );
+}
+
+function MessageBubble({ message, isStreaming }: { message: ChatMessage; isStreaming: boolean }) {
   if (message.role === 'tool') return null;
 
   if (message.role === 'user') {
@@ -55,7 +64,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className="flex justify-start">
       <div className="max-w-[90%] space-y-2">
-        {message.content && <AssistantMessage content={message.content} />}
+        {message.content && (
+          isStreaming
+            ? <StreamingText content={message.content} />
+            : <AssistantMessage content={message.content} />
+        )}
         {message.toolCalls?.map(tc => (
           <ToolCallCard key={tc.id} toolCall={tc} />
         ))}
@@ -115,6 +128,8 @@ export function AgentPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  const streamingMessageId = useChatStore(s => s.streamingMessageId);
+  const streamTick = useChatStore(s => s.streamTick);
   const connections = useConnectionStore(s => s.connections);
 
   const activeSession = useMemo(
@@ -131,11 +146,11 @@ export function AgentPanel() {
   const isEmpty = visibleMessages.length === 0 && !isRunning;
   const canSend = !isRunning && (input.trim() || attachedFiles.length > 0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [activeSession.messages, isRunning]);
+  }, [activeSession.messages, isRunning, streamTick]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -386,9 +401,13 @@ export function AgentPanel() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3">
           <div className="space-y-3">
             {visibleMessages.map(msg => (
-              <MessageBubble key={msg.id} message={msg} />
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                isStreaming={msg.id === streamingMessageId}
+              />
             ))}
-            {isRunning && visibleMessages[visibleMessages.length - 1]?.role !== 'assistant' && (
+            {isRunning && !streamingMessageId && visibleMessages[visibleMessages.length - 1]?.role !== 'assistant' && (
               <div className="flex justify-start">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <Loader2 size={14} className="text-accent animate-spin" />
@@ -426,7 +445,6 @@ export function AgentPanel() {
             <div className="flex items-end gap-2">
               {isRunning ? (
                 <div className="flex items-center gap-2 flex-1 py-1">
-                  <Loader2 size={13} className="animate-spin text-accent shrink-0" />
                   <span className="text-sm text-text-muted">Thinking...</span>
                 </div>
               ) : (

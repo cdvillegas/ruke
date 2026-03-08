@@ -48,13 +48,31 @@ export class HttpEngine {
 
       const response = await fetch(fullUrl, fetchOptions);
       const duration = performance.now() - startTime;
-      const bodyText = await response.text();
 
       const responseHeaders: Record<string, string> = {};
       response.headers.forEach((value, key) => {
         responseHeaders[key] = value;
       });
 
+      const contentType = (responseHeaders['content-type'] || '').toLowerCase();
+      const isBinary = /^(audio|image|video|application\/octet-stream|application\/pdf|application\/zip)/.test(contentType);
+
+      if (isBinary) {
+        const buf = await response.arrayBuffer();
+        const base64 = Buffer.from(buf).toString('base64');
+        return {
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          body: base64,
+          bodyEncoding: 'base64' as const,
+          size: buf.byteLength,
+          duration: Math.round(duration),
+          timestamp: new Date().toISOString(),
+        };
+      }
+
+      const bodyText = await response.text();
       return {
         status: response.status,
         statusText: response.statusText,

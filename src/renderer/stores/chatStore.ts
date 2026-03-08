@@ -167,6 +167,8 @@ interface ChatState {
   activeSessionId: string;
   isRunning: boolean;
   error: string | null;
+  streamingMessageId: string | null;
+  streamTick: number;
 
   getActiveSession: () => ChatSession;
   setActiveSession: (id: string) => void;
@@ -179,6 +181,7 @@ interface ChatState {
   updateMessageContent: (messageId: string, delta: string) => void;
   upsertToolCall: (messageId: string, toolCall: ChatToolCall) => void;
   updateToolCall: (messageId: string, toolCallId: string, updates: Partial<ChatToolCall>) => void;
+  setStreamingMessage: (id: string | null) => void;
   setError: (error: string | null) => void;
 }
 
@@ -189,6 +192,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeSessionId: initialActiveId,
   isRunning: false,
   error: null,
+  streamingMessageId: null,
+  streamTick: 0,
 
   getActiveSession: () => {
     const { sessions, activeSessionId } = get();
@@ -292,6 +297,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       updatedSession.messages,
       {
         onMessage: (msg) => {
+          if (msg.role === 'assistant') {
+            get().setStreamingMessage(msg.id);
+          }
           get().appendMessage(msg);
         },
         onContentDelta: (messageId, delta) => {
@@ -301,6 +309,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           get().upsertToolCall(messageId, toolCall);
         },
         onToolStart: (messageId, toolCall) => {
+          get().setStreamingMessage(null);
           get().updateToolCall(messageId, toolCall.id, { status: 'running' });
         },
         onToolEnd: (messageId, toolCallId, result) => {
@@ -310,6 +319,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set({ error });
         },
         onDone: () => {
+          get().setStreamingMessage(null);
           set({ isRunning: false });
           saveSessions(get().sessions);
         },
@@ -340,7 +350,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         );
         return { ...sess, messages, updatedAt: new Date().toISOString() };
       });
-      return { sessions };
+      return { sessions, streamTick: s.streamTick + 1 };
     });
   },
 
@@ -363,16 +373,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
         return { ...sess, messages, updatedAt: new Date().toISOString() };
       });
-      return { sessions };
+      return { sessions, streamTick: s.streamTick + 1 };
     });
   },
 
-  updateToolCall: (messageId, toolCallId, updates) => {
+  updateToolCall: (_messageId, toolCallId, updates) => {
     set((s) => {
       const sessions = s.sessions.map(sess => {
         if (sess.id !== s.activeSessionId) return sess;
         const messages = sess.messages.map(m => {
-          if (m.id !== messageId || !m.toolCalls) return m;
+          if (!m.toolCalls?.some(tc => tc.id === toolCallId)) return m;
           return {
             ...m,
             toolCalls: m.toolCalls.map(tc =>
@@ -383,9 +393,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return { ...sess, messages, updatedAt: new Date().toISOString() };
       });
       saveSessions(sessions);
-      return { sessions };
+      return { sessions, streamTick: s.streamTick + 1 };
     });
   },
+
+  setStreamingMessage: (id) => set({ streamingMessageId: id }),
 
   setError: (error) => set({ error }),
 }));

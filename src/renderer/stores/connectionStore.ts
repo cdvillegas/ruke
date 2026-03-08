@@ -3,6 +3,10 @@ import { nanoid } from 'nanoid';
 import type { ApiConnection, ApiEndpoint, HttpMethod, ProtoDefinition } from '@shared/types';
 import { parseSpec, parseOpenApiEndpoints, getSpecBaseUrl } from '@shared/specParser';
 
+function stableEndpointId(method: string, path: string): string {
+  return `ep:${method.toUpperCase()}:${path}`;
+}
+
 const ICON_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#06b6d4', '#f97316'];
 
 function loadConnections(): ApiConnection[] {
@@ -156,15 +160,22 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       const res = await fetch(conn.specUrl);
       const text = await res.text();
       const spec = parseSpec(text);
-      const endpoints = parseOpenApiEndpoints(spec);
+      const newEndpoints = parseOpenApiEndpoints(spec);
+
+      const normalizeKey = (method: string, path: string) =>
+        `${method.toUpperCase()}:${path.replace(/\/+$/, '')}`;
+
+      const oldById = new Map(conn.endpoints.map(e => [normalizeKey(e.method, e.path), e.id]));
+
+      const endpoints = newEndpoints.map(e => ({
+        ...e,
+        connectionId,
+        id: oldById.get(normalizeKey(e.method, e.path)) || e.id,
+      }));
 
       const updated = get().connections.map(c =>
         c.id === connectionId
-          ? {
-              ...c,
-              endpoints: endpoints.map(e => ({ ...e, connectionId })),
-              updatedAt: new Date().toISOString(),
-            }
+          ? { ...c, endpoints, updatedAt: new Date().toISOString() }
           : c
       );
       set({ connections: updated });
@@ -200,7 +211,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
 
         for (const field of type.fields) {
           endpoints.push({
-            id: nanoid(),
+            id: stableEndpointId('POST', field.name),
             connectionId: '',
             method: isMutation ? 'POST' : 'POST',
             path: field.name,
@@ -246,11 +257,12 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       const endpoints: ApiEndpoint[] = [];
       for (const service of protoDef.services) {
         for (const method of service.methods) {
+          const grpcPath = `${service.name}/${method.name}`;
           endpoints.push({
-            id: nanoid(),
+            id: stableEndpointId('POST', grpcPath),
             connectionId: '',
             method: 'POST' as HttpMethod,
-            path: `${service.name}/${method.name}`,
+            path: grpcPath,
             summary: `${method.methodType === 'unary' ? '' : `[${method.methodType}] `}${service.name}.${method.name}`,
             description: method.comment,
             tags: [service.name],
@@ -300,11 +312,12 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       const endpoints: ApiEndpoint[] = [];
       for (const service of protoDef.services) {
         for (const method of service.methods) {
+          const reflPath = `${service.name}/${method.name}`;
           endpoints.push({
-            id: nanoid(),
+            id: stableEndpointId('POST', reflPath),
             connectionId: '',
             method: 'POST' as HttpMethod,
-            path: `${service.name}/${method.name}`,
+            path: reflPath,
             summary: `${method.methodType ? `[${method.methodType}] ` : ''}${service.fullName}.${method.name}`,
             tags: [service.name],
           });

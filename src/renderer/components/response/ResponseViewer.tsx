@@ -119,7 +119,13 @@ export function ResponseViewer() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {activeResponseTab === 'body' && <ResponseBody body={response.body} />}
+        {activeResponseTab === 'body' && (
+          <ResponseBody
+            body={response.body}
+            bodyEncoding={response.bodyEncoding}
+            contentType={response.headers['content-type'] || ''}
+          />
+        )}
         {activeResponseTab === 'headers' && <ResponseHeaders headers={response.headers} />}
       </div>
     </div>

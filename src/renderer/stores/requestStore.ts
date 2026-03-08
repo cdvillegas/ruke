@@ -42,6 +42,7 @@ function createEmptyRequest(collectionId: string | null = null): ApiRequest {
 
 interface RequestState {
   activeRequest: ApiRequest;
+  hasSelection: boolean;
   response: ApiResponse | null;
   loading: boolean;
   history: HistoryEntry[];
@@ -96,10 +97,23 @@ interface RequestState {
   deleteRequest: (id: string) => Promise<void>;
 }
 
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+const AUTO_SAVE_DELAY = 800;
+
 export const useRequestStore = create<RequestState>((set, get) => {
   const initial = createEmptyRequest();
+
+  const scheduleAutoSave = () => {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+      autoSaveTimer = null;
+      get().saveRequest();
+    }, AUTO_SAVE_DELAY);
+  };
+
   return {
     activeRequest: initial,
+    hasSelection: false,
     response: null,
     loading: false,
     history: [],
@@ -112,17 +126,22 @@ export const useRequestStore = create<RequestState>((set, get) => {
     pendingTabIds: [],
     newRequestIds: [],
 
-    setActiveRequest: (req) => set({ activeRequest: req, activeTabId: req.id }),
+    setActiveRequest: (req) => set({ activeRequest: req, activeTabId: req.id, hasSelection: true }),
 
-    updateActiveRequest: (updates) =>
+    updateActiveRequest: (updates) => {
       set((s) => {
         const updated = { ...s.activeRequest, ...updates, updatedAt: new Date().toISOString() };
+        localStorage.setItem('ruke:lastActiveRequestId', updated.id);
         return {
           activeRequest: updated,
           openTabs: s.openTabs.map((t) => (t.id === updated.id ? updated : t)),
           uncollectedRequests: s.uncollectedRequests.map((r) => (r.id === updated.id ? updated : r)),
         };
-      }),
+      });
+      if (get().hasSelection) {
+        scheduleAutoSave();
+      }
+    },
 
     setMethod: (method) => get().updateActiveRequest({ method }),
     setUrl: (url) => get().updateActiveRequest({ url }),
@@ -216,13 +235,15 @@ export const useRequestStore = create<RequestState>((set, get) => {
     },
 
     selectRequest: (req) => {
-      set({ activeRequest: req, activeTabId: req.id, response: null });
+      set({ activeRequest: req, activeTabId: req.id, response: null, hasSelection: true });
+      localStorage.setItem('ruke:lastActiveRequestId', req.id);
     },
 
     newRequest: async (collectionId = null) => {
       const req = createEmptyRequest(collectionId);
       set((s) => ({
         activeRequest: req,
+        hasSelection: true,
         response: null,
         openTabs: [...s.openTabs, req],
         activeTabId: req.id,
@@ -236,7 +257,21 @@ export const useRequestStore = create<RequestState>((set, get) => {
     loadUncollectedRequests: async () => {
       try {
         const reqs = await window.ruke.db.query('getUncollectedRequests');
-        set({ uncollectedRequests: Array.isArray(reqs) ? reqs : [] });
+        const list = Array.isArray(reqs) ? reqs : [];
+        set({ uncollectedRequests: list });
+
+        const lastId = localStorage.getItem('ruke:lastActiveRequestId');
+        if (lastId && get().activeRequest.url === '' && !get().activeRequest.connectionId) {
+          const match = list.find((r: ApiRequest) => r.id === lastId);
+          if (match) {
+            get().selectRequest(match);
+          } else {
+            try {
+              const req = await window.ruke.db.query('getRequestById', lastId);
+              if (req) get().selectRequest(req);
+            } catch {}
+          }
+        }
       } catch {}
     },
 
@@ -254,7 +289,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
       const { activeRequest } = get();
       if (activeRequest.id === id) {
         const req = createEmptyRequest();
-        set({ activeRequest: req, response: null });
+        set({ activeRequest: req, response: null, hasSelection: false });
       }
       get().loadUncollectedRequests();
       get().loadArchivedRequests();
@@ -292,12 +327,13 @@ export const useRequestStore = create<RequestState>((set, get) => {
       set((s) => {
         const exists = s.openTabs.find((t) => t.id === req.id);
         if (exists) {
-          return { activeRequest: req, activeTabId: req.id, response: null };
+          return { activeRequest: req, activeTabId: req.id, hasSelection: true, response: null };
         }
         return {
           activeRequest: req,
           openTabs: [...s.openTabs, req],
           activeTabId: req.id,
+          hasSelection: true,
           response: null,
         };
       });
@@ -312,6 +348,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
             openTabs: [newReq],
             activeRequest: newReq,
             activeTabId: newReq.id,
+            hasSelection: false,
             response: null,
           };
         }
@@ -427,7 +464,7 @@ export const useRequestStore = create<RequestState>((set, get) => {
       try { await window.ruke.db.query('deleteRequest', id); } catch {}
       if (activeRequest.id === id) {
         const req = createEmptyRequest();
-        set({ activeRequest: req, response: null });
+        set({ activeRequest: req, response: null, hasSelection: false });
       }
       get().loadUncollectedRequests();
       get().loadArchivedRequests();

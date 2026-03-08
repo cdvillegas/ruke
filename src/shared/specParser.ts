@@ -1,6 +1,9 @@
-import { nanoid } from 'nanoid';
 import yaml from 'js-yaml';
 import type { ApiEndpoint, HttpMethod } from '@shared/types';
+
+function stableEndpointId(method: string, path: string): string {
+  return `ep:${method.toUpperCase()}:${path}`;
+}
 
 export function parseSpec(text: string): any {
   const trimmed = text.trim();
@@ -162,7 +165,7 @@ export function parseOpenApiEndpoints(spec: any): ApiEndpoint[] {
       ];
 
       endpoints.push({
-        id: nanoid(),
+        id: stableEndpointId(method, path),
         connectionId: '',
         method: method.toUpperCase() as HttpMethod,
         path,

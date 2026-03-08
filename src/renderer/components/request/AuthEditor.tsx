@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useRequestStore } from '../../stores/requestStore';
-import type { AuthType } from '@shared/types';
+import type { AuthConfig, AuthType } from '@shared/types';
 import { Shield, Key, User, Lock, Eye, EyeOff } from 'lucide-react';
 import { VariableInput } from '../shared/VariableInput';
 
@@ -22,35 +22,63 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function AuthEditor() {
+interface AuthEditorProps {
+  connectionAuth?: AuthConfig;
+  connectionName?: string;
+}
+
+export function AuthEditor({ connectionAuth, connectionName }: AuthEditorProps) {
   const activeRequest = useRequestStore((s) => s.activeRequest);
   const setAuth = useRequestStore((s) => s.setAuth);
-  const auth = activeRequest.auth;
+  const requestAuth = activeRequest.auth;
   const [showPassword, setShowPassword] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [showApiValue, setShowApiValue] = useState(false);
 
+  const isInheriting = requestAuth.type === 'none' && connectionAuth && connectionAuth.type !== 'none';
+  const displayAuth = isInheriting ? connectionAuth! : requestAuth;
+  const displayType = displayAuth.type;
+
+  const setType = (type: AuthType) => {
+    if (isInheriting && type === connectionAuth!.type) return;
+    if (type === 'none' && connectionAuth?.type !== 'none') {
+      setAuth({ type: 'none' });
+      return;
+    }
+    setAuth({ ...requestAuth, type });
+  };
+
+  const updateAuth = (updates: Partial<AuthConfig>) => {
+    if (isInheriting) {
+      setAuth({ ...displayAuth, ...updates });
+    } else {
+      setAuth({ ...requestAuth, ...updates });
+    }
+  };
+
   return (
     <div className="space-y-4">
-      {/* Auth type selector */}
       <div className="flex gap-1.5 flex-wrap">
-        {AUTH_TYPES.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setAuth({ ...auth, type: t.id })}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-              auth.type === t.id
-                ? 'bg-accent text-white shadow-sm shadow-accent/25'
-                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-hover hover:text-text-primary border border-transparent hover:border-border'
-            }`}
-          >
-            <t.icon size={13} />
-            <span>{t.label}</span>
-          </button>
-        ))}
+        {AUTH_TYPES.map((t) => {
+          const isActive = displayType === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setType(t.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                isActive
+                  ? 'bg-accent text-white shadow-sm shadow-accent/25'
+                  : 'bg-bg-tertiary text-text-secondary hover:bg-bg-hover hover:text-text-primary border border-transparent hover:border-border'
+              }`}
+            >
+              <t.icon size={13} />
+              <span>{t.label}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {auth.type === 'none' && (
+      {displayType === 'none' && (
         <div className="flex flex-col items-center justify-center py-6 text-center">
           <Shield size={20} className="text-text-muted/40 mb-2" />
           <p className="text-xs text-text-muted">
@@ -59,13 +87,13 @@ export function AuthEditor() {
         </div>
       )}
 
-      {auth.type === 'bearer' && (
+      {displayType === 'bearer' && (
         <div className="max-w-sm">
           <FieldLabel>Token</FieldLabel>
           <div className="relative">
             <VariableInput
-              value={auth.bearer?.token || ''}
-              onChange={(v) => setAuth({ ...auth, bearer: { token: v } })}
+              value={displayAuth.bearer?.token || ''}
+              onChange={(v) => updateAuth({ type: 'bearer', bearer: { token: v } })}
               placeholder="Enter bearer token or {{variable}}"
               type={showToken ? 'text' : 'password'}
               className={INPUT_CLASS + ' pr-9'}
@@ -85,16 +113,16 @@ export function AuthEditor() {
         </div>
       )}
 
-      {auth.type === 'basic' && (
+      {displayType === 'basic' && (
         <div className="max-w-sm space-y-3">
           <div>
             <FieldLabel>Username</FieldLabel>
             <VariableInput
-              value={auth.basic?.username || ''}
+              value={displayAuth.basic?.username || ''}
               onChange={(v) =>
-                setAuth({
-                  ...auth,
-                  basic: { username: v, password: auth.basic?.password || '' },
+                updateAuth({
+                  type: 'basic',
+                  basic: { username: v, password: displayAuth.basic?.password || '' },
                 })
               }
               placeholder="Username or {{variable}}"
@@ -105,11 +133,11 @@ export function AuthEditor() {
             <FieldLabel>Password</FieldLabel>
             <div className="relative">
               <VariableInput
-                value={auth.basic?.password || ''}
+                value={displayAuth.basic?.password || ''}
                 onChange={(v) =>
-                  setAuth({
-                    ...auth,
-                    basic: { username: auth.basic?.username || '', password: v },
+                  updateAuth({
+                    type: 'basic',
+                    basic: { username: displayAuth.basic?.username || '', password: v },
                   })
                 }
                 placeholder="Password or {{variable}}"
@@ -132,16 +160,16 @@ export function AuthEditor() {
         </div>
       )}
 
-      {auth.type === 'api-key' && (
+      {displayType === 'api-key' && (
         <div className="max-w-sm space-y-3">
           <div>
             <FieldLabel>Key Name</FieldLabel>
             <VariableInput
-              value={auth.apiKey?.key || ''}
+              value={displayAuth.apiKey?.key || ''}
               onChange={(v) =>
-                setAuth({
-                  ...auth,
-                  apiKey: { key: v, value: auth.apiKey?.value || '', addTo: auth.apiKey?.addTo || 'header' },
+                updateAuth({
+                  type: 'api-key',
+                  apiKey: { key: v, value: displayAuth.apiKey?.value || '', addTo: displayAuth.apiKey?.addTo || 'header' },
                 })
               }
               placeholder="e.g. X-API-Key"
@@ -152,11 +180,11 @@ export function AuthEditor() {
             <FieldLabel>Value</FieldLabel>
             <div className="relative">
               <VariableInput
-                value={auth.apiKey?.value || ''}
+                value={displayAuth.apiKey?.value || ''}
                 onChange={(v) =>
-                  setAuth({
-                    ...auth,
-                    apiKey: { key: auth.apiKey?.key || '', value: v, addTo: auth.apiKey?.addTo || 'header' },
+                  updateAuth({
+                    type: 'api-key',
+                    apiKey: { key: displayAuth.apiKey?.key || '', value: v, addTo: displayAuth.apiKey?.addTo || 'header' },
                   })
                 }
                 placeholder="API key value or {{variable}}"
@@ -181,13 +209,13 @@ export function AuthEditor() {
                 <button
                   key={loc}
                   onClick={() =>
-                    setAuth({
-                      ...auth,
-                      apiKey: { ...auth.apiKey!, addTo: loc },
+                    updateAuth({
+                      type: 'api-key',
+                      apiKey: { ...displayAuth.apiKey!, addTo: loc },
                     })
                   }
                   className={`px-3.5 py-1.5 text-xs font-medium rounded-md capitalize transition-all ${
-                    auth.apiKey?.addTo === loc
+                    displayAuth.apiKey?.addTo === loc
                       ? 'bg-bg-primary text-text-primary shadow-sm'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}

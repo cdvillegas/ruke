@@ -30,10 +30,16 @@ function EndpointPicker({
   connection,
   onSelect,
   selectedEndpointId,
+  requestMethod,
+  requestUrl,
+  onHealEndpointId,
 }: {
   connection: ApiConnection;
   onSelect: (ep: ApiEndpoint) => void;
   selectedEndpointId?: string;
+  requestMethod?: string;
+  requestUrl?: string;
+  onHealEndpointId?: (newId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -47,7 +53,17 @@ function EndpointPicker({
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const selectedEndpoint = connection.endpoints.find((e) => e.id === selectedEndpointId);
+  let selectedEndpoint = connection.endpoints.find((e) => e.id === selectedEndpointId);
+
+  if (!selectedEndpoint && selectedEndpointId && requestMethod && requestUrl) {
+    const normalize = (s: string) => s.replace(/\/+$/, '');
+    selectedEndpoint = connection.endpoints.find(
+      (e) => e.method === requestMethod && normalize(e.path) === normalize(requestUrl)
+    );
+    if (selectedEndpoint && onHealEndpointId) {
+      onHealEndpointId(selectedEndpoint.id);
+    }
+  }
 
   const filtered = useMemo(() => {
     if (!search.trim()) return connection.endpoints;
@@ -321,10 +337,17 @@ export function RequestBuilder() {
   };
 
   const handleSelectEndpoint = (ep: ApiEndpoint) => {
+    const isSameEndpoint = activeRequest.endpointId === ep.id;
     linkEndpoint(ep.id);
 
+    if (isSameEndpoint) return;
+
+    const hasUserData =
+      activeRequest.body.type !== 'none' ||
+      activeRequest.params.some((p) => p.key && p.value);
+
     let body = activeRequest.body;
-    if (ep.requestBody) {
+    if (!hasUserData && ep.requestBody) {
       const example = ep.requestBody.example;
       if (example) {
         body = { type: ep.requestBody.type, raw: example };
@@ -347,13 +370,18 @@ export function RequestBuilder() {
       }
     }
 
+    const specParams = (ep.parameters || [])
+      .filter((p) => p.in === 'query')
+      .map((p) => {
+        const existing = activeRequest.params.find((ap) => ap.key === p.name);
+        return { key: p.name, value: existing?.value || '', enabled: existing?.enabled ?? true };
+      });
+
     const updates: Record<string, any> = {
       method: ep.method,
       url: ep.path,
-      params: (ep.parameters || [])
-        .filter((p) => p.in === 'query')
-        .map((p) => ({ key: p.name, value: '', enabled: true })),
-      body,
+      params: specParams,
+      ...(!hasUserData ? { body } : {}),
     };
 
     if (!activeRequest.name || activeRequest.name === 'New Request') {
@@ -377,8 +405,8 @@ export function RequestBuilder() {
     + (endpointDef?.parameters?.filter((p: { in: string }) => p.in !== 'body').length || 0);
   const headerCount = activeRequest.headers.filter((h) => h.enabled && h.key).length;
   const hasBody = activeRequest.body.type !== 'none';
-  const hasAuth = activeRequest.auth.type !== 'none' || (linkedConnection?.auth.type !== 'none' && !!linkedConnection);
-  const showInheritedAuth = linkedConnection?.auth.type !== 'none' && linkedConnection && activeRequest.auth.type === 'none';
+  const effectiveAuth = useRequestStore.getState().getEffectiveAuth();
+  const hasAuth = effectiveAuth.type !== 'none';
 
   return (
     <div className="relative">
@@ -389,44 +417,43 @@ export function RequestBuilder() {
         </div>
       )}
 
-      {/* Unified header: Connection + Name + Mode + Env + Save + Send */}
+      {/* Request name */}
+      <div className="mb-2">
+        {editingName ? (
+          <input
+            ref={nameInputRef}
+            type="text"
+            value={activeRequest.name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => setEditingName(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === 'Escape') setEditingName(false);
+            }}
+            placeholder="Request name"
+            className="w-full px-2 py-1.5 text-sm font-medium text-text-primary bg-bg-tertiary border border-accent/50 rounded-lg focus:outline-none focus:border-accent"
+            autoFocus
+          />
+        ) : (
+          <button
+            onClick={() => {
+              setEditingName(true);
+              setTimeout(() => nameInputRef.current?.select(), 10);
+            }}
+            className="group flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary truncate max-w-full transition-colors"
+            title="Click to rename"
+          >
+            <span className="truncate">{activeRequest.name || 'New Request'}</span>
+          </button>
+        )}
+      </div>
+
+      {/* Connection + Env on left, Save + Send on right */}
       <div className="flex items-center gap-2 mb-3">
         <ConnectionSelector />
-
-        {/* Editable name — flex-1 to fill middle */}
-        <div className="flex-1 min-w-0">
-          {editingName ? (
-            <input
-              ref={nameInputRef}
-              type="text"
-              value={activeRequest.name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={() => setEditingName(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === 'Escape') setEditingName(false);
-              }}
-              placeholder="Request name"
-              className="w-full px-2 py-1.5 text-sm font-medium text-text-primary bg-bg-tertiary border border-accent/50 rounded-lg focus:outline-none focus:border-accent"
-              autoFocus
-            />
-          ) : (
-            <button
-              onClick={() => {
-                setEditingName(true);
-                setTimeout(() => nameInputRef.current?.select(), 10);
-              }}
-              className="group flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary truncate max-w-full transition-colors"
-              title="Click to rename"
-            >
-              <span className="truncate">{activeRequest.name || 'New Request'}</span>
-            </button>
-          )}
-        </div>
-
-        {/* Env switcher */}
         <EnvironmentPill />
 
-        {/* Save */}
+        <div className="flex-1" />
+
         <button
           onClick={handleSave}
           className={`p-2 rounded-lg border transition-all shrink-0 ${
@@ -439,7 +466,6 @@ export function RequestBuilder() {
           {saved ? <Check size={14} /> : <Save size={14} />}
         </button>
 
-        {/* Send */}
         <button
           onClick={handleSend}
           disabled={loading || pending}
@@ -463,6 +489,9 @@ export function RequestBuilder() {
             connection={linkedConnection}
             onSelect={handleSelectEndpoint}
             selectedEndpointId={activeRequest.endpointId}
+            requestMethod={activeRequest.method}
+            requestUrl={activeRequest.url}
+            onHealEndpointId={(newId) => linkEndpoint(newId)}
           />
         ) : (
           <>
@@ -523,20 +552,7 @@ export function RequestBuilder() {
           {advancedTab === 'headers' && <HeadersEditor />}
           {advancedTab === 'body' && <BodyEditor />}
           {advancedTab === 'auth' && (
-            <div>
-              {showInheritedAuth && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/5 border border-success/20 mb-3">
-                  <Shield size={13} className="text-success shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-text-primary">
-                      Using <span className="font-medium text-success">{linkedConnection!.auth.type}</span> auth from {linkedConnection!.name}
-                    </p>
-                    <p className="text-[10px] text-text-muted">Override below if this request needs different auth</p>
-                  </div>
-                </div>
-              )}
-              <AuthEditor />
-            </div>
+            <AuthEditor connectionAuth={linkedConnection?.auth} connectionName={linkedConnection?.name} />
           )}
         </div>
       </div>

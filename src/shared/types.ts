@@ -51,6 +51,8 @@ export interface ApiResponse {
   statusText: string;
   headers: Record<string, string>;
   body: string;
+  /** When the response is binary, body is base64-encoded and this is set to 'base64'. */
+  bodyEncoding?: 'base64';
   size: number;
   duration: number;
   timestamp: string;
