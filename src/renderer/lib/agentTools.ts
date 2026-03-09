@@ -2130,7 +2130,7 @@ const clearMemoryTool = tool({
 // ── Plan tools ──
 
 const createPlanTool = tool({
-  description: 'Create a structured plan with numbered steps. Use this when a task has multiple steps so the user can track progress. Returns the plan ID and step IDs.',
+  description: 'Create a structured plan with numbered steps. You MUST call this tool whenever the user asks you to plan, create a lesson plan, outline steps, or describes any multi-step task. NEVER write plans as text — always use this tool. Returns the plan ID and step IDs.',
   inputSchema: z.object({
     title: z.string().describe('Short title for the plan'),
     steps: z.array(z.string()).describe('Array of step descriptions'),
@@ -2270,7 +2270,8 @@ export const AGENT_TOOLS = {
   save_memory: saveMemoryTool,
   recall_memory: recallMemoryTool,
   clear_memory: clearMemoryTool,
-  // Plan execution
+  // Plans
+  create_plan: createPlanTool,
   update_plan_step: updatePlanStepTool,
   // App
   set_api_key: setApiKeyTool,
@@ -2300,6 +2301,7 @@ export const ASK_TOOLS = {
   analyze_workspace: analyzeWorkspaceTool,
   recall_memory: recallMemoryTool,
   list_plans: listPlansTool,
+  create_plan: createPlanTool,
   get_app_info: getAppInfoTool,
 };
 

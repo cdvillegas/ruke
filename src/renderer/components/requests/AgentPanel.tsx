@@ -5,7 +5,7 @@ import {
   Clock, Trash2, Square, Search, Archive, ArchiveRestore,
   SlidersHorizontal, Layers, Terminal, FolderOpen, ChevronRight, MessageSquare, CheckCircle2,
   ChevronUp, ChevronDown, Check, Bot, Eye, Infinity, Circle, Pencil, ArrowUp, Paperclip,
-  ListChecks, Loader2, XCircle, SkipForward,
+  ListChecks,
 } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { useConnectionStore } from '../../stores/connectionStore';
@@ -13,7 +13,6 @@ import { useEnvironmentStore } from '../../stores/environmentStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { useRequestStore } from '../../stores/requestStore';
 import { useUiStore } from '../../stores/uiStore';
-import { usePlanStore } from '../../stores/planStore';
 import { ConversationTurn } from '../shared/MessageBubble';
 import { ThinkingIndicator } from '../shared/ThinkingIndicator';
 import { AttachmentChip } from '../shared/AttachmentChip';
@@ -22,7 +21,7 @@ import {
   MANAGED_PROVIDERS, PROVIDER_META, PROVIDER_MODELS,
   type ManagedProvider, type AgentMode,
 } from '../../lib/agentRunner';
-import type { ChatAttachment, ContextMention, ContextMentionType, Plan } from '@shared/types';
+import type { ChatAttachment, ContextMention, ContextMentionType } from '@shared/types';
 
 const AI_KEY_STORAGE = 'ruke:ai_key';
 
@@ -355,15 +354,6 @@ function HistoryItem({ session, isOpen, onSelect, onArchive, onUnarchive, onDele
   );
 }
 
-function PlanStepIcon({ status }: { status: string }) {
-  switch (status) {
-    case 'done': return <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />;
-    case 'in_progress': return <Loader2 size={13} className="text-amber-400 shrink-0 animate-spin" />;
-    case 'failed': return <XCircle size={13} className="text-red-400 shrink-0" />;
-    case 'skipped': return <SkipForward size={13} className="text-text-muted shrink-0" />;
-    default: return <Circle size={13} className="text-text-muted/40 shrink-0" />;
-  }
-}
 
 interface InputToolbarProps {
   agentMode: AgentMode;
@@ -423,7 +413,7 @@ function InputToolbar({ agentMode, setAgentMode, sendButton, compact }: InputToo
   ];
 
   return (
-    <div className={`flex items-center justify-between ${compact ? 'pb-1.5 pt-1' : 'pb-2.5 pt-1.5'}`}>
+    <div className={`flex items-center justify-between ${compact ? 'pb-1.5 pt-1' : 'pb-2 pt-1'}`}>
       <div className="flex items-center gap-1">
         <div ref={modePickerRef}>
           <button
@@ -539,107 +529,6 @@ function InputToolbar({ agentMode, setAgentMode, sendButton, compact }: InputToo
   );
 }
 
-function InlinePlanView({ plan, onExecute, onStop }: { plan: Plan; onExecute: () => void; onStop: () => void }) {
-  const [collapsed, setCollapsed] = useState(plan.status === 'completed');
-  const done = plan.steps.filter(s => s.status === 'done' || s.status === 'skipped').length;
-  const total = plan.steps.length;
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-
-  useEffect(() => {
-    if (plan.status === 'completed') setCollapsed(true);
-  }, [plan.status]);
-
-  const borderClass = plan.status === 'in_progress'
-    ? 'border-accent/30'
-    : plan.status === 'completed'
-      ? 'border-emerald-400/20'
-      : plan.status === 'failed'
-        ? 'border-red-400/20'
-        : 'border-amber-400/20';
-
-  const statusBadge = plan.status === 'completed'
-    ? <span className="text-[10px] font-medium text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">Completed</span>
-    : plan.status === 'failed'
-      ? <span className="text-[10px] font-medium text-red-400 bg-red-400/10 px-1.5 py-0.5 rounded-full">Failed</span>
-      : plan.status === 'in_progress'
-        ? <span className="text-[10px] font-medium text-accent bg-accent/10 px-1.5 py-0.5 rounded-full">Running</span>
-        : null;
-
-  return (
-    <div className={`rounded-xl border bg-bg-secondary/50 transition-all ${borderClass} ${
-      plan.status === 'in_progress' ? 'plan-glow' : ''
-    }`}>
-      {/* Header */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-bg-hover/30 transition-colors rounded-t-xl"
-      >
-        <ListChecks size={14} className={`shrink-0 ${
-          plan.status === 'completed' ? 'text-emerald-400' :
-          plan.status === 'in_progress' ? 'text-accent' :
-          'text-amber-400'
-        }`} />
-        <span className="text-sm font-medium text-text-primary flex-1 text-left truncate">{plan.title}</span>
-        {statusBadge}
-        <span className="text-[10px] text-text-muted shrink-0 tabular-nums">{done}/{total}</span>
-        <ChevronRight size={12} className={`text-text-muted shrink-0 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
-      </button>
-
-      {/* Progress bar */}
-      {plan.status !== 'draft' && plan.status !== 'completed' && (
-        <div className="mx-3.5 h-0.5 rounded-full bg-bg-tertiary overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              plan.status === 'failed' ? 'bg-red-400' : 'bg-accent'
-            }`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      )}
-
-      {/* Steps */}
-      {!collapsed && (
-        <div className="px-3.5 pt-2 pb-1 space-y-0.5">
-          {plan.steps.map(step => (
-            <div key={step.id} className="flex items-start gap-2.5 py-1">
-              <PlanStepIcon status={step.status} />
-              <span className={`text-xs leading-snug ${
-                step.status === 'done' ? 'text-text-muted line-through' :
-                step.status === 'in_progress' ? 'text-text-primary font-medium' :
-                step.status === 'failed' ? 'text-red-400' :
-                step.status === 'skipped' ? 'text-text-muted' :
-                'text-text-secondary'
-              }`}>{step.description}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Footer actions */}
-      {plan.status === 'draft' && (
-        <div className="px-3.5 pb-3 pt-2">
-          <button
-            onClick={onExecute}
-            className="w-full py-2 rounded-lg text-sm font-medium text-white bg-accent hover:bg-accent-hover transition-all"
-            style={{ boxShadow: '0 0 16px rgba(99,102,241,0.4), 0 0 32px rgba(99,102,241,0.15)' }}
-          >
-            Execute Plan
-          </button>
-        </div>
-      )}
-      {plan.status === 'in_progress' && (
-        <div className="px-3.5 pb-3 pt-2">
-          <button
-            onClick={onStop}
-            className="w-full py-1.5 rounded-lg text-xs font-medium text-text-secondary bg-bg-tertiary hover:bg-bg-hover border border-border transition-all"
-          >
-            Stop Execution
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function AgentPanel() {
   const sessions = useChatStore(s => s.sessions);
@@ -656,9 +545,6 @@ export function AgentPanel() {
   const messageQueue = useChatStore(s => s.messageQueue);
   const removeQueuedMessage = useChatStore(s => s.removeQueuedMessage);
   const setAiPanelOpen = useUiStore(s => s.setAiPanelOpen);
-
-  const plans = usePlanStore(s => s.plans);
-  const activePlanId = usePlanStore(s => s.activePlanId);
 
   const [input, setInput] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
@@ -696,14 +582,6 @@ export function AgentPanel() {
     [sessions, activeSessionId]
   );
 
-  const activePlan = useMemo(() => {
-    if (activePlanId) {
-      const p = plans.find(pl => pl.id === activePlanId && pl.chatSessionId === activeSessionId);
-      if (p) return p;
-    }
-    return plans.find(p => p.chatSessionId === activeSessionId) || null;
-  }, [activePlanId, plans, activeSessionId]);
-
   const hasHistory = useMemo(
     () => sessions.some(s => s.messages.length > 0),
     [sessions]
@@ -730,7 +608,7 @@ export function AgentPanel() {
   }, [visibleMessages]);
 
   const hasActiveTab = !!activeSession && openTabIds.includes(activeSessionId);
-  const isEmpty = visibleMessages.length === 0 && !isRunning && !activePlan;
+  const isEmpty = visibleMessages.length === 0 && !isRunning;
   const canSend = hasActiveTab && (input.trim() || attachedFiles.length > 0);
 
   const mentionItems = useMemo(() => {
@@ -886,16 +764,7 @@ export function AgentPanel() {
     sendMessage(content, undefined, agentMode);
   }, [sendMessage, agentMode]);
 
-  const executePlan = useCallback((plan: Plan) => {
-    const currentSessionId = useChatStore.getState().activeSessionId;
-    if (currentSessionId && plan.chatSessionId !== currentSessionId) {
-      usePlanStore.getState().updatePlanSession(plan.id, currentSessionId);
-    }
-    usePlanStore.getState().updatePlanStatus(plan.id, 'in_progress');
-    const stepsList = plan.steps.map((s, i) => `${i + 1}. [step_id:${s.id}] ${s.description}`).join('\n');
-    const msg = `Execute plan "${plan.title}" (plan_id: ${plan.id}).\n\nWork through each step sequentially:\n${stepsList}`;
-    sendMessage(msg, undefined, 'agent');
-  }, [sendMessage]);
+
 
   const addMention = useCallback((item: { type: ContextMentionType; id: string; label: string; meta?: string }) => {
     if (mentions.some(m => m.id === item.id && m.type === item.type)) return;
@@ -1013,7 +882,7 @@ export function AgentPanel() {
     >
 
       {/* Session tabs */}
-      <div className="flex items-center gap-1 px-1.5 py-1.5 shrink-0 bg-bg-secondary/40">
+      <div className="flex items-center gap-1 px-2.5 py-1.5 shrink-0 bg-bg-secondary/40">
         <div ref={tabsRef} className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none">
           {openTabs.map(s => (
             <SessionTab
@@ -1124,20 +993,6 @@ export function AgentPanel() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-          {/* Pinned plan banner */}
-          {activePlan && (
-            <div className="shrink-0 z-10 border-b border-border shadow-sm">
-              <InlinePlanView
-                plan={activePlan}
-                onExecute={() => executePlan(activePlan)}
-                onStop={() => {
-                  stopGeneration();
-                  usePlanStore.getState().updatePlanStatus(activePlan.id, 'draft');
-                }}
-              />
-            </div>
-          )}
-
           <div ref={scrollRef} className="flex-1 overflow-y-auto relative z-0">
             <div>
               {conversationTurns.map((turn, i) => {
@@ -1298,7 +1153,7 @@ export function AgentPanel() {
             )}
 
             {/* Textarea */}
-            <div className="py-1.5 relative">
+            <div className="pt-2 pb-1 relative">
               <textarea
                 ref={inputRef}
                 value={input}

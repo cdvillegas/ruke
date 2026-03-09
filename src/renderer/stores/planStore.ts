@@ -33,6 +33,10 @@ interface PlanState {
   updatePlanStep: (planId: string, stepId: string, status: PlanStepStatus) => void;
   updatePlanStatus: (planId: string, status: PlanStatus) => void;
   updatePlanSession: (planId: string, chatSessionId: string) => void;
+  updateStepDescription: (planId: string, stepId: string, description: string) => void;
+  addPlanStep: (planId: string, description: string, afterStepId?: string) => void;
+  removePlanStep: (planId: string, stepId: string) => void;
+  updatePlanTitle: (planId: string, title: string) => void;
   deletePlan: (planId: string) => void;
   setActivePlan: (planId: string | null) => void;
   getPlan: (planId: string) => Plan | undefined;
@@ -85,6 +89,51 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   updatePlanSession: (planId, chatSessionId) => {
     const updated = get().plans.map(p =>
       p.id === planId ? { ...p, chatSessionId, updatedAt: new Date().toISOString() } : p
+    );
+    set({ plans: updated });
+    savePlans(updated);
+  },
+
+  updateStepDescription: (planId, stepId, description) => {
+    const updated = get().plans.map(p => {
+      if (p.id !== planId) return p;
+      const steps = p.steps.map(s => s.id === stepId ? { ...s, description } : s);
+      return { ...p, steps, updatedAt: new Date().toISOString() };
+    });
+    set({ plans: updated });
+    savePlans(updated);
+  },
+
+  addPlanStep: (planId, description, afterStepId) => {
+    const updated = get().plans.map(p => {
+      if (p.id !== planId) return p;
+      const newStep: PlanStep = { id: nanoid(), description, status: 'pending' as PlanStepStatus };
+      const steps = [...p.steps];
+      if (afterStepId) {
+        const idx = steps.findIndex(s => s.id === afterStepId);
+        steps.splice(idx + 1, 0, newStep);
+      } else {
+        steps.push(newStep);
+      }
+      return { ...p, steps, updatedAt: new Date().toISOString() };
+    });
+    set({ plans: updated });
+    savePlans(updated);
+  },
+
+  removePlanStep: (planId, stepId) => {
+    const updated = get().plans.map(p => {
+      if (p.id !== planId) return p;
+      const steps = p.steps.filter(s => s.id !== stepId);
+      return { ...p, steps, status: derivePlanStatus(steps), updatedAt: new Date().toISOString() };
+    });
+    set({ plans: updated });
+    savePlans(updated);
+  },
+
+  updatePlanTitle: (planId, title) => {
+    const updated = get().plans.map(p =>
+      p.id === planId ? { ...p, title, updatedAt: new Date().toISOString() } : p
     );
     set({ plans: updated });
     savePlans(updated);

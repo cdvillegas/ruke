@@ -223,7 +223,7 @@ export const ConversationTurn = React.memo(React.forwardRef<HTMLDivElement, Conv
 
       {/* Assistant response content */}
       {assistantMessages.length > 0 && (
-        <div className="px-3 pb-3 space-y-2">
+        <div className="px-5 pb-3 space-y-2">
           {assistantMessages.map(msg => (
             <AssistantBubble
               key={msg.id}

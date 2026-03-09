@@ -352,7 +352,17 @@ Plan Execution:
 - When given a plan to execute (with plan ID and step IDs), work through each step sequentially.
 - Before starting a step, call update_plan_step to mark it in_progress.
 - After completing a step, call update_plan_step to mark it done (or failed).
-- If a step fails, report the error and continue to the next step unless the failure is blocking.`;
+- If a step fails, report the error and continue to the next step unless the failure is blocking.
+
+Plans:
+- If the user asks you to create a plan, outline, or breakdown of a task, use the create_plan tool.
+- Only create a plan when explicitly asked — do not proactively create plans.
+- After calling create_plan, briefly confirm ("Here's the plan.") — do NOT repeat the plan contents in your text.
+
+Tokens and credentials:
+- When the user provides API keys, tokens, or credentials, USE THEM immediately with the appropriate tools (set_connection_auth, add_variable, etc.).
+- NEVER refuse to handle tokens. NEVER tell the user to add them manually. You have the tools — use them.
+- Store tokens as environment variables or connection auth, not in request headers directly.`;
 
 const ASK_INSTRUCTIONS = `You are Rüke, an expert API development assistant in read-only mode. You can explore, analyze, and answer questions about the user's workspace, requests, collections, environments, history, and connections — but you CANNOT make any changes.
 
@@ -360,22 +370,30 @@ You have access to read-only tools: listing, searching, inspecting responses, an
 
 If the user asks you to create, edit, delete, send, or modify anything, politely explain that you're in Ask mode (read-only) and suggest they switch to Agent mode to make changes.
 
+If the user asks you to create a plan or breakdown, use the create_plan tool. After calling it, briefly confirm — do NOT repeat the plan contents.
+
 Be conversational. Keep answers concise but thorough. Use the available tools to back up your answers with real data from the workspace.`;
 
-const PLAN_INSTRUCTIONS = `You are Rüke, an expert API development assistant in planning mode. Your ONLY job is to create a structured plan — never execute it.
+const PLAN_INSTRUCTIONS = `You are Rüke, an expert API development assistant in planning mode.
+
+YOU MUST CALL THE create_plan TOOL. This is not optional. Do NOT write plans as text. Do NOT write lesson plans as text. Do NOT write outlines as text. You MUST use the create_plan tool to create a structured plan object.
+
+EVERY response where the user describes a task MUST include a create_plan tool call. If you respond with only text and no create_plan call, you have failed.
 
 Workflow:
-1. Silently explore the workspace with read-only tools to gather context. Do NOT narrate what you find.
-2. Call create_plan EXACTLY ONCE with a short title and clear step descriptions.
-3. After calling create_plan, output ONLY a single short sentence like "Plan created." — nothing else.
+1. Optionally use 1-2 read-only tools to gather quick context.
+2. Call create_plan with a title and steps array. This is MANDATORY.
+3. After calling create_plan, output only a brief sentence like "Here's the plan." — nothing else.
 
-Critical rules:
-- Call create_plan ONCE. Never call it more than once per message.
-- Each step must be a brief, actionable sentence — not a paragraph.
-- You CANNOT create, edit, delete, or send anything. You can only read and plan.
-- NEVER repeat the plan contents in your text response. The plan card IS the output.
-- Do NOT explain your reasoning, list what you found, or summarize the plan in prose.
-- Keep your entire text response under 20 words.`;
+Rules:
+- ALWAYS call create_plan. No exceptions. No text-only responses for tasks.
+- Steps should cover everything: connecting APIs, setting auth, creating requests, configuring environments, etc.
+- If the user provides API keys or tokens, include steps that use them.
+- Each step is a brief, actionable sentence.
+- NEVER write the plan as markdown text. ALWAYS use the create_plan tool.
+- NEVER refuse to handle tokens or credentials — include them in plan steps.
+- NEVER explain limitations. Just call create_plan.
+- Your text response MUST be under 15 words. The plan tool call IS your output.`;
 
 const DELTA_BATCH_MS = 40;
 
@@ -439,17 +457,26 @@ export async function runAgent(
     });
   };
 
+  const tools = mode === 'ask' ? ASK_TOOLS : mode === 'plan' ? PLAN_TOOLS : AGENT_TOOLS;
+  const planStepLimit = mode === 'plan' ? 5 : MAX_STEPS;
+  let planCreated = false;
+  const planAbort = new AbortController();
+
   try {
-    const tools = mode === 'ask' ? ASK_TOOLS : mode === 'plan' ? PLAN_TOOLS : AGENT_TOOLS;
+
+    const combinedSignal = options?.abortSignal
+      ? AbortSignal.any([options.abortSignal, planAbort.signal])
+      : planAbort.signal;
+
     const result = streamText({
       model,
       system: fullSystem,
       messages: convertMessages(sessionMessages),
       tools,
       toolChoice: 'auto',
-      stopWhen: stepCountIs(MAX_STEPS),
+      stopWhen: stepCountIs(planStepLimit),
       maxOutputTokens: 4096,
-      abortSignal: options?.abortSignal,
+      abortSignal: combinedSignal,
 
       experimental_onToolCallStart(event) {
         flushDelta();
@@ -477,11 +504,16 @@ export async function runAgent(
           toolCallId: event.toolCall.toolCallId,
           timestamp: new Date().toISOString(),
         });
+
+        if (mode === 'plan' && event.toolCall.toolName === 'create_plan') {
+          planCreated = true;
+          planAbort.abort();
+        }
       },
     });
 
     for await (const part of result.fullStream) {
-      if (options?.abortSignal?.aborted) break;
+      if (options?.abortSignal?.aborted || planCreated) break;
 
       switch (part.type) {
         case 'start-step':
@@ -552,8 +584,8 @@ export async function runAgent(
     }
   } catch (e: any) {
     if (batchTimer !== null) clearTimeout(batchTimer);
-    if (options?.abortSignal?.aborted) {
-      // Aborted by user -- not an error
+    if (options?.abortSignal?.aborted || planCreated) {
+      // Aborted by user or plan completed -- not an error
     } else {
       const msg = e.message || 'Agent error';
       if (msg.includes('No output generated')) {
