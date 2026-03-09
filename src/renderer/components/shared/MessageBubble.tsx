@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ToolCallCard } from './ToolCallCard';
 import { AssistantMessage } from './markdownComponents';
 import { AttachmentChip } from './AttachmentChip';
@@ -75,30 +75,32 @@ export interface ConversationTurnProps {
   streamingMessageId: string | null;
   onResend?: (content: string) => void;
   isLast?: boolean;
+  minHeight?: number;
 }
 
-export const ConversationTurn = React.memo(function ConversationTurn({
+export const ConversationTurn = React.memo(React.forwardRef<HTMLDivElement, ConversationTurnProps>(function ConversationTurn({
   userMessage,
   assistantMessages,
   streamingMessageId,
   onResend,
   isLast,
-}: ConversationTurnProps) {
+  minHeight,
+}, forwardedRef) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const turnRef = useRef<HTMLDivElement>(null);
+  const internalRef = useRef<HTMLDivElement>(null);
+
+  const turnRef = useCallback((node: HTMLDivElement | null) => {
+    internalRef.current = node;
+    if (typeof forwardedRef === 'function') forwardedRef(node);
+    else if (forwardedRef) forwardedRef.current = node;
+  }, [forwardedRef]);
 
   const raw = userMessage.attachments?.length
     ? (userMessage.content || '').replace(/<file[\s\S]*?<\/file>/g, '').trim()
     : userMessage.content || '';
   const { text: displayContent, contexts } = useMemo(() => parseUserContent(raw), [raw]);
-
-  useEffect(() => {
-    if (isLast && turnRef.current) {
-      turnRef.current.scrollIntoView({ block: 'start' });
-    }
-  }, [userMessage.id, isLast]);
 
   useEffect(() => {
     if (editing && textareaRef.current) {
@@ -138,7 +140,7 @@ export const ConversationTurn = React.memo(function ConversationTurn({
   };
 
   return (
-    <div ref={turnRef} className={isLast ? 'min-h-full' : ''}>
+    <div ref={turnRef} style={minHeight ? { minHeight } : undefined}>
       {/* Sticky user message header */}
       <div className="sticky top-0 z-10">
         <div className="bg-bg-secondary px-2.5 pt-1.5 pb-1">
@@ -216,7 +218,6 @@ export const ConversationTurn = React.memo(function ConversationTurn({
             )}
           </div>
         </div>
-        </div>
         <div className="h-6 bg-gradient-to-b from-bg-secondary to-transparent pointer-events-none" />
       </div>
 
@@ -234,4 +235,4 @@ export const ConversationTurn = React.memo(function ConversationTurn({
       )}
     </div>
   );
-});
+}));

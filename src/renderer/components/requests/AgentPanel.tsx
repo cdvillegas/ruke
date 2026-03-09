@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import {
   Send, Plus, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, X,
@@ -365,6 +365,180 @@ function PlanStepIcon({ status }: { status: string }) {
   }
 }
 
+interface InputToolbarProps {
+  agentMode: AgentMode;
+  setAgentMode: (mode: AgentMode) => void;
+  sendButton?: React.ReactNode;
+  compact?: boolean;
+}
+
+function InputToolbar({ agentMode, setAgentMode, sendButton, compact }: InputToolbarProps) {
+  const [showModePicker, setShowModePicker] = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [modelTick, setModelTick] = useState(0);
+  const modePickerRef = useRef<HTMLDivElement>(null);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
+
+  const currentConfig = useMemo(() => { void modelTick; return getModelConfig(); }, [modelTick]);
+  const configuredProviders = useMemo(() => { void modelTick; return getConfiguredProviders(); }, [modelTick]);
+  const activeModelShort = useMemo(() => {
+    if (!currentConfig) return '';
+    const provider = MANAGED_PROVIDERS.find(p => p === currentConfig.provider);
+    if (provider) {
+      const models = PROVIDER_MODELS[provider];
+      const match = models.find(m => m.id === currentConfig.model);
+      if (match) return match.label;
+    }
+    const m = currentConfig.model;
+    if (m.length > 16) return m.slice(0, 14) + '…';
+    return m;
+  }, [currentConfig]);
+
+  const handleSelectModel = useCallback((provider: ManagedProvider, modelId: string) => {
+    selectModel(provider, modelId);
+    setModelTick(t => t + 1);
+    setShowModelPicker(false);
+  }, []);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) setShowModelPicker(false);
+      if (modePickerRef.current && !modePickerRef.current.contains(e.target as Node)) setShowModePicker(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const modeStyles = {
+    agent: { bg: 'bg-accent/8', border: 'border-accent/15', text: 'text-accent/80', hover: 'hover:bg-accent/12', shadow: 'shadow-[0_0_8px_rgba(99,102,241,0.12)]' },
+    ask: { bg: 'bg-emerald-500/8', border: 'border-emerald-500/15', text: 'text-emerald-400/80', hover: 'hover:bg-emerald-500/12', shadow: 'shadow-[0_0_8px_rgba(52,211,153,0.12)]' },
+    plan: { bg: 'bg-amber-500/8', border: 'border-amber-500/15', text: 'text-amber-400/80', hover: 'hover:bg-amber-500/12', shadow: 'shadow-[0_0_8px_rgba(251,191,36,0.12)]' },
+  };
+  const s = modeStyles[agentMode];
+
+  const modeOptions = [
+    { mode: 'agent' as const, icon: Bot, label: 'Agent', desc: 'Can modify your workspace', color: 'text-accent/80', activeBg: 'bg-accent/8' },
+    { mode: 'ask' as const, icon: Eye, label: 'Ask', desc: 'Read-only, answers questions', color: 'text-emerald-400/80', activeBg: 'bg-emerald-500/8' },
+    { mode: 'plan' as const, icon: ListChecks, label: 'Plan', desc: 'Creates plans, no execution', color: 'text-amber-400/80', activeBg: 'bg-amber-500/8' },
+  ];
+
+  return (
+    <div className={`flex items-center justify-between ${compact ? 'pb-1.5 pt-1' : 'pb-2.5 pt-1.5'}`}>
+      <div className="flex items-center gap-1">
+        <div ref={modePickerRef}>
+          <button
+            onClick={() => { setShowModePicker(!showModePicker); setShowModelPicker(false); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all ${s.bg} ${s.border} ${s.text} ${s.hover} ${s.shadow}`}
+          >
+            {agentMode === 'agent' && <Infinity size={12} className="shrink-0" />}
+            {agentMode === 'ask' && <Eye size={12} className="shrink-0" />}
+            {agentMode === 'plan' && <ListChecks size={12} className="shrink-0" />}
+            <span>{agentMode === 'agent' ? 'Agent' : agentMode === 'plan' ? 'Plan' : 'Ask'}</span>
+            <ChevronDown size={10} className="shrink-0 opacity-60" />
+          </button>
+
+          {showModePicker && (
+            <div
+              className="fixed w-52 bg-bg-secondary border border-border rounded-xl shadow-2xl z-[100] py-1 animate-fade-in"
+              style={{
+                bottom: window.innerHeight - (modePickerRef.current?.getBoundingClientRect().top ?? 0) + 4,
+                left: modePickerRef.current?.getBoundingClientRect().left ?? 0,
+              }}
+            >
+              {modeOptions.map(opt => {
+                const isActive = agentMode === opt.mode;
+                return (
+                  <button
+                    key={opt.mode}
+                    onClick={() => { setAgentMode(opt.mode); setShowModePicker(false); }}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors ${
+                      isActive ? `${opt.activeBg} ${opt.color}` : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <opt.icon size={13} className={isActive ? opt.color : 'text-text-muted'} />
+                      <div className="flex flex-col items-start">
+                        <span className="font-medium">{opt.label}</span>
+                        <span className="text-[10px] text-text-muted">{opt.desc}</span>
+                      </div>
+                    </div>
+                    {isActive && <Check size={11} className="shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div ref={modelPickerRef}>
+          <button
+            onClick={() => { setShowModelPicker(!showModelPicker); setShowModePicker(false); }}
+            className="flex items-center gap-1 px-1.5 py-1 text-xs font-medium transition-all text-text-muted hover:text-text-primary"
+          >
+            <span className="max-w-[100px] truncate">{activeModelShort || 'Model'}</span>
+            <ChevronDown size={10} className="shrink-0" />
+          </button>
+
+          {showModelPicker && (
+            <div
+              className="fixed w-64 bg-bg-secondary border border-border rounded-xl shadow-2xl z-[100] py-1 animate-fade-in max-h-72 overflow-y-auto"
+              style={{
+                bottom: window.innerHeight - (modelPickerRef.current?.getBoundingClientRect().top ?? 0) + 4,
+                left: modelPickerRef.current?.getBoundingClientRect().left ?? 0,
+              }}
+            >
+              {configuredProviders.length === 0 ? (
+                <div className="px-3 py-2.5 text-xs text-text-muted">
+                  No API keys configured. Add keys in Settings.
+                </div>
+              ) : (
+                configuredProviders.map((provider, idx) => {
+                  const meta = PROVIDER_META[provider];
+                  const models = PROVIDER_MODELS[provider];
+                  return (
+                    <div key={provider}>
+                      {idx > 0 && <div className="border-t border-border my-1" />}
+                      <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                        {meta.label}
+                      </div>
+                      {models.map(model => {
+                        const isActive = currentConfig?.provider === provider && currentConfig?.model === model.id;
+                        return (
+                          <button
+                            key={model.id}
+                            onClick={() => handleSelectModel(provider, model.id)}
+                            className={`w-full flex items-center justify-between px-3 py-1.5 text-xs transition-colors ${
+                              isActive ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{model.label}</span>
+                              {model.description && (
+                                <span className="text-[10px] text-text-muted">{model.description}</span>
+                              )}
+                            </div>
+                            {isActive && <Check size={11} className="shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {sendButton && (
+        <div className="flex items-center gap-1.5">
+          {sendButton}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InlinePlanView({ plan, onExecute, onStop }: { plan: Plan; onExecute: () => void; onStop: () => void }) {
   const [collapsed, setCollapsed] = useState(plan.status === 'completed');
   const done = plan.steps.filter(s => s.status === 'done' || s.status === 'skipped').length;
@@ -491,11 +665,8 @@ export function AgentPanel() {
   const [mentions, setMentions] = useState<ContextMention[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [showModelPicker, setShowModelPicker] = useState(false);
-  const [showModePicker, setShowModePicker] = useState(false);
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
-  const [modelTick, setModelTick] = useState(0);
   const [agentMode, setAgentMode] = useState<AgentMode>('agent');
   const [queueExpanded, setQueueExpanded] = useState(true);
   const [filesExpanded, setFilesExpanded] = useState(false);
@@ -505,8 +676,6 @@ export function AgentPanel() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRafRef = useRef<number | null>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
-  const modelPickerRef = useRef<HTMLDivElement>(null);
-  const modePickerRef = useRef<HTMLDivElement>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
 
   const streamingMessageId = useChatStore(s => s.streamingMessageId);
@@ -594,44 +763,8 @@ export function AgentPanel() {
 
   const showThinking = isRunning && !streamingMessageId;
 
-  const currentConfig = useMemo(() => {
-    void modelTick;
-    return getModelConfig();
-  }, [modelTick]);
-
-  const configuredProviders = useMemo(() => {
-    void modelTick;
-    return getConfiguredProviders();
-  }, [modelTick]);
-
-  const activeProviderLabel = useMemo(() => {
-    if (!currentConfig) return 'No AI';
-    const managed = MANAGED_PROVIDERS.find(p => p === currentConfig.provider);
-    if (managed) return PROVIDER_META[managed].label;
-    return currentConfig.provider;
-  }, [currentConfig]);
-
-  const activeModelShort = useMemo(() => {
-    if (!currentConfig) return '';
-    const provider = MANAGED_PROVIDERS.find(p => p === currentConfig.provider);
-    if (provider) {
-      const models = PROVIDER_MODELS[provider];
-      const match = models.find(m => m.id === currentConfig.model);
-      if (match) return match.label;
-    }
-    const m = currentConfig.model;
-    if (m.length > 16) return m.slice(0, 14) + '…';
-    return m;
-  }, [currentConfig]);
-
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
-        setShowModelPicker(false);
-      }
-      if (modePickerRef.current && !modePickerRef.current.contains(e.target as Node)) {
-        setShowModePicker(false);
-      }
       if (mentionMenuRef.current && !mentionMenuRef.current.contains(e.target as Node)) {
         setShowMentionMenu(false);
         setMentionQuery('');
@@ -657,12 +790,6 @@ export function AgentPanel() {
     }
   }, []);
 
-  const handleSelectModel = useCallback((provider: ManagedProvider, modelId: string) => {
-    selectModel(provider, modelId);
-    setModelTick(t => t + 1);
-    setShowModelPicker(false);
-  }, []);
-
   useEffect(() => {
     if (openTabIds.length === 0) {
       setAiPanelOpen(false);
@@ -685,23 +812,45 @@ export function AgentPanel() {
     inputRef.current?.focus();
   }, [activeSessionId]);
 
+  const lastTurnRef = useRef<HTMLDivElement>(null);
+  const prevUserMsgId = useRef<string | null>(null);
   const userAtBottom = useRef(true);
+  const [scrollViewportH, setScrollViewportH] = useState(0);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+
     const onScroll = () => {
       userAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     };
     el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+
+    const ro = new ResizeObserver(() => setScrollViewportH(el.clientHeight));
+    ro.observe(el);
+    setScrollViewportH(el.clientHeight);
+
+    return () => { el.removeEventListener('scroll', onScroll); ro.disconnect(); };
   }, []);
+
+  useLayoutEffect(() => {
+    const lastTurn = conversationTurns[conversationTurns.length - 1];
+    const lastUserId = lastTurn?.userMessage.role === 'user' ? lastTurn.userMessage.id : null;
+
+    if (lastUserId && lastUserId !== prevUserMsgId.current) {
+      prevUserMsgId.current = lastUserId;
+      requestAnimationFrame(() => {
+        lastTurnRef.current?.scrollIntoView({ block: 'start' });
+        userAtBottom.current = true;
+      });
+    }
+  }, [conversationTurns]);
 
   useEffect(() => {
     if (userAtBottom.current) {
       bottomRef.current?.scrollIntoView({ block: 'end' });
     }
-  }, [visibleMessages.length, streamTick, showThinking]);
+  }, [streamTick, showThinking]);
 
   const handleSend = useCallback(async () => {
     if (!canSend) return;
@@ -991,16 +1140,21 @@ export function AgentPanel() {
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto relative z-0">
             <div>
-              {conversationTurns.map((turn, i) => (
-                <ConversationTurn
-                  key={turn.userMessage.id}
-                  userMessage={turn.userMessage}
-                  assistantMessages={turn.assistantMessages}
-                  streamingMessageId={streamingMessageId}
-                  onResend={turn.userMessage.role === 'user' ? handleResend : undefined}
-                  isLast={i === conversationTurns.length - 1}
-                />
-              ))}
+              {conversationTurns.map((turn, i) => {
+                const isLast = i === conversationTurns.length - 1;
+                return (
+                  <ConversationTurn
+                    key={turn.userMessage.id}
+                    ref={isLast ? lastTurnRef : undefined}
+                    userMessage={turn.userMessage}
+                    assistantMessages={turn.assistantMessages}
+                    streamingMessageId={streamingMessageId}
+                    onResend={turn.userMessage.role === 'user' ? handleResend : undefined}
+                    isLast={isLast}
+                    minHeight={isLast ? scrollViewportH : undefined}
+                  />
+                );
+              })}
               {showThinking && (
                 <div className="flex justify-start px-3 py-2">
                   <div className="flex items-center gap-1.5">
@@ -1202,134 +1356,11 @@ export function AgentPanel() {
               )}
             </div>
 
-            {/* Toolbar: mode picker, model picker, send/stop */}
-            <div className="flex items-center justify-between pb-2.5 pt-1.5">
-              {/* Left: mode picker + model picker */}
-              <div className="flex items-center gap-1">
-                <div ref={modePickerRef}>
-                  {(() => {
-                    const modeStyles = {
-                      agent: { bg: 'bg-accent/8', border: 'border-accent/15', text: 'text-accent/80', hover: 'hover:bg-accent/12', shadow: 'shadow-[0_0_8px_rgba(99,102,241,0.12)]' },
-                      ask: { bg: 'bg-emerald-500/8', border: 'border-emerald-500/15', text: 'text-emerald-400/80', hover: 'hover:bg-emerald-500/12', shadow: 'shadow-[0_0_8px_rgba(52,211,153,0.12)]' },
-                      plan: { bg: 'bg-amber-500/8', border: 'border-amber-500/15', text: 'text-amber-400/80', hover: 'hover:bg-amber-500/12', shadow: 'shadow-[0_0_8px_rgba(251,191,36,0.12)]' },
-                    };
-                    const s = modeStyles[agentMode];
-                    return (
-                      <button
-                        onClick={() => { setShowModePicker(!showModePicker); setShowModelPicker(false); }}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all ${s.bg} ${s.border} ${s.text} ${s.hover} ${s.shadow}`}
-                        title={agentMode === 'agent' ? 'Agent mode — can read and modify' : agentMode === 'plan' ? 'Plan mode — creates plans' : 'Ask mode — read-only'}
-                      >
-                        {agentMode === 'agent' && <Infinity size={12} className="shrink-0" />}
-                        {agentMode === 'ask' && <Eye size={12} className="shrink-0" />}
-                        {agentMode === 'plan' && <ListChecks size={12} className="shrink-0" />}
-                        <span>{agentMode === 'agent' ? 'Agent' : agentMode === 'plan' ? 'Plan' : 'Ask'}</span>
-                        <ChevronDown size={10} className="shrink-0 opacity-60" />
-                      </button>
-                    );
-                  })()}
-
-                  {showModePicker && (
-                    <div
-                      className="fixed w-52 bg-bg-secondary border border-border rounded-xl shadow-2xl z-[100] py-1 animate-fade-in"
-                      style={{
-                        bottom: window.innerHeight - (modePickerRef.current?.getBoundingClientRect().top ?? 0) + 4,
-                        left: modePickerRef.current?.getBoundingClientRect().left ?? 0,
-                      }}
-                    >
-                      {([
-                        { mode: 'agent' as const, icon: Bot, label: 'Agent', desc: 'Can modify your workspace', color: 'text-accent/80', activeBg: 'bg-accent/8' },
-                        { mode: 'ask' as const, icon: Eye, label: 'Ask', desc: 'Read-only, answers questions', color: 'text-emerald-400/80', activeBg: 'bg-emerald-500/8' },
-                        { mode: 'plan' as const, icon: ListChecks, label: 'Plan', desc: 'Creates plans, no execution', color: 'text-amber-400/80', activeBg: 'bg-amber-500/8' },
-                      ]).map(opt => {
-                        const isActive = agentMode === opt.mode;
-                        return (
-                          <button
-                            key={opt.mode}
-                            onClick={() => { setAgentMode(opt.mode); setShowModePicker(false); }}
-                            className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors ${
-                              isActive ? `${opt.activeBg} ${opt.color}` : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <opt.icon size={13} className={isActive ? opt.color : 'text-text-muted'} />
-                              <div className="flex flex-col items-start">
-                                <span className="font-medium">{opt.label}</span>
-                                <span className="text-[10px] text-text-muted">{opt.desc}</span>
-                              </div>
-                            </div>
-                            {isActive && <Check size={11} className="shrink-0" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div ref={modelPickerRef}>
-                  <button
-                    onClick={() => { setShowModelPicker(!showModelPicker); setShowModePicker(false); }}
-                    className="flex items-center gap-1 px-1.5 py-1 text-xs font-medium transition-all text-text-muted hover:text-text-primary"
-                    title={currentConfig ? `${activeProviderLabel} · ${currentConfig.model}` : 'Select AI model'}
-                  >
-                    <span className="max-w-[100px] truncate">{activeModelShort || 'Model'}</span>
-                    <ChevronDown size={10} className="shrink-0" />
-                  </button>
-
-                  {showModelPicker && (
-                    <div
-                      className="fixed w-64 bg-bg-secondary border border-border rounded-xl shadow-2xl z-[100] py-1 animate-fade-in max-h-72 overflow-y-auto"
-                      style={{
-                        bottom: window.innerHeight - (modelPickerRef.current?.getBoundingClientRect().top ?? 0) + 4,
-                        left: modelPickerRef.current?.getBoundingClientRect().left ?? 0,
-                      }}
-                    >
-                      {configuredProviders.length === 0 ? (
-                        <div className="px-3 py-2.5 text-xs text-text-muted">
-                          No API keys configured. Add keys in Settings.
-                        </div>
-                      ) : (
-                        configuredProviders.map((provider, idx) => {
-                          const meta = PROVIDER_META[provider];
-                          const models = PROVIDER_MODELS[provider];
-                          return (
-                            <div key={provider}>
-                              {idx > 0 && <div className="border-t border-border my-1" />}
-                              <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                                {meta.label}
-                              </div>
-                              {models.map(model => {
-                                const isActive = currentConfig?.provider === provider && currentConfig?.model === model.id;
-                                return (
-                                  <button
-                                    key={model.id}
-                                    onClick={() => handleSelectModel(provider, model.id)}
-                                    className={`w-full flex items-center justify-between px-3 py-1.5 text-xs transition-colors ${
-                                      isActive ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-medium">{model.label}</span>
-                                      {model.description && (
-                                        <span className="text-[10px] text-text-muted">{model.description}</span>
-                                      )}
-                                    </div>
-                                    {isActive && <Check size={11} className="shrink-0" />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right: send/stop */}
-              <div className="flex items-center gap-1.5">
-                {isRunning ? (
+            <InputToolbar
+              agentMode={agentMode}
+              setAgentMode={setAgentMode}
+              sendButton={
+                isRunning ? (
                   <>
                     <button
                       onClick={stopGeneration}
@@ -1374,9 +1405,9 @@ export function AgentPanel() {
                   >
                     <ArrowUp size={14} />
                   </button>
-                )}
-              </div>
-            </div>
+                )
+              }
+            />
           </div>
         </div>
       )}
