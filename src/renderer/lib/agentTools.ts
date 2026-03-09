@@ -2307,7 +2307,7 @@ export const ASK_TOOLS = {
 
 export const PLAN_TOOLS = {
   ...ASK_TOOLS,
-  create_plan: createPlanTool,
+  update_plan_step: updatePlanStepTool,
 };
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {

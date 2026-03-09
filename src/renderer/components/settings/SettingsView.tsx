@@ -95,12 +95,12 @@ function RequestDefaults() {
   return (
     <section className="space-y-3">
       <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Request Defaults</h3>
-      <div className="p-4 rounded-2xl bg-bg-secondary border border-border">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Timer size={14} className="text-accent" />
-            <span className="text-sm text-text-primary">Timeout</span>
-          </div>
+      <div className="flex items-center justify-between p-4 rounded-2xl bg-bg-secondary border border-border">
+        <div className="flex items-center gap-3">
+          <Timer size={14} className="text-accent" />
+          <span className="text-sm text-text-primary">Timeout</span>
+        </div>
+        <div className="flex items-center gap-2">
           <input
             value={timeout}
             onChange={(e) => saveTimeout(e.target.value)}
@@ -162,60 +162,67 @@ function ClearDataSection() {
   return (
     <section className="space-y-3">
       <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Data</h3>
-      <div className="p-4 rounded-2xl bg-bg-secondary border border-border space-y-2">
-        <button
-          onClick={handleClearHistory}
-          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs rounded-xl hover:bg-bg-hover text-text-secondary transition-colors text-left"
-        >
-          <History size={13} className="text-text-muted shrink-0" />
-          <div className="flex-1">
-            <span className="text-text-primary">Clear request history</span>
-            <span className="block text-[10px] text-text-muted">Removes all saved request/response history</span>
+      <div className="rounded-2xl bg-bg-secondary border border-border divide-y divide-border">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-3">
+            <History size={14} className="text-text-muted shrink-0" />
+            <span className="text-sm text-text-primary">Request history</span>
           </div>
-          {cleared === 'history' && <Check size={13} className="text-success shrink-0" />}
-        </button>
+          <button
+            onClick={handleClearHistory}
+            className="px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary hover:bg-bg-hover text-text-secondary border border-border transition-colors flex items-center gap-1.5"
+          >
+            {cleared === 'history' ? <><Check size={11} className="text-success" /> Cleared</> : 'Clear'}
+          </button>
+        </div>
 
-        <button
-          onClick={handleClearConnections}
-          disabled={connections.length === 0}
-          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs rounded-xl hover:bg-bg-hover text-text-secondary transition-colors text-left disabled:opacity-40 disabled:cursor-default"
-        >
-          <Unplug size={13} className="text-text-muted shrink-0" />
-          <div className="flex-1">
-            <span className="text-text-primary">Clear all connections</span>
-            <span className="block text-[10px] text-text-muted">{connections.length} connection{connections.length !== 1 ? 's' : ''} stored</span>
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-3">
+            <Unplug size={14} className="text-text-muted shrink-0" />
+            <div>
+              <span className="text-sm text-text-primary">Connections</span>
+              <span className="text-xs text-text-muted ml-2">{connections.length} stored</span>
+            </div>
           </div>
-          {cleared === 'connections' && <Check size={13} className="text-success shrink-0" />}
-        </button>
+          <button
+            onClick={handleClearConnections}
+            disabled={connections.length === 0}
+            className="px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary hover:bg-bg-hover text-text-secondary border border-border transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-default"
+          >
+            {cleared === 'connections' ? <><Check size={11} className="text-success" /> Cleared</> : 'Clear'}
+          </button>
+        </div>
 
-        <button
-          onClick={handleClearApiKeys}
-          className="w-full flex items-center gap-3 px-3 py-2.5 text-xs rounded-xl hover:bg-bg-hover text-text-secondary transition-colors text-left"
-        >
-          <Lock size={13} className="text-text-muted shrink-0" />
-          <div className="flex-1">
-            <span className="text-text-primary">Remove all AI keys</span>
-            <span className="block text-[10px] text-text-muted">Deletes all stored provider keys</span>
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-3">
+            <Lock size={14} className="text-text-muted shrink-0" />
+            <span className="text-sm text-text-primary">AI provider keys</span>
           </div>
-          {cleared === 'apikey' && <Check size={13} className="text-success shrink-0" />}
-        </button>
+          <button
+            onClick={handleClearApiKeys}
+            className="px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary hover:bg-bg-hover text-text-secondary border border-border transition-colors flex items-center gap-1.5"
+          >
+            {cleared === 'apikey' ? <><Check size={11} className="text-success" /> Cleared</> : 'Remove'}
+          </button>
+        </div>
 
-        <div className="border-t border-border pt-2 mt-1">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-3">
+            <AlertTriangle size={14} className={confirmingAll ? 'text-error shrink-0' : 'text-text-muted shrink-0'} />
+            <div>
+              <span className={`text-sm ${confirmingAll ? 'text-error' : 'text-text-primary'}`}>Reset everything</span>
+              <span className="block text-[10px] text-text-muted">Clears all data and restarts onboarding</span>
+            </div>
+          </div>
           <button
             onClick={handleClearAll}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs rounded-xl transition-colors text-left ${
+            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
               confirmingAll
-                ? 'bg-error/10 border border-error/20 text-error'
-                : 'hover:bg-error/5 text-text-muted hover:text-error'
+                ? 'bg-error/10 border-error/30 text-error hover:bg-error/20'
+                : 'bg-bg-tertiary hover:bg-error/5 text-text-muted hover:text-error border-border'
             }`}
           >
-            <AlertTriangle size={13} className="shrink-0" />
-            <div className="flex-1">
-              <span>{confirmingAll ? 'Click again to confirm' : 'Clear all data and reset'}</span>
-              {!confirmingAll && (
-                <span className="block text-[10px] opacity-70">Removes everything and restarts onboarding</span>
-              )}
-            </div>
+            {confirmingAll ? 'Confirm reset' : 'Reset'}
           </button>
         </div>
       </div>
