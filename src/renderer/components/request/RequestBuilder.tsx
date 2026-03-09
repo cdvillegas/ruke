@@ -635,7 +635,7 @@ export function RequestBuilder() {
       )}
 
       {/* Params / Headers / Body / Auth tabs */}
-      <div className="mt-4 border-t border-border pt-3">
+      <div className="mt-4">
         <div className="flex gap-1 border-b border-border mb-3">
           {([
             { id: 'params' as const, label: 'Params', icon: SlidersHorizontal, active: paramCount > 0 },
@@ -661,7 +661,7 @@ export function RequestBuilder() {
           ))}
         </div>
 
-        <div className="pt-3 pb-2">
+        <div>
           {advancedTab === 'params' && <ParameterEditor paramRefs={paramRefs} />}
           {advancedTab === 'headers' && <HeadersEditor />}
           {advancedTab === 'body' && <BodyEditor />}

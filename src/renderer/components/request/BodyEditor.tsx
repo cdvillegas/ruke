@@ -9,7 +9,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
 import { EditorView } from '@codemirror/view';
 import { appEditorTheme, blockEditorExtensions } from '../shared/editorTheme';
-import { Info, Plus, X } from 'lucide-react';
+import { Info, Lock, Plus, Plug, Trash2 } from 'lucide-react';
 import { TooltipMarkdown } from '../shared/markdownComponents';
 import yaml from 'js-yaml';
 
@@ -72,16 +72,16 @@ function isJsonLike(value: string): boolean {
   return (t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'));
 }
 
-function typeColor(type: string): string {
+function typeBadgeStyle(type: string): string {
   switch (type) {
-    case 'string': return 'text-text-muted/70';
-    case 'integer': case 'number': return 'text-text-muted/70';
-    case 'boolean': return 'text-text-muted/70';
-    case 'object': return 'text-text-muted/70';
-    case 'array': return 'text-text-muted/70';
+    case 'string': return 'bg-blue-500/10 text-blue-400';
+    case 'integer': case 'number': return 'bg-amber-500/10 text-amber-400';
+    case 'boolean': return 'bg-purple-500/10 text-purple-400';
+    case 'object': return 'bg-emerald-500/10 text-emerald-400';
+    case 'array': return 'bg-cyan-500/10 text-cyan-400';
     default:
-      if (type.endsWith('[]')) return 'text-text-muted/70';
-      return 'text-text-muted/50';
+      if (type.endsWith('[]')) return 'bg-cyan-500/10 text-cyan-400';
+      return 'bg-text-muted/8 text-text-muted/70';
   }
 }
 
@@ -92,18 +92,20 @@ interface BodyFieldRow {
   type: string;
   description?: string;
   enumValues?: string[];
+  source: 'api' | 'custom';
 }
 
 function buildBodyFieldRows(
   bodyRaw: string | undefined,
-  bodyParams: EndpointParam[]
+  bodyParams: EndpointParam[],
+  customKeys: string[]
 ): BodyFieldRow[] {
   let bodyObj: Record<string, any> = {};
   if (bodyRaw) {
     try { bodyObj = JSON.parse(bodyRaw); } catch {}
   }
 
-  return bodyParams.map((ep) => {
+  const rows: BodyFieldRow[] = bodyParams.map((ep) => {
     const bodyVal = bodyObj[ep.name];
     return {
       key: ep.name,
@@ -112,155 +114,175 @@ function buildBodyFieldRows(
       type: ep.type || 'string',
       description: ep.description,
       enumValues: ep.enumValues,
+      source: 'api' as const,
     };
   });
-}
 
-function BodyFieldInput({ row, onUpdate }: { row: BodyFieldRow; onUpdate: (value: string) => void }) {
-  const isEnum = row.enumValues && row.enumValues.length > 0;
-  const complex = isComplexType(row.type);
-  const jsonLike = isJsonLike(row.value);
-  const isMultiline = complex || jsonLike;
-
-  if (isEnum) {
-    return (
-      <select
-        value={row.value}
-        onChange={(e) => onUpdate(e.target.value)}
-        className="w-full px-2.5 py-1.5 text-[11px] rounded-lg bg-bg-secondary border border-border/60 font-mono text-text-primary focus:outline-none focus:border-border-light transition-colors cursor-pointer"
-      >
-        <option value="">Select...</option>
-        {row.enumValues!.map((v) => (
-          <option key={v} value={v}>{v}</option>
-        ))}
-      </select>
-    );
+  const apiKeys = new Set(bodyParams.map(p => p.name));
+  for (const ck of customKeys) {
+    if (apiKeys.has(ck)) continue;
+    const bodyVal = bodyObj[ck];
+    rows.push({
+      key: ck,
+      value: bodyVal !== undefined ? (typeof bodyVal === 'object' ? JSON.stringify(bodyVal) : String(bodyVal)) : '',
+      required: false,
+      type: 'string',
+      source: 'custom',
+    });
   }
 
-  if (row.type === 'boolean') {
-    return (
-      <select
-        value={row.value}
-        onChange={(e) => onUpdate(e.target.value)}
-        className="w-full px-2.5 py-1.5 text-[11px] rounded-lg bg-bg-secondary border border-border/60 font-mono text-text-primary focus:outline-none focus:border-border-light transition-colors cursor-pointer"
-      >
-        <option value="">—</option>
-        <option value="true">true</option>
-        <option value="false">false</option>
-      </select>
-    );
-  }
-
-  const displayValue = isMultiline && row.value ? (tryPrettifyJson(row.value) ?? row.value) : row.value;
-  const placeholder = row.type === 'integer' || row.type === 'number' ? '0' : '';
-
-  return (
-    <InlineEditor
-      value={displayValue}
-      onChange={onUpdate}
-      multiline={isMultiline}
-      jsonMode={isMultiline}
-      placeholder={placeholder}
-    />
-  );
+  return rows;
 }
 
 function BodyFieldRowView({
   row,
   onUpdate,
   onRemove,
+  onKeyChange,
+  enabled,
+  onToggle,
 }: {
   row: BodyFieldRow;
   onUpdate: (value: string) => void;
   onRemove?: () => void;
+  onKeyChange?: (key: string) => void;
+  enabled?: boolean;
+  onToggle?: (enabled: boolean) => void;
 }) {
+  const isLocked = row.required;
+  const isDisabled = enabled === false;
+  const isCustom = row.source === 'custom';
+  const isEnum = row.enumValues && row.enumValues.length > 0;
+  const complex = isComplexType(row.type);
+  const jsonLike = isJsonLike(row.value);
+  const isMultiline = complex || jsonLike;
+
+  const renderValue = () => {
+    if (isEnum) {
+      return (
+        <select
+          value={row.value}
+          onChange={(e) => onUpdate(e.target.value)}
+          disabled={isDisabled}
+          className="w-full px-3 py-2 text-xs font-mono text-text-primary bg-transparent border-none outline-none cursor-pointer appearance-none disabled:cursor-not-allowed"
+        >
+          <option value="">Select...</option>
+          {row.enumValues!.map((v) => (
+            <option key={v} value={v}>{v}</option>
+          ))}
+        </select>
+      );
+    }
+
+    if (row.type === 'boolean') {
+      return (
+        <select
+          value={row.value}
+          onChange={(e) => onUpdate(e.target.value)}
+          disabled={isDisabled}
+          className="w-full px-3 py-2 text-xs font-mono text-text-primary bg-transparent border-none outline-none cursor-pointer appearance-none disabled:cursor-not-allowed"
+        >
+          <option value="">—</option>
+          <option value="true">true</option>
+          <option value="false">false</option>
+        </select>
+      );
+    }
+
+    const displayValue = isMultiline && row.value ? (tryPrettifyJson(row.value) ?? row.value) : row.value;
+    return (
+      <InlineEditor
+        value={displayValue}
+        onChange={onUpdate}
+        multiline={isMultiline}
+        jsonMode={isMultiline}
+        disabled={isDisabled}
+        bare
+      />
+    );
+  };
+
   return (
-    <div className="group param-field-row">
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[11px] font-mono font-medium text-text-primary truncate">{row.key}</span>
-          <span className={`text-[10px] font-mono leading-none ${typeColor(row.type)}`}>{row.type}</span>
-          {row.description && (
-            <Tooltip.Provider delayDuration={150}>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <button className="text-text-muted/30 hover:text-text-muted transition-colors">
-                    <Info size={10} />
-                  </button>
-                </Tooltip.Trigger>
-                <Tooltip.Portal>
-                  <Tooltip.Content
-                    side="top"
-                    align="start"
-                    sideOffset={4}
-                    className="max-w-sm px-3 py-2 rounded-lg bg-bg-secondary border border-border text-[11px] text-text-secondary leading-relaxed shadow-xl z-[100]"
-                  >
-                    <TooltipMarkdown content={row.description} />
-                    <Tooltip.Arrow className="fill-border" />
-                  </Tooltip.Content>
-                </Tooltip.Portal>
-              </Tooltip.Root>
-            </Tooltip.Provider>
+    <div className={`group grid grid-cols-subgrid col-span-5 gap-0 items-stretch border-b border-border/30 last:border-b-0 transition-colors ${
+      isDisabled ? 'opacity-40' : 'hover:bg-bg-hover/20'
+    }`}>
+      <div className="flex items-center justify-center">
+        {isLocked ? (
+          <div className="w-4 h-4 rounded bg-accent flex items-center justify-center">
+            <Lock size={8} className="text-white" strokeWidth={2.5} />
+          </div>
+        ) : (
+          <input
+            type="checkbox"
+            checked={enabled !== false}
+            onChange={(e) => onToggle?.(e.target.checked)}
+            className="w-3.5 h-3.5 rounded border-border accent-accent cursor-pointer"
+          />
+        )}
+      </div>
+
+      <div className="flex items-center border-l border-border/30">
+        <div className="flex items-center gap-1.5 px-3 py-2.5">
+          {isCustom ? (
+            <input
+              type="text"
+              value={row.key}
+              onChange={(e) => onKeyChange?.(e.target.value)}
+              placeholder="Field name"
+              spellCheck={false}
+              className="text-xs font-mono font-medium text-text-primary bg-transparent border-none outline-none placeholder:text-text-muted/30 w-full"
+            />
+          ) : (
+            <>
+              <span className="text-xs font-mono font-medium text-text-primary whitespace-nowrap">{row.key}</span>
+              {row.description && (
+                <Tooltip.Provider delayDuration={150}>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <button className="text-text-muted/40 hover:text-text-secondary transition-colors shrink-0">
+                        <Info size={11} />
+                      </button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Portal>
+                      <Tooltip.Content
+                        side="top"
+                        align="start"
+                        sideOffset={4}
+                        className="max-w-sm px-3 py-2 rounded-lg bg-bg-secondary border border-border text-[11px] text-text-secondary leading-relaxed shadow-xl z-[100]"
+                      >
+                        <TooltipMarkdown content={row.description} />
+                        <Tooltip.Arrow className="fill-border" />
+                      </Tooltip.Content>
+                    </Tooltip.Portal>
+                  </Tooltip.Root>
+                </Tooltip.Provider>
+              )}
+              <Plug size={10} className="text-text-muted/30 shrink-0" />
+            </>
           )}
         </div>
+      </div>
+
+      <div className="flex items-center justify-center px-2.5 border-l border-border/30">
+        <span className={`text-[10px] font-mono leading-none px-1.5 py-0.5 rounded shrink-0 ${typeBadgeStyle(row.type)}`}>
+          {row.type}
+        </span>
+      </div>
+
+      <div className="relative border-l border-border/30 min-w-0">
+        {renderValue()}
+      </div>
+
+      <div className="flex items-center justify-center">
         {onRemove && (
           <button
             onClick={onRemove}
-            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-error/10 text-text-muted/30 hover:text-error transition-all"
+            className="p-1 rounded text-text-muted/20 hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all"
           >
-            <X size={12} />
+            <Trash2 size={12} />
           </button>
         )}
       </div>
-      <BodyFieldInput row={row} onUpdate={onUpdate} />
-    </div>
-  );
-}
-
-function AddOptionalFieldPicker({
-  fields,
-  onAdd,
-}: {
-  fields: BodyFieldRow[];
-  onAdd: (key: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
-
-  if (fields.length === 0) return null;
-
-  return (
-    <div ref={ref} className="relative inline-block">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-md text-text-muted/60 hover:text-text-secondary hover:bg-bg-secondary transition-colors"
-      >
-        <Plus size={11} />
-        Add optional field
-      </button>
-
-      {open && (
-        <div className="absolute top-full left-0 mt-1 w-60 bg-bg-secondary border border-border/60 rounded-lg shadow-2xl z-50 py-1 animate-fade-in max-h-56 overflow-y-auto">
-          {fields.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => { onAdd(f.key); setOpen(false); }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-bg-hover transition-colors"
-            >
-              <span className="text-xs font-mono text-text-primary flex-1 truncate">{f.key}</span>
-              <span className={`text-[10px] font-mono ${typeColor(f.type)}`}>{f.type}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -286,7 +308,6 @@ export function BodyEditor() {
   const body = activeRequest.body;
   const gql = body.graphql || { query: '', variables: '{}' };
   const lastPrettifiedId = useRef<string | null>(null);
-  const [addedOptionalKeys, setAddedOptionalKeys] = useState<Set<string>>(new Set());
   const [showRaw, setShowRaw] = useState(() => localStorage.getItem(RAW_PREF_KEY) !== 'false');
   const [autoPrettify, setAutoPrettify] = useState(() => localStorage.getItem(PRETTIFY_PREF_KEY) !== 'false');
 
@@ -304,15 +325,21 @@ export function BodyEditor() {
 
   const hasBodyFields = bodyParams.length > 0;
 
+  const [customBodyKeys, setCustomBodyKeys] = useState<string[]>([]);
+
   const bodyFieldRows = useMemo(
-    () => hasBodyFields ? buildBodyFieldRows(body.raw, bodyParams) : [],
-    [body.raw, bodyParams, hasBodyFields]
+    () => buildBodyFieldRows(body.raw, bodyParams, customBodyKeys),
+    [body.raw, bodyParams, customBodyKeys]
   );
 
-  const requiredRows = bodyFieldRows.filter(r => r.required);
-  const optionalRows = bodyFieldRows.filter(r => !r.required);
-  const visibleOptionalRows = optionalRows.filter(r => addedOptionalKeys.has(r.key));
-  const hiddenOptionalRows = optionalRows.filter(r => !addedOptionalKeys.has(r.key));
+  const [enabledOptionalKeys, setEnabledOptionalKeys] = useState<Set<string>>(() => {
+    if (!body.raw) return new Set<string>();
+    try {
+      const parsed = JSON.parse(body.raw);
+      const optKeys = bodyParams.filter(p => p.in === 'body' && !p.required).map(p => p.name);
+      return new Set(optKeys.filter(k => k in parsed));
+    } catch { return new Set<string>(); }
+  });
 
   const updateBodyField = useCallback((key: string, rawValue: string) => {
     let currentBody: Record<string, any> = {};
@@ -339,10 +366,46 @@ export function BodyEditor() {
     setBody({ ...body, type: 'json', raw: JSON.stringify(currentBody, null, 2) });
   }, [body, bodyParams, setBody]);
 
-  const removeOptionalField = useCallback((key: string) => {
-    setAddedOptionalKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
-    updateBodyField(key, '');
+  const toggleOptionalField = useCallback((key: string, enabled: boolean) => {
+    setEnabledOptionalKeys(prev => {
+      const next = new Set(prev);
+      if (enabled) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+    if (!enabled) updateBodyField(key, '');
   }, [updateBodyField]);
+
+  const addCustomBodyField = useCallback(() => {
+    setCustomBodyKeys(prev => [...prev, '']);
+  }, []);
+
+  const removeCustomBodyField = useCallback((index: number) => {
+    const key = customBodyKeys[index];
+    if (key) updateBodyField(key, '');
+    setCustomBodyKeys(prev => prev.filter((_, i) => i !== index));
+  }, [customBodyKeys, updateBodyField]);
+
+  const updateCustomBodyKey = useCallback((index: number, newKey: string) => {
+    const oldKey = customBodyKeys[index];
+    setCustomBodyKeys(prev => {
+      const next = [...prev];
+      next[index] = newKey;
+      return next;
+    });
+    if (oldKey && oldKey !== newKey) {
+      let currentBody: Record<string, any> = {};
+      if (body.type === 'json' && body.raw) {
+        try { currentBody = JSON.parse(body.raw); } catch {}
+      }
+      if (oldKey in currentBody) {
+        const val = currentBody[oldKey];
+        delete currentBody[oldKey];
+        if (newKey) currentBody[newKey] = val;
+        setBody({ ...body, type: 'json', raw: JSON.stringify(currentBody, null, 2) });
+      }
+    }
+  }, [customBodyKeys, body, setBody]);
 
   const handleToggleRaw = useCallback((v: boolean) => {
     setShowRaw(v);
@@ -420,7 +483,7 @@ export function BodyEditor() {
 
         {(body.type === 'json' || body.type === 'raw') && (
           <div className="flex items-center gap-3">
-            {hasBodyFields && body.type === 'json' && (
+            {body.type === 'json' && (
               <div className="flex gap-0.5 p-0.5 rounded-md bg-bg-secondary/60">
                 <button
                   onClick={() => handleToggleRaw(false)}
@@ -454,46 +517,65 @@ export function BodyEditor() {
       {(body.type === 'json' || body.type === 'raw') && (
         <div className="space-y-3">
           {/* Structured fields for required + added optional params */}
-          {hasBodyFields && body.type === 'json' && !showRaw && (
-            <div className="space-y-4">
-              {requiredRows.length > 0 && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-text-muted/40 font-medium mb-2">Required</div>
-                  <div>
-                    {requiredRows.map((r) => (
-                      <BodyFieldRowView
-                        key={r.key}
-                        row={r}
-                        onUpdate={(v) => updateBodyField(r.key, v)}
-                      />
-                    ))}
+          {body.type === 'json' && !showRaw && (
+            <div className="rounded-lg border border-border/60 overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40">
+                <span className="text-[10.5px] text-text-secondary uppercase tracking-wider font-semibold">Body Fields</span>
+                {bodyFieldRows.length > 0 && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-text-muted/10 text-text-muted font-mono">{bodyFieldRows.length}</span>
+                )}
+              </div>
+              {bodyFieldRows.length > 0 && (
+                <div className="grid grid-cols-[28px_auto_auto_1fr_28px]">
+                  <div className="grid grid-cols-subgrid col-span-5 border-b border-border/30">
+                    <div className="py-1.5" />
+                    <div className="px-3 py-1.5 text-[10px] text-text-muted/50 uppercase tracking-wider font-medium border-l border-border/30">Name</div>
+                    <div className="px-2.5 py-1.5 text-[10px] text-text-muted/50 uppercase tracking-wider font-medium border-l border-border/30 text-center">Type</div>
+                    <div className="px-3 py-1.5 text-[10px] text-text-muted/50 uppercase tracking-wider font-medium border-l border-border/30">Value</div>
+                    <div />
                   </div>
+                  {bodyFieldRows.map((r, idx) => {
+                    const isOptional = !r.required;
+                    const isCustom = r.source === 'custom';
+                    const isEnabled = r.required || (isCustom ? true : enabledOptionalKeys.has(r.key));
+                    const customIdx = isCustom ? customBodyKeys.indexOf(r.key !== '' ? r.key : customBodyKeys[idx - bodyParams.filter(p => p.in === 'body').length]) : -1;
+
+                    return (
+                      <BodyFieldRowView
+                        key={isCustom ? `custom-${idx}` : r.key}
+                        row={r}
+                        enabled={isEnabled}
+                        onUpdate={(v) => {
+                          if (isCustom && r.key) updateBodyField(r.key, v);
+                          else if (!isCustom) updateBodyField(r.key, v);
+                        }}
+                        onToggle={isOptional && !isCustom ? (en) => toggleOptionalField(r.key, en) : undefined}
+                        onRemove={isCustom ? () => {
+                          const ci = idx - bodyFieldRows.filter(fr => fr.source === 'api').length;
+                          removeCustomBodyField(ci);
+                        } : undefined}
+                        onKeyChange={isCustom ? (k) => {
+                          const ci = idx - bodyFieldRows.filter(fr => fr.source === 'api').length;
+                          updateCustomBodyKey(ci, k);
+                        } : undefined}
+                      />
+                    );
+                  })}
                 </div>
               )}
-              {(visibleOptionalRows.length > 0 || hiddenOptionalRows.length > 0) && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-text-muted/40 font-medium mb-2">Optional</div>
-                  <div>
-                    {visibleOptionalRows.map((r) => (
-                      <BodyFieldRowView
-                        key={r.key}
-                        row={r}
-                        onUpdate={(v) => updateBodyField(r.key, v)}
-                        onRemove={() => removeOptionalField(r.key)}
-                      />
-                    ))}
-                  </div>
-                  <AddOptionalFieldPicker
-                    fields={hiddenOptionalRows}
-                    onAdd={(key) => setAddedOptionalKeys(prev => new Set(prev).add(key))}
-                  />
-                </div>
-              )}
+              <div className={bodyFieldRows.length > 0 ? 'border-t border-border/30' : ''}>
+                <button
+                  onClick={addCustomBodyField}
+                  className="flex items-center gap-1.5 w-full px-3 py-2.5 text-[11px] text-text-muted hover:text-accent hover:bg-accent/5 transition-colors"
+                >
+                  <Plus size={12} />
+                  <span>Add field</span>
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Raw editor — toggled when fields exist, always shown for freeform */}
-          {(!hasBodyFields || body.type !== 'json' || showRaw) && (
+          {(body.type !== 'json' || showRaw) && (
             <div className="rounded-lg bg-bg-secondary border border-border/60 overflow-hidden focus-within:border-border-light transition-colors">
               <CodeMirror
                 key={activeRequest.id}

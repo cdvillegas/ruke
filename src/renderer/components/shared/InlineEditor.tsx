@@ -20,6 +20,7 @@ interface InlineEditorProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  bare?: boolean;
 }
 
 export function InlineEditor({
@@ -30,6 +31,7 @@ export function InlineEditor({
   placeholder,
   className = '',
   disabled = false,
+  bare = false,
 }: InlineEditorProps) {
   const extensions = useCallback(() => {
     const exts = [inlineEditorExtensions];
@@ -43,7 +45,7 @@ export function InlineEditor({
   }, [jsonMode, multiline]);
 
   return (
-    <div className={`rounded-lg overflow-hidden bg-bg-secondary border border-border/60 focus-within:border-border-light transition-colors ${disabled ? 'opacity-40' : ''} ${className}`}>
+    <div className={`${bare ? 'overflow-hidden' : 'rounded-lg overflow-hidden bg-bg-secondary border border-border/60 focus-within:border-border-light'} transition-colors ${disabled ? 'opacity-40' : ''} ${className}`}>
       <CodeMirror
         value={value}
         onChange={onChange}
