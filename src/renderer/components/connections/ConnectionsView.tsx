@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { nanoid } from 'nanoid';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useRequestStore } from '../../stores/requestStore';
 import { useGrpcStore } from '../../stores/grpcStore';
@@ -651,7 +652,7 @@ export function ConnectionsMain() {
   const activeConn = [...connections, ...archivedConnections].find(c => c.id === activeConnectionId);
   const isArchived = archivedConnections.some(c => c.id === activeConnectionId);
 
-  const handleRunEndpoint = useCallback((conn: ApiConnection, endpoint: ApiEndpoint) => {
+  const handleRunEndpoint = useCallback(async (conn: ApiConnection, endpoint: ApiEndpoint) => {
     if (conn.specType === 'grpc') {
       const parts = endpoint.path.split('/');
       const methodName = parts.pop() || '';
@@ -681,26 +682,36 @@ export function ConnectionsMain() {
       return;
     }
 
-    const url = conn.specType === 'graphql' ? conn.baseUrl : conn.baseUrl + endpoint.path;
     const store = useRequestStore.getState();
+    const now = new Date().toISOString();
+    const id = nanoid();
 
     if (conn.specType === 'graphql') {
-      store.updateActiveRequest({
-        method: 'POST',
-        url,
+      const req = {
+        id,
+        collectionId: null,
+        method: 'POST' as const,
+        url: conn.baseUrl,
         name: endpoint.summary || endpoint.path,
+        connectionId: conn.id,
+        endpointId: endpoint.id,
         headers: [{ key: 'Content-Type', value: 'application/json', enabled: true }],
-        params: [],
+        params: [] as { key: string; value: string; enabled: boolean }[],
         body: {
-          type: 'graphql',
+          type: 'graphql' as const,
           graphql: {
             query: `{\n  ${endpoint.path} {\n    \n  }\n}`,
             variables: '{}',
           },
         },
         auth: conn.auth,
-      });
+        sortOrder: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      store.openTab(req);
       useUiStore.getState().setActiveProtocol('graphql');
+      try { await window.ruke.db.query('createRequest', req); } catch {}
     } else {
       let body: any = { type: 'none' };
       if (endpoint.requestBody) {
@@ -727,22 +738,30 @@ export function ConnectionsMain() {
         }
       }
 
-      store.updateActiveRequest({
+      const req = {
+        id,
+        collectionId: null,
         method: endpoint.method,
-        url,
+        url: endpoint.path,
         connectionId: conn.id,
         endpointId: endpoint.id,
         name: endpoint.summary || `${endpoint.method} ${endpoint.path}`,
         headers: [{ key: '', value: '', enabled: true }],
         params: (endpoint.parameters || [])
-          .filter(p => p.in === 'query')
-          .map(p => ({ key: p.name, value: '', enabled: true })),
+          .filter(p => p.in === 'query' || p.in === 'path')
+          .map(p => ({ key: p.name, value: '', enabled: p.in === 'path' || !!p.required })),
         body,
         auth: conn.auth,
-      });
+        sortOrder: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      store.openTab(req);
       useUiStore.getState().setActiveProtocol('rest');
+      try { await window.ruke.db.query('createRequest', req); } catch {}
     }
 
+    store.loadUncollectedRequests();
     useUiStore.getState().setActiveView('requests');
   }, []);
 

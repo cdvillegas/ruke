@@ -33,7 +33,7 @@ function buildParamRows(
       rows.push({
         key: ep.name,
         value: existing?.value || '',
-        enabled: existing?.enabled ?? true,
+        enabled: existing?.enabled ?? (ep.required || ep.in === 'path'),
         source: ep.in === 'path' ? 'path' : ep.in === 'header' ? 'header' : 'query',
         required: ep.required,
         type: ep.type || 'string',
@@ -245,7 +245,7 @@ interface ParameterEditorProps {
   simpleMode?: boolean;
 }
 
-export function ParameterEditor({ paramRefs, simpleMode }: ParameterEditorProps) {
+export function ParameterEditor({ paramRefs }: ParameterEditorProps) {
   const activeRequest = useRequestStore((s) => s.activeRequest);
   const setParams = useRequestStore((s) => s.setParams);
   const setHeaders = useRequestStore((s) => s.setHeaders);
@@ -331,9 +331,7 @@ export function ParameterEditor({ paramRefs, simpleMode }: ParameterEditorProps)
   const specQueryRows = rows.filter(r => r.source === 'query');
   const customRows = rows.filter(r => r.source === 'custom');
 
-  const visibleSpecQueryRows = simpleMode
-    ? specQueryRows.filter(r => r.required)
-    : specQueryRows;
+  const visibleSpecQueryRows = specQueryRows;
 
   const hasPathSection = pathRows.length > 0;
   const queryAndCustomRows = [...visibleSpecQueryRows, ...customRows];

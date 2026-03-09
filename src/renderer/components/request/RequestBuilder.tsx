@@ -662,7 +662,7 @@ export function RequestBuilder() {
         </div>
 
         <div className="pt-3 pb-2">
-          {advancedTab === 'params' && <ParameterEditor paramRefs={paramRefs} simpleMode={isLinked} />}
+          {advancedTab === 'params' && <ParameterEditor paramRefs={paramRefs} />}
           {advancedTab === 'headers' && <HeadersEditor />}
           {advancedTab === 'body' && <BodyEditor />}
           {advancedTab === 'auth' && <AuthEditor />}
