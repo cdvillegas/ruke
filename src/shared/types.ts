@@ -153,6 +153,7 @@ export interface Environment {
   name: string;
   isActive: boolean;
   sortOrder: number;
+  archived?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -357,6 +358,9 @@ export interface ChatMessage {
   toolCallId?: string;
   attachments?: ChatAttachment[];
   timestamp: string;
+  mode?: string;
+  model?: string;
+  planId?: string;
 }
 
 export interface ChatSession {
@@ -387,6 +391,7 @@ export interface ApiConnection {
   iconLetter?: string;
   iconName?: string;
   protoDefinition?: ProtoDefinition;
+  archived?: boolean;
   createdAt: string;
   updatedAt: string;
 }

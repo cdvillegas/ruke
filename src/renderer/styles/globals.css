@@ -258,6 +258,7 @@ body {
   animation: ai-pulse 2s ease-in-out infinite;
 }
 
+
 /* Thinking dots */
 @keyframes thinking-dot {
   0%, 100% { opacity: 0.3; transform: translateY(0); }

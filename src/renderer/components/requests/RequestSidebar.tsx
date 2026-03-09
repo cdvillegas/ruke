@@ -62,26 +62,28 @@ function RequestItemMenu({
         </>
       )}
       {isArchived ? (
-        <button
-          onClick={(e) => { e.stopPropagation(); unarchiveRequest(req.id); onClose(); }}
-          className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
-        >
-          <ArchiveRestore size={12} /> Unarchive
-        </button>
+        <>
+          <button
+            onClick={async (e) => { e.stopPropagation(); await unarchiveRequest(req.id); onClose(); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          >
+            <ArchiveRestore size={12} /> Restore
+          </button>
+          <button
+            onClick={async (e) => { e.stopPropagation(); await deleteRequest(req.id); onClose(); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <Trash2 size={12} /> Delete permanently
+          </button>
+        </>
       ) : (
         <button
-          onClick={(e) => { e.stopPropagation(); archiveRequest(req.id); onClose(); }}
+          onClick={async (e) => { e.stopPropagation(); await archiveRequest(req.id); onClose(); }}
           className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
         >
           <Archive size={12} /> Archive
         </button>
       )}
-      <button
-        onClick={(e) => { e.stopPropagation(); deleteRequest(req.id); onClose(); }}
-        className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
-      >
-        <Trash2 size={12} /> Delete
-      </button>
     </div>
   );
 }
@@ -132,7 +134,7 @@ function RequestItem({
     <div className="relative group" draggable={!isRenaming} onDragStart={handleDragStart}>
       <button
         onClick={handleSelect}
-        className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+        className={`w-full text-left px-3 py-2 pr-8 rounded-lg transition-colors ${
           isActive
             ? 'bg-accent/10 text-text-primary'
             : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
@@ -143,7 +145,7 @@ function RequestItem({
             <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
           )}
           <span
-            className="font-mono font-bold text-[9px] w-7 shrink-0"
+            className="font-mono font-bold text-[9px] w-8 shrink-0"
             style={{ color: METHOD_COLORS[req.method] || '#6b7280' }}
           >
             {req.method}
@@ -166,12 +168,12 @@ function RequestItem({
           )}
         </div>
         {preview && !isRenaming && (
-          <p className="text-[10px] text-text-muted truncate mt-0.5 ml-9">{preview}</p>
+          <p className="text-[10px] text-text-muted truncate mt-0.5 ml-10">{preview}</p>
         )}
       </button>
       <button
         onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
-        className={`absolute right-1.5 top-1.5 p-1 rounded-md transition-all ${
+        className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md transition-all ${
           menuOpen
             ? 'opacity-100 bg-bg-hover'
             : 'opacity-0 group-hover:opacity-100 hover:bg-bg-hover'
@@ -204,7 +206,7 @@ function CollectionRequestRow({
   depth: number;
   isSelected: boolean;
   onSelect: (req: ApiRequest) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => void | Promise<void>;
   onDragOverItem?: (reqId: string, position: 'above' | 'below') => void;
   dropPosition?: 'above' | 'below' | null;
 }) {
@@ -312,10 +314,10 @@ function CollectionRequestRow({
                 <Pencil size={12} /> Rename
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); onDelete(req.id); setShowMenu(false); }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-error hover:bg-error/10 transition-colors"
+                onClick={async (e) => { e.stopPropagation(); await onDelete(req.id); setShowMenu(false); }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
               >
-                <Trash2 size={12} /> Delete
+                <Archive size={12} /> Archive
               </button>
             </div>
           )}
@@ -351,7 +353,7 @@ function CollectionNode({
   const renameCollection = useCollectionStore((s) => s.renameCollection);
   const reorderRequests = useCollectionStore((s) => s.reorderRequests);
   const moveRequestToCollection = useCollectionStore((s) => s.moveRequestToCollection);
-  const deleteRequest = useRequestStore((s) => s.deleteRequest);
+  const archiveRequest = useRequestStore((s) => s.archiveRequest);
   const isAiCreated = useUiStore(s => s.aiCreatedItems.includes(node.collection.id));
   const clearAiCreated = useUiStore(s => s.clearAiCreated);
   const isExpanded = expandedIds.includes(node.collection.id);
@@ -565,7 +567,7 @@ function CollectionNode({
               depth={depth}
               isSelected={selectedRequestId === req.id}
               onSelect={onSelectRequest}
-              onDelete={deleteRequest}
+              onDelete={archiveRequest}
               onDragOverItem={handleDragOverItem}
               dropPosition={dropTarget?.reqId === req.id ? dropTarget.position : null}
             />
@@ -598,7 +600,6 @@ export function RequestSidebar() {
   const loadUncollectedRequests = useRequestStore((s) => s.loadUncollectedRequests);
   const loadArchivedRequests = useRequestStore((s) => s.loadArchivedRequests);
   const saveRequest = useRequestStore((s) => s.saveRequest);
-  const deleteRequest = useRequestStore((s) => s.deleteRequest);
 
   const collections = useCollectionStore((s) => s.collections);
   const requests = useCollectionStore((s) => s.requests);

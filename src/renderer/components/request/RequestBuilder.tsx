@@ -479,7 +479,8 @@ export function RequestBuilder() {
     + (endpointDef?.parameters?.filter((p: { in: string }) => p.in !== 'body').length || 0);
   const headerCount = activeRequest.headers.filter((h) => h.enabled && h.key).length;
   const hasBody = activeRequest.body.type !== 'none';
-  const hasAuth = activeRequest.auth.type !== 'none';
+  const effectiveAuth = useRequestStore.getState().getEffectiveAuth();
+  const hasAuth = effectiveAuth.type !== 'none';
   const hasScripts = !!(activeRequest.scripts?.preRequest || activeRequest.scripts?.postResponse);
 
   return (
@@ -660,7 +661,7 @@ export function RequestBuilder() {
           ))}
         </div>
 
-        <div className="pb-2">
+        <div className="pt-3 pb-2">
           {advancedTab === 'params' && <ParameterEditor paramRefs={paramRefs} simpleMode={isLinked} />}
           {advancedTab === 'headers' && <HeadersEditor />}
           {advancedTab === 'body' && <BodyEditor />}

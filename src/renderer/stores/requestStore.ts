@@ -329,14 +329,12 @@ export const useRequestStore = create<RequestState>((set, get) => {
       try {
         await window.ruke.db.query('archiveRequest', id);
       } catch {}
-      const { activeRequest } = get();
-      if (activeRequest.id === id) {
-        const req = createEmptyRequest();
-        set({ activeRequest: req, response: null, requestHistory: [], hasSelection: false });
+      if (localStorage.getItem('ruke:lastActiveRequestId') === id) {
+        localStorage.removeItem('ruke:lastActiveRequestId');
       }
-      get().loadUncollectedRequests();
-      get().loadArchivedRequests();
-      // Reload all collections since the request may have been in one
+      get().closeTab(id);
+      await get().loadUncollectedRequests();
+      await get().loadArchivedRequests();
       try {
         const { useCollectionStore } = await import('./collectionStore');
         const cols = useCollectionStore.getState().collections;
@@ -350,8 +348,8 @@ export const useRequestStore = create<RequestState>((set, get) => {
       try {
         await window.ruke.db.query('unarchiveRequest', id);
       } catch {}
-      get().loadUncollectedRequests();
-      get().loadArchivedRequests();
+      await get().loadUncollectedRequests();
+      await get().loadArchivedRequests();
     },
 
     moveToCollection: async (id, collectionId) => {
@@ -552,14 +550,13 @@ export const useRequestStore = create<RequestState>((set, get) => {
     },
 
     deleteRequest: async (id) => {
-      const { activeRequest } = get();
       try { await window.ruke.db.query('deleteRequest', id); } catch {}
-      if (activeRequest.id === id) {
-        const req = createEmptyRequest();
-        set({ activeRequest: req, response: null, requestHistory: [], hasSelection: false });
+      if (localStorage.getItem('ruke:lastActiveRequestId') === id) {
+        localStorage.removeItem('ruke:lastActiveRequestId');
       }
-      get().loadUncollectedRequests();
-      get().loadArchivedRequests();
+      get().closeTab(id);
+      await get().loadUncollectedRequests();
+      await get().loadArchivedRequests();
       try {
         const { useCollectionStore } = await import('./collectionStore');
         const cols = useCollectionStore.getState().collections;

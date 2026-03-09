@@ -99,6 +99,11 @@ function PlanToolCallCard({ toolCall }: { toolCall: ChatToolCall }) {
   }
 
   const plan = usePlanStore(s => planId ? s.plans.find(p => p.id === planId) || null : null);
+  const wasExecuted = useChatStore(s => {
+    if (!planId) return false;
+    const session = s.sessions.find(ses => ses.id === s.activeSessionId);
+    return session?.messages.some(m => m.planId === planId) ?? false;
+  });
   const [collapsed, setCollapsed] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState('');
@@ -122,7 +127,7 @@ function PlanToolCallCard({ toolCall }: { toolCall: ChatToolCall }) {
     usePlanStore.getState().updatePlanStatus(p.id, 'in_progress');
     const stepsList = p.steps.map((s, i) => `${i + 1}. [step_id:${s.id}] ${s.description}`).join('\n');
     const msg = `Execute plan "${p.title}" (plan_id: ${p.id}).\n\nWork through each step sequentially:\n${stepsList}`;
-    useChatStore.getState().sendMessage(msg, undefined, 'agent');
+    useChatStore.getState().sendMessage(msg, undefined, 'agent', undefined, p.id);
   }, []);
 
   const stopPlan = useCallback((p: Plan) => {
@@ -152,6 +157,10 @@ function PlanToolCallCard({ toolCall }: { toolCall: ChatToolCall }) {
         <span>Plan created</span>
       </div>
     );
+  }
+
+  if (wasExecuted) {
+    return null;
   }
 
   const isDraft = plan.status === 'draft';
@@ -286,41 +295,130 @@ function PlanToolCallCard({ toolCall }: { toolCall: ChatToolCall }) {
   );
 }
 
+function getToolSummary(name: string, args: Record<string, unknown>): string {
+  switch (name) {
+    case 'search_endpoints': {
+      const q = args.query as string || '';
+      const conn = args.connection_id as string;
+      return conn ? `Searched for "${q}" in connection` : `Searched for "${q}"`;
+    }
+    case 'list_connections':
+      return 'Listed connected APIs';
+    case 'connect_api':
+      return args.name ? `Connecting ${args.name}` : 'Connecting API';
+    case 'import_spec':
+      return args.url ? `Importing spec from ${(args.url as string).replace(/^https?:\/\//, '').slice(0, 40)}` : 'Importing spec';
+    case 'set_connection_auth':
+      return `Setting ${args.auth_type || 'auth'} on connection`;
+    case 'create_request':
+      return args.name ? `Creating "${args.name}"` : `Creating ${args.method || ''} request`;
+    case 'create_requests':
+      return Array.isArray(args.requests) ? `Creating ${args.requests.length} requests` : 'Creating requests';
+    case 'send_request':
+    case 'send_request_by_id':
+      return args.name ? `Sending "${args.name}"` : 'Sending request';
+    case 'search_requests':
+      return args.query ? `Searched requests for "${args.query}"` : 'Searching requests';
+    case 'create_collection':
+      return args.name ? `Creating collection "${args.name}"` : 'Creating collection';
+    case 'create_environment':
+      return args.name ? `Creating environment "${args.name}"` : 'Creating environment';
+    case 'add_variable':
+      return args.key ? `Adding variable "${args.key}"` : 'Adding variable';
+    case 'update_variable':
+      return args.key ? `Updating variable "${args.key}"` : 'Updating variable';
+    case 'search_history':
+      return args.query ? `Searched history for "${args.query}"` : 'Searching history';
+    case 'import_curl':
+      return 'Importing cURL command';
+    case 'export_curl':
+      return 'Exporting as cURL';
+    case 'edit_current_request':
+      return args.name ? `Editing "${args.name}"` : 'Editing request';
+    case 'select_request':
+      return args.match ? `Selecting "${args.match}"` : 'Selecting request';
+    case 'move_request_to_collection':
+      return args.collection ? `Moving to "${args.collection}"` : 'Moving request';
+    case 'rename_collection':
+      return args.new_name ? `Renaming to "${args.new_name}"` : 'Renaming collection';
+    case 'save_memory':
+      return args.content ? `Remembering: ${(args.content as string).slice(0, 50)}` : 'Saving memory';
+    case 'generate_docs':
+      return 'Generating documentation';
+    case 'generate_script':
+      return args.language ? `Generating ${args.language} script` : 'Generating script';
+    case 'create_workflow':
+      return args.name ? `Creating workflow "${args.name}"` : 'Creating workflow';
+    case 'run_workflow':
+      return args.match ? `Running workflow "${args.match}"` : 'Running workflow';
+    case 'update_requests':
+      return Array.isArray(args.updates) ? `Updating ${args.updates.length} requests` : 'Updating requests';
+    default:
+      return TOOL_DISPLAY_NAMES[name] || name;
+  }
+}
+
+function getResultSummary(name: string, parsed: any): string | null {
+  if (!parsed) return null;
+  if (parsed.error) return `Error: ${parsed.error}`;
+  if (parsed.message && parsed.results?.length === 0) return parsed.message;
+
+  switch (name) {
+    case 'list_connections':
+      if (parsed.connections) return `${parsed.connections.length} API${parsed.connections.length !== 1 ? 's' : ''}`;
+      return parsed.message || null;
+    case 'search_endpoints':
+      if (parsed.results) return `${parsed.results.length} result${parsed.results.length !== 1 ? 's' : ''}`;
+      return parsed.message || null;
+    case 'connect_api':
+    case 'import_spec':
+      if (parsed.name) return `${parsed.name}${parsed.endpointCount != null ? ` — ${parsed.endpointCount} endpoints` : ''}`;
+      return null;
+    case 'send_request':
+    case 'send_request_by_id':
+      if (parsed.status) return `${parsed.status} ${parsed.statusText || ''}`.trim();
+      return null;
+    case 'create_request':
+      if (parsed.name) return parsed.name;
+      return parsed.success ? 'Done' : null;
+    case 'create_requests':
+      if (parsed.created) return `${parsed.created.length} created`;
+      return null;
+    default:
+      if (parsed.name && parsed.endpointCount != null) return `${parsed.name} (${parsed.endpointCount} endpoints)`;
+      if (parsed.connections) return `${parsed.connections.length} API${parsed.connections.length !== 1 ? 's' : ''}`;
+      if (parsed.results) return `${parsed.results.length} result${parsed.results.length !== 1 ? 's' : ''}`;
+      if (parsed.environmentId && parsed.name) return `Created "${parsed.name}"`;
+      if (parsed.collectionId && parsed.name) return `Created "${parsed.name}"`;
+      if (parsed.success) return 'Done';
+      return null;
+  }
+}
+
 export function ToolCallCard({ toolCall }: { toolCall: ChatToolCall }) {
   if (toolCall.name === 'create_plan') {
     return <PlanToolCallCard toolCall={toolCall} />;
   }
 
   const [expanded, setExpanded] = useState(false);
-  const displayName = TOOL_DISPLAY_NAMES[toolCall.name] || toolCall.name;
+
+  let parsedArgs: Record<string, unknown> = {};
+  try { parsedArgs = JSON.parse(toolCall.arguments); } catch {}
 
   let parsedResult: any = null;
   if (toolCall.result) {
     try { parsedResult = JSON.parse(toolCall.result); } catch {}
   }
 
+  const summary = getToolSummary(toolCall.name, parsedArgs);
+  const resultSummary = getResultSummary(toolCall.name, parsedResult);
+
   const hasResult = !!toolCall.result;
   const isError = toolCall.status === 'error' || (parsedResult && parsedResult.error);
   const isDone = toolCall.status === 'done' || hasResult;
   const isLoading = !isDone && !isError;
 
-  const resultSummary = parsedResult
-    ? parsedResult.error
-      ? `Error: ${parsedResult.error}`
-      : parsedResult.name
-        ? `${parsedResult.name}${parsedResult.endpointCount != null ? ` (${parsedResult.endpointCount} endpoints)` : ''}`
-        : parsedResult.connections
-          ? `${parsedResult.connections.length} API${parsedResult.connections.length !== 1 ? 's' : ''} connected`
-          : parsedResult.results
-            ? `${parsedResult.results.length} result${parsedResult.results.length !== 1 ? 's' : ''} found`
-            : parsedResult.environmentId
-              ? `Created "${parsedResult.name}"`
-              : parsedResult.collectionId
-                ? `Created "${parsedResult.name}"`
-                : parsedResult.success
-                  ? 'Done'
-                  : null
-    : null;
+  const hasArgs = Object.keys(parsedArgs).length > 0;
 
   return (
     <div className="rounded-lg border border-border/60 bg-bg-tertiary/40 overflow-hidden">
@@ -339,19 +437,32 @@ export function ToolCallCard({ toolCall }: { toolCall: ChatToolCall }) {
         ) : (
           <Check size={12} className="text-green-400 shrink-0" />
         )}
-        <span className="text-text-secondary font-medium">{displayName}</span>
+        <span className="text-text-secondary font-medium truncate">{summary}</span>
         {resultSummary && isDone && (
-          <span className="text-text-muted truncate flex-1 text-left">{resultSummary}</span>
+          <span className={`truncate flex-1 text-left ${isError ? 'text-red-400/70' : 'text-text-muted'}`}>{resultSummary}</span>
         )}
         <span className="text-text-muted shrink-0 ml-auto">
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
       </button>
-      {expanded && toolCall.result && (
-        <div className="px-3 py-2 border-t border-border/40 max-h-48 overflow-auto">
-          <pre className="text-[10px] text-text-muted font-mono whitespace-pre-wrap break-all">
-            {JSON.stringify(parsedResult || toolCall.result, null, 2)}
-          </pre>
+      {expanded && (
+        <div className="border-t border-border/40 max-h-64 overflow-auto">
+          {hasArgs && (
+            <div className="px-3 pt-2 pb-1">
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted/50">Request</span>
+              <pre className="text-[10px] text-text-secondary font-mono whitespace-pre-wrap break-all mt-1">
+                {JSON.stringify(parsedArgs, null, 2)}
+              </pre>
+            </div>
+          )}
+          {toolCall.result && (
+            <div className={`px-3 pt-2 pb-2 ${hasArgs ? 'border-t border-border/30' : ''}`}>
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted/50">Response</span>
+              <pre className={`text-[10px] font-mono whitespace-pre-wrap break-all mt-1 ${isError ? 'text-red-400/80' : 'text-text-secondary'}`}>
+                {JSON.stringify(parsedResult || toolCall.result, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
       )}
     </div>

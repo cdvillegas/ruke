@@ -3,7 +3,7 @@ import { useConnectionStore } from '../../stores/connectionStore';
 import { useRequestStore } from '../../stores/requestStore';
 import { ConnectionIcon } from '../connections/ConnectionsView';
 import {
-  ChevronDown, X, Plug, Globe, Search, Check,
+  ChevronDown, Plug, Globe, Search, Check,
 } from 'lucide-react';
 import type { ApiConnection } from '@shared/types';
 
@@ -32,7 +32,9 @@ export function ConnectionSelector() {
 
   const handleSelectConnection = (conn: ApiConnection) => {
     linkConnection(conn.id);
-    updateActiveRequest({ auth: { type: 'none' } });
+    if (conn.auth.type !== 'none' && activeRequest.auth.type === 'none') {
+      updateActiveRequest({ auth: { ...conn.auth } });
+    }
     setShowDropdown(false);
     setSearch('');
   };
@@ -63,12 +65,6 @@ export function ConnectionSelector() {
           <>
             <ConnectionIcon conn={linkedConnection} size="sm" className="!w-4 !h-4 !rounded shrink-0" />
             <span className="font-medium text-text-primary truncate max-w-[120px]">{linkedConnection.name}</span>
-            <button
-              onClick={(e) => { e.stopPropagation(); handleUnlink(); }}
-              className="p-0.5 rounded hover:bg-bg-active text-text-muted hover:text-text-primary transition-colors ml-0.5"
-            >
-              <X size={10} />
-            </button>
           </>
         ) : (
           <>

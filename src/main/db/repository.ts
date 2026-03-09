@@ -159,8 +159,17 @@ export function createRepository(db: Database.Database) {
       return db.prepare(
         `SELECT id, workspace_id as workspaceId, name, is_active as isActive,
          sort_order as sortOrder, connection_id as connectionId, base_url as baseUrl,
-         created_at as createdAt, updated_at as updatedAt
-         FROM environments WHERE workspace_id = ? ORDER BY sort_order`
+         archived, created_at as createdAt, updated_at as updatedAt
+         FROM environments WHERE workspace_id = ? AND (archived = 0 OR archived IS NULL) ORDER BY sort_order`
+      ).all(workspaceId) as any[];
+    },
+
+    getArchivedEnvironments(workspaceId: string): Environment[] {
+      return db.prepare(
+        `SELECT id, workspace_id as workspaceId, name, is_active as isActive,
+         sort_order as sortOrder, connection_id as connectionId, base_url as baseUrl,
+         archived, created_at as createdAt, updated_at as updatedAt
+         FROM environments WHERE workspace_id = ? AND archived = 1 ORDER BY sort_order`
       ).all(workspaceId) as any[];
     },
 
@@ -196,6 +205,14 @@ export function createRepository(db: Database.Database) {
 
     deleteEnvironment(id: string): void {
       db.prepare('DELETE FROM environments WHERE id = ?').run(id);
+    },
+
+    archiveEnvironment(id: string): void {
+      db.prepare("UPDATE environments SET archived = 1, is_active = 0, updated_at = datetime('now') WHERE id = ?").run(id);
+    },
+
+    unarchiveEnvironment(id: string): void {
+      db.prepare("UPDATE environments SET archived = 0, updated_at = datetime('now') WHERE id = ?").run(id);
     },
 
     // ── Variables ──

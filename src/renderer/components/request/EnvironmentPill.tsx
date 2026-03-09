@@ -35,7 +35,7 @@ export function EnvironmentPill() {
         }`}
       >
         <Layers size={12} />
-        <span className="max-w-24 truncate">{activeEnv?.name || 'No Env'}</span>
+        <span className="max-w-[200px] truncate">{activeEnv?.name || 'No Env'}</span>
         <ChevronDown size={11} />
       </button>
 

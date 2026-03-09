@@ -341,7 +341,7 @@ export function ParameterEditor({ paramRefs, simpleMode }: ParameterEditorProps)
   let customIndex = -1;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
       {hasPathSection && (
         <div className="rounded-lg border border-border overflow-hidden bg-bg-secondary">
           <SectionHeader label="Path Parameters" badge="required" />

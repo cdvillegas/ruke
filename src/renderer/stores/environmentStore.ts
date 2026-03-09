@@ -5,6 +5,7 @@ import { VARIABLE_REGEX } from '@shared/constants';
 
 interface EnvironmentState {
   environments: Environment[];
+  archivedEnvironments: Environment[];
   activeEnvironmentId: string | null;
   selectedEnvironmentId: string | null;
   variables: Map<string, EnvVariable[]>;
@@ -14,6 +15,8 @@ interface EnvironmentState {
   createEnvironment: (workspaceId: string, name: string) => Promise<Environment>;
   setActiveEnvironment: (workspaceId: string, envId: string) => Promise<void>;
   deleteEnvironment: (id: string) => Promise<void>;
+  archiveEnvironment: (id: string) => Promise<void>;
+  unarchiveEnvironment: (id: string) => Promise<void>;
   duplicateEnvironment: (envId: string) => Promise<Environment>;
   renameEnvironment: (id: string, name: string) => Promise<void>;
   loadVariables: (environmentId: string) => Promise<void>;
@@ -30,6 +33,7 @@ interface EnvironmentState {
 
 export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
   environments: [],
+  archivedEnvironments: [],
   activeEnvironmentId: null,
   selectedEnvironmentId: null,
   variables: new Map(),
@@ -43,6 +47,10 @@ export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
       for (const env of environments) {
         get().loadVariables(env.id);
       }
+      try {
+        const archived = await window.ruke.db.query('getArchivedEnvironments', workspaceId);
+        set({ archivedEnvironments: Array.isArray(archived) ? archived : [] });
+      } catch {}
     } catch { /* db not ready */ }
   },
 
@@ -80,7 +88,29 @@ export const useEnvironmentStore = create<EnvironmentState>((set, get) => ({
     await window.ruke.db.query('deleteEnvironment', id);
     set((s) => ({
       environments: s.environments.filter((e) => e.id !== id),
+      archivedEnvironments: s.archivedEnvironments.filter((e) => e.id !== id),
       activeEnvironmentId: s.activeEnvironmentId === id ? null : s.activeEnvironmentId,
+      selectedEnvironmentId: s.selectedEnvironmentId === id ? null : s.selectedEnvironmentId,
+    }));
+  },
+
+  archiveEnvironment: async (id) => {
+    await window.ruke.db.query('archiveEnvironment', id);
+    const env = get().environments.find((e) => e.id === id);
+    set((s) => ({
+      environments: s.environments.filter((e) => e.id !== id),
+      archivedEnvironments: env ? [...s.archivedEnvironments, { ...env, archived: true, isActive: false }] : s.archivedEnvironments,
+      activeEnvironmentId: s.activeEnvironmentId === id ? null : s.activeEnvironmentId,
+      selectedEnvironmentId: s.selectedEnvironmentId === id ? null : s.selectedEnvironmentId,
+    }));
+  },
+
+  unarchiveEnvironment: async (id) => {
+    await window.ruke.db.query('unarchiveEnvironment', id);
+    const env = get().archivedEnvironments.find((e) => e.id === id);
+    set((s) => ({
+      archivedEnvironments: s.archivedEnvironments.filter((e) => e.id !== id),
+      environments: env ? [...s.environments, { ...env, archived: false }] : s.environments,
     }));
   },
 

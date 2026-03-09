@@ -14,7 +14,6 @@ import { useCollectionStore } from '../../stores/collectionStore';
 import { useRequestStore } from '../../stores/requestStore';
 import { useUiStore } from '../../stores/uiStore';
 import { ConversationTurn } from '../shared/MessageBubble';
-import { ThinkingIndicator } from '../shared/ThinkingIndicator';
 import { AttachmentChip } from '../shared/AttachmentChip';
 import {
   getModelConfig, selectModel, getConfiguredProviders,
@@ -1010,17 +1009,6 @@ export function AgentPanel() {
                   />
                 );
               })}
-              {showThinking && (
-                <div className="flex justify-start px-3 py-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="flex items-center gap-[3px]">
-                      <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:0ms]" />
-                      <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:150ms]" />
-                      <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:300ms]" />
-                    </span>
-                  </div>
-                </div>
-              )}
               {error && (
                 <div className="flex justify-start px-3 py-2">
                   <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">

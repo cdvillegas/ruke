@@ -5,13 +5,15 @@ import { useUiStore } from '../../stores/uiStore';
 import {
   Plus, Trash2, Eye, EyeOff, MoreHorizontal,
   Layers, Search, FileText, Copy, Pencil, Check,
+  Archive, ArchiveRestore, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import type { Environment } from '@shared/types';
 
 export function EnvironmentsSidebar() {
   const {
-    environments, activeEnvironmentId, createEnvironment,
-    deleteEnvironment, duplicateEnvironment, renameEnvironment,
+    environments, archivedEnvironments, activeEnvironmentId, createEnvironment,
+    archiveEnvironment, unarchiveEnvironment, deleteEnvironment,
+    duplicateEnvironment, renameEnvironment,
     reorderEnvironments,
   } = useEnvironmentStore();
   const activeWorkspaceId = useCollectionStore((s) => s.activeWorkspaceId);
@@ -24,6 +26,7 @@ export function EnvironmentsSidebar() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null);
+  const [archiveExpanded, setArchiveExpanded] = useState(false);
 
   useEffect(() => {
     if (activeEnvironmentId && !selectedEnvId) {
@@ -152,7 +155,7 @@ export function EnvironmentsSidebar() {
             onCommitRename={() => commitRename(env.id)}
             onCancelRename={() => setEditingName(null)}
             onDuplicate={() => handleDuplicate(env.id)}
-            onDelete={() => deleteEnvironment(env.id)}
+            onArchive={() => archiveEnvironment(env.id)}
             isDragging={draggedId === env.id}
             isDropTarget={dropTargetId === env.id}
             dropPosition={dropTargetId === env.id ? dropPosition : null}
@@ -164,7 +167,7 @@ export function EnvironmentsSidebar() {
             draggable={!isSearching && editingName !== env.id}
           />
         ))}
-        {filtered.length === 0 && !sidebarSearch.trim() && (
+        {filtered.length === 0 && !sidebarSearch.trim() && archivedEnvironments.length === 0 && (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <Layers size={20} className="text-text-muted mb-2" />
             <p className="text-xs text-text-muted">No environments yet</p>
@@ -175,6 +178,33 @@ export function EnvironmentsSidebar() {
             <p className="text-xs text-text-muted">No matches</p>
           </div>
         )}
+
+        {archivedEnvironments.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-border/60">
+            <button
+              onClick={() => setArchiveExpanded(!archiveExpanded)}
+              className="flex items-center gap-1.5 w-full px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider hover:text-text-secondary transition-colors"
+            >
+              {archiveExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+              <Archive size={10} />
+              Archive ({archivedEnvironments.length})
+            </button>
+            {archiveExpanded && (
+              <div className="space-y-0.5 mt-1">
+                {archivedEnvironments.map(env => (
+                  <ArchivedEnvItem
+                    key={env.id}
+                    env={env}
+                    isSelected={env.id === selectedEnvId}
+                    onSelect={() => setSelectedEnvId(env.id)}
+                    onRestore={() => unarchiveEnvironment(env.id)}
+                    onDelete={() => deleteEnvironment(env.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </>
   );
@@ -182,7 +212,7 @@ export function EnvironmentsSidebar() {
 
 export function EnvironmentsMain() {
   const {
-    environments, activeEnvironmentId, createEnvironment,
+    environments, archivedEnvironments, activeEnvironmentId, createEnvironment,
     addVariable, updateVariable, deleteVariable,
     getEnvironmentVariables, setActiveEnvironment,
   } = useEnvironmentStore();
@@ -191,7 +221,7 @@ export function EnvironmentsMain() {
   const selectedEnvId = useEnvironmentStore((s) => s.selectedEnvironmentId);
   const setSelectedEnvId = useEnvironmentStore((s) => s.setSelectedEnvironmentId);
 
-  const selectedEnv = environments.find((e) => e.id === selectedEnvId);
+  const selectedEnv = [...environments, ...archivedEnvironments].find((e) => e.id === selectedEnvId);
   const variables = selectedEnvId ? getEnvironmentVariables(selectedEnvId) : [];
 
   const handleCreate = async () => {
@@ -381,7 +411,67 @@ export function EnvironmentsView() {
   );
 }
 
-function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSelect, onStartRename, onEditNameChange, onCommitRename, onCancelRename, onDuplicate, onDelete, isDragging, isDropTarget, dropPosition, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, draggable }: {
+function ArchivedEnvItem({ env, isSelected, onSelect, onRestore, onDelete }: {
+  env: Environment;
+  isSelected: boolean;
+  onSelect: () => void;
+  onRestore: () => void;
+  onDelete: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
+
+  return (
+    <div className="relative group">
+      <button
+        onClick={onSelect}
+        className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+          isSelected ? 'bg-accent/10 text-text-primary' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-text-muted/20" />
+          <span className="text-xs font-medium truncate opacity-60">{env.name}</span>
+        </div>
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
+        className={`absolute right-1.5 top-1.5 p-1 rounded-md transition-all ${
+          menuOpen ? 'opacity-100 bg-bg-hover' : 'opacity-0 group-hover:opacity-100 hover:bg-bg-hover'
+        }`}
+      >
+        <MoreHorizontal size={12} className="text-text-muted" />
+      </button>
+      {menuOpen && (
+        <div ref={menuRef} className="absolute right-0 top-full mt-1 z-50 w-40 py-1 rounded-lg bg-bg-secondary border border-border shadow-xl">
+          <button
+            onClick={async (e) => { e.stopPropagation(); await onRestore(); setMenuOpen(false); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          >
+            <ArchiveRestore size={12} /> Restore
+          </button>
+          <button
+            onClick={async (e) => { e.stopPropagation(); await onDelete(); setMenuOpen(false); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <Trash2 size={12} /> Delete permanently
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSelect, onStartRename, onEditNameChange, onCommitRename, onCancelRename, onDuplicate, onArchive, isDragging, isDropTarget, dropPosition, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, draggable }: {
   env: Environment;
   isSelected: boolean;
   isActive: boolean;
@@ -393,7 +483,7 @@ function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSe
   onCommitRename: () => void;
   onCancelRename: () => void;
   onDuplicate: () => void;
-  onDelete: () => void;
+  onArchive: () => void;
   isDragging: boolean;
   isDropTarget: boolean;
   dropPosition: 'above' | 'below' | null;
@@ -514,10 +604,10 @@ function EnvListItem({ env, isSelected, isActive, isEditing, editNameValue, onSe
             <Copy size={12} /> Duplicate
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onDelete(); setMenuOpen(false); }}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+            onClick={async (e) => { e.stopPropagation(); await onArchive(); setMenuOpen(false); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
           >
-            <Trash2 size={12} /> Delete
+            <Archive size={12} /> Archive
           </button>
         </div>
       )}

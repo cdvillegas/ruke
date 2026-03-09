@@ -170,7 +170,18 @@ const searchEndpointsTool = tool({
   execute: async ({ query, connection_id }) => {
     const q = query.toLowerCase();
     const conns = useConnectionStore.getState().connections;
-    const filtered = connection_id ? conns.filter(c => c.id === connection_id) : conns;
+
+    let filtered = conns;
+    if (connection_id) {
+      const exact = conns.filter(c => c.id === connection_id);
+      if (exact.length > 0) {
+        filtered = exact;
+      } else {
+        const byName = conns.filter(c => c.name.toLowerCase().includes(connection_id.toLowerCase()));
+        filtered = byName.length > 0 ? byName : conns;
+      }
+    }
+
     const results: Array<Record<string, unknown>> = [];
 
     for (const conn of filtered) {
@@ -196,7 +207,13 @@ const searchEndpointsTool = tool({
       if (results.length >= 15) break;
     }
 
-    if (results.length === 0) return JSON.stringify({ results: [], message: `No endpoints matching "${query}" found.` });
+    if (results.length === 0) {
+      const totalEndpoints = filtered.reduce((sum, c) => sum + c.endpoints.length, 0);
+      if (totalEndpoints === 0) {
+        return JSON.stringify({ results: [], message: `No endpoints loaded for the matched connection(s). Try reimporting the spec.` });
+      }
+      return JSON.stringify({ results: [], message: `No endpoints matching "${query}" found across ${totalEndpoints} endpoints.` });
+    }
     return JSON.stringify({ results });
   },
 });
@@ -600,36 +617,29 @@ const searchRequestsTool = tool({
 });
 
 const deleteRequestTool = tool({
-  description: 'Permanently delete a request by name or ID. Searches across all requests (uncollected, collections, archived). Use search_requests first if unsure.',
+  description: 'Permanently delete an archived request. The request must be archived first using archive_request. Use search_requests to find requests.',
   inputSchema: z.object({
     match: z.string().describe('Request name or ID (case-insensitive partial match)'),
   }),
   execute: async ({ match }) => {
     const matchStr = match.toLowerCase();
     const reqStore = useRequestStore.getState();
-    const colStore = useCollectionStore.getState();
 
-    const all: Array<{ id: string; name: string; collectionId?: string | null }> = [];
-    for (const r of reqStore.uncollectedRequests) all.push({ id: r.id, name: r.name, collectionId: r.collectionId });
-    for (const r of reqStore.archivedRequests) all.push({ id: r.id, name: r.name, collectionId: r.collectionId });
-    for (const [colId, reqs] of Object.entries(colStore.requests)) {
-      for (const r of reqs) all.push({ id: r.id, name: r.name, collectionId: colId });
-    }
-
-    const found = all.find(r =>
+    const found = reqStore.archivedRequests.find(r =>
       r.id === match ||
       (r.name || '').toLowerCase() === matchStr ||
       (r.name || '').toLowerCase().includes(matchStr)
     );
 
-    if (!found) return JSON.stringify({ success: false, error: `No request matching "${match}" found.` });
-
-    await reqStore.deleteRequest(found.id);
-
-    if (found.collectionId) {
-      await colStore.loadRequests(found.collectionId);
+    if (!found) {
+      const anyMatch = [...reqStore.uncollectedRequests].find(r =>
+        r.id === match || (r.name || '').toLowerCase().includes(matchStr)
+      );
+      if (anyMatch) return JSON.stringify({ success: false, error: `Request "${anyMatch.name}" is not archived. Archive it first with archive_request, then delete.` });
+      return JSON.stringify({ success: false, error: `No archived request matching "${match}" found.` });
     }
 
+    await reqStore.deleteRequest(found.id);
     return JSON.stringify({ success: true, deleted: { id: found.id, name: found.name } });
   },
 });
@@ -1302,14 +1312,49 @@ const updateEnvironmentTool = tool({
 });
 
 const deleteEnvironmentTool = tool({
-  description: 'Delete an environment by name or ID.',
+  description: 'Permanently delete an archived environment. The environment must be archived first using archive_environment.',
+  inputSchema: z.object({ match: z.string().describe('Environment name or ID') }),
+  execute: async ({ match }) => {
+    const matchStr = match.toLowerCase();
+    const store = useEnvironmentStore.getState();
+    const found = store.archivedEnvironments.find(e =>
+      e.id === match || e.name.toLowerCase() === matchStr || e.name.toLowerCase().includes(matchStr)
+    );
+    if (!found) {
+      const active = store.environments.find(e => e.id === match || e.name.toLowerCase().includes(matchStr));
+      if (active) return JSON.stringify({ success: false, error: `Environment "${active.name}" is not archived. Archive it first with archive_environment, then delete.` });
+      return JSON.stringify({ success: false, error: `No archived environment matching "${match}" found.` });
+    }
+    await store.deleteEnvironment(found.id);
+    notifyView('environments');
+    return JSON.stringify({ success: true, deleted: { id: found.id, name: found.name } });
+  },
+});
+
+const archiveEnvironmentTool = tool({
+  description: 'Archive an environment by name or ID. Archived environments are hidden from the main list but can be restored.',
   inputSchema: z.object({ match: z.string().describe('Environment name or ID') }),
   execute: async ({ match }) => {
     const env = findEnvironment(match);
     if (!env) return JSON.stringify({ success: false, error: `No environment matching "${match}" found.` });
-    await useEnvironmentStore.getState().deleteEnvironment(env.id);
+    await useEnvironmentStore.getState().archiveEnvironment(env.id);
     notifyView('environments');
-    return JSON.stringify({ success: true, deleted: { id: env.id, name: env.name } });
+    return JSON.stringify({ success: true, archived: { id: env.id, name: env.name } });
+  },
+});
+
+const unarchiveEnvironmentTool = tool({
+  description: 'Restore an archived environment back to the main list.',
+  inputSchema: z.object({ match: z.string().describe('Environment name or ID') }),
+  execute: async ({ match }) => {
+    const matchStr = match.toLowerCase();
+    const found = useEnvironmentStore.getState().archivedEnvironments.find(e =>
+      e.id === match || e.name.toLowerCase() === matchStr || e.name.toLowerCase().includes(matchStr)
+    );
+    if (!found) return JSON.stringify({ success: false, error: `No archived environment matching "${match}" found.` });
+    await useEnvironmentStore.getState().unarchiveEnvironment(found.id);
+    notifyView('environments');
+    return JSON.stringify({ success: true, restored: { id: found.id, name: found.name } });
   },
 });
 
@@ -1390,14 +1435,49 @@ const deleteVariableTool = tool({
 // ── P0: Connection Management ──
 
 const deleteConnectionTool = tool({
-  description: 'Delete a connected API by name or ID.',
+  description: 'Permanently delete an archived connection. The connection must be archived first using archive_connection.',
+  inputSchema: z.object({ match: z.string().describe('Connection name or ID') }),
+  execute: async ({ match }) => {
+    const matchStr = match.toLowerCase();
+    const store = useConnectionStore.getState();
+    const found = store.archivedConnections.find(c =>
+      c.id === match || c.name.toLowerCase() === matchStr || c.name.toLowerCase().includes(matchStr)
+    );
+    if (!found) {
+      const active = store.connections.find(c => c.id === match || c.name.toLowerCase().includes(matchStr));
+      if (active) return JSON.stringify({ success: false, error: `Connection "${active.name}" is not archived. Archive it first with archive_connection, then delete.` });
+      return JSON.stringify({ success: false, error: `No archived connection matching "${match}" found.` });
+    }
+    store.deleteConnection(found.id);
+    notifyView('connections');
+    return JSON.stringify({ success: true, deleted: { id: found.id, name: found.name } });
+  },
+});
+
+const archiveConnectionTool = tool({
+  description: 'Archive a connection (API) by name or ID. Archived connections are hidden from the main list but can be restored.',
   inputSchema: z.object({ match: z.string().describe('Connection name or ID') }),
   execute: async ({ match }) => {
     const conn = findConnection(match);
     if (!conn) return JSON.stringify({ success: false, error: `No connection matching "${match}" found.` });
-    useConnectionStore.getState().deleteConnection(conn.id);
+    useConnectionStore.getState().archiveConnection(conn.id);
     notifyView('connections');
-    return JSON.stringify({ success: true, deleted: { id: conn.id, name: conn.name } });
+    return JSON.stringify({ success: true, archived: { id: conn.id, name: conn.name } });
+  },
+});
+
+const unarchiveConnectionTool = tool({
+  description: 'Restore an archived connection back to the main list.',
+  inputSchema: z.object({ match: z.string().describe('Connection name or ID') }),
+  execute: async ({ match }) => {
+    const matchStr = match.toLowerCase();
+    const found = useConnectionStore.getState().archivedConnections.find(c =>
+      c.id === match || c.name.toLowerCase() === matchStr || c.name.toLowerCase().includes(matchStr)
+    );
+    if (!found) return JSON.stringify({ success: false, error: `No archived connection matching "${match}" found.` });
+    useConnectionStore.getState().unarchiveConnection(found.id);
+    notifyView('connections');
+    return JSON.stringify({ success: true, restored: { id: found.id, name: found.name } });
   },
 });
 
@@ -2203,6 +2283,8 @@ export const AGENT_TOOLS = {
   set_connection_auth: setConnectionAuthTool,
   update_connection: updateConnectionTool,
   delete_connection: deleteConnectionTool,
+  archive_connection: archiveConnectionTool,
+  unarchive_connection: unarchiveConnectionTool,
   reimport_spec: reimportSpecTool,
   // Requests
   create_request: createRequestTool,
@@ -2233,6 +2315,8 @@ export const AGENT_TOOLS = {
   list_environments: listEnvironmentsTool,
   update_environment: updateEnvironmentTool,
   delete_environment: deleteEnvironmentTool,
+  archive_environment: archiveEnvironmentTool,
+  unarchive_environment: unarchiveEnvironmentTool,
   set_active_environment: setActiveEnvironmentTool,
   add_variable: addVariableTool,
   update_variable: updateVariableTool,
@@ -2321,6 +2405,8 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   set_connection_auth: 'Configuring auth',
   update_connection: 'Updating connection',
   delete_connection: 'Deleting connection',
+  archive_connection: 'Archiving connection',
+  unarchive_connection: 'Restoring connection',
   reimport_spec: 'Re-importing spec',
   create_request: 'Creating request',
   create_requests: 'Creating requests',
@@ -2347,6 +2433,8 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   list_environments: 'Listing environments',
   update_environment: 'Updating environment',
   delete_environment: 'Deleting environment',
+  archive_environment: 'Archiving environment',
+  unarchive_environment: 'Restoring environment',
   set_active_environment: 'Activating environment',
   add_variable: 'Adding variable',
   update_variable: 'Updating variable',

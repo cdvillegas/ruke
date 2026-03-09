@@ -35,6 +35,7 @@ function connectionNeedsMigration(conn: ApiConnection): boolean {
 
 interface ConnectionState {
   connections: ApiConnection[];
+  archivedConnections: ApiConnection[];
   activeConnectionId: string | null;
   searchQuery: string;
 
@@ -43,6 +44,8 @@ interface ConnectionState {
   addConnection: (conn: Partial<ApiConnection> & { name: string; baseUrl: string }) => ApiConnection;
   updateConnection: (id: string, updates: Partial<ApiConnection>) => void;
   deleteConnection: (id: string) => void;
+  archiveConnection: (id: string) => void;
+  unarchiveConnection: (id: string) => void;
   setActiveConnection: (id: string | null) => void;
   addEndpoints: (connectionId: string, endpoints: ApiEndpoint[]) => void;
   importOpenApiSpec: (specText: string, sourceUrl?: string) => ApiConnection | null;
@@ -54,15 +57,21 @@ interface ConnectionState {
   getConnection: (id: string) => ApiConnection | undefined;
 }
 
-export const useConnectionStore = create<ConnectionState>((set, get) => ({
-  connections: loadConnections(),
+export const useConnectionStore = create<ConnectionState>((set, get) => {
+  const allConns = loadConnections();
+  return {
+  connections: allConns.filter(c => !c.archived),
+  archivedConnections: allConns.filter(c => !!c.archived),
   activeConnectionId: null,
   searchQuery: '',
 
   setSearchQuery: (q) => set({ searchQuery: q }),
   loadConnections: () => {
     const conns = loadConnections();
-    set({ connections: conns });
+    set({
+      connections: conns.filter(c => !c.archived),
+      archivedConnections: conns.filter(c => !!c.archived),
+    });
 
     for (const conn of conns) {
       if (connectionNeedsMigration(conn) && conn.specUrl) {
@@ -87,27 +96,54 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    const updated = [...get().connections, conn];
-    set({ connections: updated });
-    saveConnections(updated);
+    const all = [...loadConnections(), conn];
+    saveConnections(all);
+    set({ connections: all.filter(c => !c.archived) });
     return conn;
   },
 
   updateConnection: (id, updates) => {
-    const updated = get().connections.map(c =>
+    const all = loadConnections().map(c =>
       c.id === id ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c
     );
-    set({ connections: updated });
-    saveConnections(updated);
+    saveConnections(all);
+    set({
+      connections: all.filter(c => !c.archived),
+      archivedConnections: all.filter(c => !!c.archived),
+    });
   },
 
   deleteConnection: (id) => {
-    const updated = get().connections.filter(c => c.id !== id);
+    const all = loadConnections().filter(c => c.id !== id);
+    saveConnections(all);
     set({
-      connections: updated,
+      connections: all.filter(c => !c.archived),
+      archivedConnections: all.filter(c => !!c.archived),
       activeConnectionId: get().activeConnectionId === id ? null : get().activeConnectionId,
     });
-    saveConnections(updated);
+  },
+
+  archiveConnection: (id) => {
+    const all = loadConnections().map(c =>
+      c.id === id ? { ...c, archived: true, updatedAt: new Date().toISOString() } : c
+    );
+    saveConnections(all);
+    set({
+      connections: all.filter(c => !c.archived),
+      archivedConnections: all.filter(c => !!c.archived),
+      activeConnectionId: get().activeConnectionId === id ? null : get().activeConnectionId,
+    });
+  },
+
+  unarchiveConnection: (id) => {
+    const all = loadConnections().map(c =>
+      c.id === id ? { ...c, archived: false, updatedAt: new Date().toISOString() } : c
+    );
+    saveConnections(all);
+    set({
+      connections: all.filter(c => !c.archived),
+      archivedConnections: all.filter(c => !!c.archived),
+    });
   },
 
   setActiveConnection: (id) => set({ activeConnectionId: id }),
@@ -118,19 +154,20 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       .map((id) => conns.find((c) => c.id === id))
       .filter(Boolean) as ApiConnection[];
     const remaining = conns.filter((c) => !orderedIds.includes(c.id));
-    const updated = [...sorted, ...remaining];
-    set({ connections: updated });
-    saveConnections(updated);
+    const reordered = [...sorted, ...remaining];
+    const all = [...reordered, ...get().archivedConnections];
+    saveConnections(all);
+    set({ connections: reordered });
   },
 
   addEndpoints: (connectionId, endpoints) => {
-    const updated = get().connections.map(c =>
+    const all = loadConnections().map(c =>
       c.id === connectionId
         ? { ...c, endpoints: [...c.endpoints, ...endpoints], updatedAt: new Date().toISOString() }
         : c
     );
-    set({ connections: updated });
-    saveConnections(updated);
+    saveConnections(all);
+    set({ connections: all.filter(c => !c.archived) });
   },
 
   importOpenApiSpec: (specText, sourceUrl) => {
@@ -159,7 +196,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
           : c
       );
       set({ connections: withIds });
-      saveConnections(withIds);
+      saveConnections([...withIds, ...get().archivedConnections]);
 
       return conn;
     } catch (e) {
@@ -189,13 +226,13 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         id: oldById.get(normalizeKey(e.method, e.path)) || e.id,
       }));
 
-      const updated = get().connections.map(c =>
+      const all = loadConnections().map(c =>
         c.id === connectionId
           ? { ...c, endpoints, updatedAt: new Date().toISOString() }
           : c
       );
-      set({ connections: updated });
-      saveConnections(updated);
+      saveConnections(all);
+      set({ connections: all.filter(c => !c.archived) });
       return true;
     } catch (e) {
       console.error('Failed to reimport spec:', e);
@@ -257,7 +294,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
           : c
       );
       set({ connections: withIds });
-      saveConnections(withIds);
+      saveConnections([...withIds, ...get().archivedConnections]);
       return conn;
     } catch (e) {
       console.error('GraphQL introspection failed:', e);
@@ -312,7 +349,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
           : c
       );
       set({ connections: withIds });
-      saveConnections(withIds);
+      saveConnections([...withIds, ...get().archivedConnections]);
       return conn;
     } catch (e) {
       console.error('Failed to import gRPC proto:', e);
@@ -355,7 +392,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
           : c
       );
       set({ connections: withIds });
-      saveConnections(withIds);
+      saveConnections([...withIds, ...get().archivedConnections]);
       return conn;
     } catch (e) {
       console.error('gRPC reflection failed:', e);
@@ -363,5 +400,9 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     }
   },
 
-  getConnection: (id) => get().connections.find(c => c.id === id),
-}));
+  getConnection: (id) => {
+    const all = loadConnections();
+    return all.find(c => c.id === id);
+  },
+};
+});

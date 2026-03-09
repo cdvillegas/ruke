@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 import { generateText } from 'ai';
 import type { ChatMessage, ChatSession, ChatToolCall, ChatAttachment, QueuedMessage, ContextMention } from '@shared/types';
-import { runAgent, type AgentMode } from '../lib/agentRunner';
+import { runAgent, getModelConfig, MANAGED_PROVIDERS, PROVIDER_MODELS, type AgentMode } from '../lib/agentRunner';
 import { useRequestStore } from './requestStore';
 import { useConnectionStore } from './connectionStore';
 import { useUiStore } from './uiStore';
@@ -230,7 +230,7 @@ interface ChatState {
   archiveSession: (id: string) => void;
   unarchiveSession: (id: string) => void;
   loadFromHistory: (id: string) => void;
-  sendMessage: (content: string, attachments?: ChatAttachment[], mode?: AgentMode, mentions?: ContextMention[]) => Promise<void>;
+  sendMessage: (content: string, attachments?: ChatAttachment[], mode?: AgentMode, mentions?: ContextMention[], planId?: string) => Promise<void>;
   enqueueMessage: (content: string, attachments?: ChatAttachment[], mode?: AgentMode, mentions?: ContextMention[]) => void;
   removeQueuedMessage: (index: number) => void;
   reorderQueue: (queue: QueuedMessage[]) => void;
@@ -393,7 +393,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     saveTabState(newTabs, id);
   },
 
-  sendMessage: async (content: string, attachments?: ChatAttachment[], mode?: AgentMode, mentions?: ContextMention[]) => {
+  sendMessage: async (content: string, attachments?: ChatAttachment[], mode?: AgentMode, mentions?: ContextMention[], planId?: string) => {
     const { runningSessionId, activeSessionId, sessions, openTabIds } = get();
 
     if (runningSessionId) {
@@ -424,12 +424,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       fullContent = `${content}\n\nAttached context:\n${mentionBlock}`;
     }
 
+    const resolvedMode = mode || 'agent';
+    const config = getModelConfig();
+    let modelLabel = config?.model || '';
+    if (config) {
+      const mp = MANAGED_PROVIDERS.find(p => p === config.provider);
+      if (mp) {
+        const match = PROVIDER_MODELS[mp].find(m => m.id === config.model);
+        if (match) modelLabel = match.label;
+      }
+    }
+
     const userMsg: ChatMessage = {
       id: nanoid(),
       role: 'user',
       content: fullContent,
       attachments: attachments && attachments.length > 0 ? attachments : undefined,
       timestamp: new Date().toISOString(),
+      mode: resolvedMode,
+      model: modelLabel,
+      ...(planId ? { planId } : {}),
     };
 
     const updatedSession = {

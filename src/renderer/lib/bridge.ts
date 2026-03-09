@@ -228,7 +228,9 @@ const localRepo: Record<string, (...args: any[]) => any> = {
   },
 
   getEnvironments: (workspaceId: string) =>
-    getStore('environments').filter((e: any) => e.workspaceId === workspaceId).sort((a: any, b: any) => a.sortOrder - b.sortOrder),
+    getStore('environments').filter((e: any) => e.workspaceId === workspaceId && !e.archived).sort((a: any, b: any) => a.sortOrder - b.sortOrder),
+  getArchivedEnvironments: (workspaceId: string) =>
+    getStore('environments').filter((e: any) => e.workspaceId === workspaceId && e.archived).sort((a: any, b: any) => a.sortOrder - b.sortOrder),
 
   createEnvironment: (id: string, workspaceId: string, name: string, sortOrder: number) => {
     const envs = getStore('environments');
@@ -249,6 +251,14 @@ const localRepo: Record<string, (...args: any[]) => any> = {
   deleteEnvironment: (id: string) => {
     setStore('environments', getStore('environments').filter((e: any) => e.id !== id));
     setStore('env_variables', getStore('env_variables').filter((v: any) => v.environmentId !== id));
+  },
+  archiveEnvironment: (id: string) => {
+    const envs = getStore('environments').map((e: any) => e.id === id ? { ...e, archived: true, isActive: false, updatedAt: new Date().toISOString() } : e);
+    setStore('environments', envs);
+  },
+  unarchiveEnvironment: (id: string) => {
+    const envs = getStore('environments').map((e: any) => e.id === id ? { ...e, archived: false, updatedAt: new Date().toISOString() } : e);
+    setStore('environments', envs);
   },
 
   getVariables: (environmentId: string) =>

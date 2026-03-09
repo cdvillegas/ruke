@@ -9,7 +9,7 @@ import {
   Plug, Plus, Trash2, Globe, ChevronRight, ChevronDown,
   Search, Play, Upload, Loader2, Check, AlertCircle, Sparkles,
   FileJson, Send, Copy, ExternalLink, Shield, RefreshCw,
-  Terminal, Code2, Braces, ChevronUp,
+  Terminal, Code2, Braces, ChevronUp, Archive, ArchiveRestore,
   Zap, Database, Cloud, Server, Lock, Key, Cpu,
   Box, Layers, Radio, Wifi, Activity, Heart,
   Star, Bookmark, Flag, Bell, Mail, MessageSquare,
@@ -64,7 +64,8 @@ import {
 import * as Popover from '@radix-ui/react-popover';
 import Markdown from 'react-markdown';
 import { METHOD_COLORS, VARIABLE_REGEX } from '@shared/constants';
-import type { ApiConnection, ApiEndpoint, EndpointParam, DiscoveryResult, GrpcMethodType } from '@shared/types';
+import type { ApiConnection, ApiEndpoint, EndpointParam, DiscoveryResult, GrpcMethodType, AuthConfig } from '@shared/types';
+import { AuthEditorCore, AUTH_TYPE_LABELS } from '../request/AuthEditor';
 import yaml from 'js-yaml';
 
 const ALL_ICONS: Record<string, LucideIcon> = {
@@ -441,12 +442,69 @@ interface ResolveResult {
   discoveryResults?: DiscoveryResult[];
 }
 
+function ArchivedConnectionItem({ conn, isActive }: { conn: ApiConnection; isActive: boolean }) {
+  const { unarchiveConnection, deleteConnection, setActiveConnection } = useConnectionStore();
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMenu]);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setActiveConnection(conn.id)}
+        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left group ${
+          isActive ? 'bg-accent/10 text-text-primary' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+        }`}
+      >
+        <ConnectionIcon conn={conn} size="sm" className="opacity-50" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium truncate opacity-60">{conn.name}</p>
+          <p className="text-[9px] text-text-muted font-mono truncate opacity-50">{conn.baseUrl}</p>
+        </div>
+        <div className="relative" ref={menuRef}>
+          <span
+            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-bg-active text-text-muted transition-all cursor-pointer"
+          >
+            <ChevronDown size={12} />
+          </span>
+          {showMenu && (
+            <div className="absolute right-0 top-full mt-1 w-40 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 py-1 animate-fade-in">
+              <button
+                onClick={(e) => { e.stopPropagation(); unarchiveConnection(conn.id); setShowMenu(false); }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              >
+                <ArchiveRestore size={12} /> Restore
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); deleteConnection(conn.id); setShowMenu(false); }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                <Trash2 size={12} /> Delete permanently
+              </button>
+            </div>
+          )}
+        </div>
+      </button>
+    </div>
+  );
+}
+
 export function ConnectionsSidebar() {
-  const { connections, activeConnectionId, setActiveConnection, searchQuery, setSearchQuery, reorderConnections } = useConnectionStore();
+  const { connections, archivedConnections, activeConnectionId, setActiveConnection, searchQuery, setSearchQuery, reorderConnections } = useConnectionStore();
   const aiCreatedItems = useUiStore(s => s.aiCreatedItems);
   const clearAiCreated = useUiStore(s => s.clearAiCreated);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; position: 'above' | 'below' } | null>(null);
+  const [archiveExpanded, setArchiveExpanded] = useState(false);
 
   const isSearching = !!searchQuery.trim();
 
@@ -557,10 +615,30 @@ export function ConnectionsSidebar() {
           </div>
         ))}
 
-        {connections.length === 0 && (
+        {connections.length === 0 && archivedConnections.length === 0 && (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <Plug size={20} className="text-text-muted mb-2" />
             <p className="text-xs text-text-muted">No APIs connected</p>
+          </div>
+        )}
+
+        {archivedConnections.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-border/60">
+            <button
+              onClick={() => setArchiveExpanded(!archiveExpanded)}
+              className="flex items-center gap-1.5 w-full px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider hover:text-text-secondary transition-colors"
+            >
+              {archiveExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+              <Archive size={10} />
+              Archive ({archivedConnections.length})
+            </button>
+            {archiveExpanded && (
+              <div className="space-y-0.5 mt-1">
+                {archivedConnections.map(conn => (
+                  <ArchivedConnectionItem key={conn.id} conn={conn} isActive={conn.id === activeConnectionId} />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -569,8 +647,9 @@ export function ConnectionsSidebar() {
 }
 
 export function ConnectionsMain() {
-  const { connections, activeConnectionId, deleteConnection, searchQuery, setSearchQuery } = useConnectionStore();
-  const activeConn = connections.find(c => c.id === activeConnectionId);
+  const { connections, archivedConnections, activeConnectionId, archiveConnection, searchQuery, setSearchQuery } = useConnectionStore();
+  const activeConn = [...connections, ...archivedConnections].find(c => c.id === activeConnectionId);
+  const isArchived = archivedConnections.some(c => c.id === activeConnectionId);
 
   const handleRunEndpoint = useCallback((conn: ApiConnection, endpoint: ApiEndpoint) => {
     if (conn.specType === 'grpc') {
@@ -672,10 +751,11 @@ export function ConnectionsMain() {
       {activeConn ? (
         <ConnectionDetail
           conn={activeConn}
+          isArchived={isArchived}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           onRunEndpoint={handleRunEndpoint}
-          onDelete={() => deleteConnection(activeConn.id)}
+          onArchive={() => archiveConnection(activeConn.id)}
         />
       ) : (
         <SmartAddPanel />
@@ -1731,12 +1811,50 @@ function EndpointRow({ conn, ep, onRun }: { conn: ApiConnection; ep: ApiEndpoint
   );
 }
 
-function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, onDelete }: {
+function ConnectionAuthSection({ conn }: { conn: ApiConnection }) {
+  const [expanded, setExpanded] = useState(conn.auth.type !== 'none');
+  const updateConnection = useConnectionStore((s) => s.updateConnection);
+
+  const handleAuthChange = (auth: AuthConfig) => {
+    updateConnection(conn.id, { auth });
+  };
+
+  return (
+    <div className="mb-4 rounded-xl border border-border">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className={`w-full flex items-center justify-between px-4 py-2.5 bg-bg-secondary hover:bg-bg-tertiary transition-colors text-left ${expanded ? 'rounded-t-xl' : 'rounded-xl'}`}
+      >
+        <div className="flex items-center gap-2">
+          <Shield size={13} className={conn.auth.type !== 'none' ? 'text-green-400' : 'text-text-muted'} />
+          <span className="text-xs font-semibold text-text-primary">Authentication</span>
+          {conn.auth.type !== 'none' && (
+            <span className="text-[10px] text-green-400 font-medium">
+              {AUTH_TYPE_LABELS[conn.auth.type]}
+            </span>
+          )}
+        </div>
+        {expanded
+          ? <ChevronDown size={13} className="text-text-muted" />
+          : <ChevronRight size={13} className="text-text-muted" />
+        }
+      </button>
+      {expanded && (
+        <div className="px-4 py-3 border-t border-border/50 bg-bg-primary">
+          <AuthEditorCore auth={conn.auth} onAuthChange={handleAuthChange} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConnectionDetail({ conn, isArchived, searchQuery, setSearchQuery, onRunEndpoint, onArchive }: {
   conn: ApiConnection;
+  isArchived?: boolean;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   onRunEndpoint: (conn: ApiConnection, ep: ApiEndpoint) => void;
-  onDelete: () => void;
+  onArchive: () => void;
 }) {
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set(['all']));
   const [reimporting, setReimporting] = useState(false);
@@ -1820,13 +1938,15 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
               <RefreshCw size={14} className={reimporting ? 'animate-spin' : ''} />
             </button>
           )}
-          <button
-            onClick={onDelete}
-            className="p-2 rounded-lg text-text-muted hover:text-error hover:bg-error/10 transition-colors"
-            title="Remove connection"
-          >
-            <Trash2 size={14} />
-          </button>
+          {!isArchived && (
+            <button
+              onClick={onArchive}
+              className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+              title="Archive connection"
+            >
+              <Archive size={14} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1854,13 +1974,6 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
           </span>
         ))}
 
-        {conn.auth.type !== 'none' && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-green-500/10 border border-green-500/20 text-[10px] text-green-400">
-            <Shield size={10} />
-            {conn.auth.type === 'bearer' ? 'Bearer' : conn.auth.type === 'basic' ? 'Basic' : conn.auth.type === 'api-key' ? 'API Key' : conn.auth.type}
-          </span>
-        )}
-
         {activeEnv && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent/10 border border-accent/20 text-[10px] text-accent">
             <Globe size={10} />
@@ -1868,6 +1981,9 @@ function ConnectionDetail({ conn, searchQuery, setSearchQuery, onRunEndpoint, on
           </span>
         )}
       </div>
+
+      {/* Authentication */}
+      <ConnectionAuthSection conn={conn} />
 
       {/* Description */}
       {conn.description && (

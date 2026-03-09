@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useRequestStore } from '../../stores/requestStore';
+import { useConnectionStore } from '../../stores/connectionStore';
 import type { AuthConfig, AuthType, OAuth2Config } from '@shared/types';
-import { Shield, Key, User, Lock, Eye, EyeOff } from 'lucide-react';
+import { Shield, Key, User, Lock, Eye, EyeOff, Plug } from 'lucide-react';
 import { VariableInput } from '../shared/VariableInput';
 
 const AUTH_TYPES: { id: AuthType; label: string; icon: typeof Shield }[] = [
@@ -49,10 +50,28 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function AuthEditor() {
-  const activeRequest = useRequestStore((s) => s.activeRequest);
-  const setAuth = useRequestStore((s) => s.setAuth);
-  const requestAuth = activeRequest.auth;
+export const AUTH_TYPE_LABELS: Record<AuthType, string> = {
+  none: 'No Auth',
+  bearer: 'Bearer Token',
+  basic: 'Basic Auth',
+  'api-key': 'API Key',
+  oauth2: 'OAuth 2.0',
+};
+
+interface AuthEditorCoreProps {
+  auth: AuthConfig;
+  onAuthChange: (auth: AuthConfig) => void;
+  emptyState?: React.ReactNode;
+  inheritedAuth?: { auth: AuthConfig; name: string };
+}
+
+function shouldReveal(value: string, manualShow: boolean): 'text' | 'password' {
+  if (manualShow) return 'text';
+  if (value.startsWith('{')) return 'text';
+  return 'password';
+}
+
+export function AuthEditorCore({ auth, onAuthChange, emptyState, inheritedAuth }: AuthEditorCoreProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [showApiValue, setShowApiValue] = useState(false);
@@ -60,12 +79,12 @@ export function AuthEditor() {
   const [oauthLoading, setOauthLoading] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
 
-  const displayType = requestAuth.type;
+  const displayType = auth.type;
 
   const setType = (type: AuthType) => {
-    if (type === 'oauth2' && !requestAuth.oauth2) {
-      setAuth({
-        ...requestAuth,
+    if (type === 'oauth2' && !auth.oauth2) {
+      onAuthChange({
+        ...auth,
         type: 'oauth2',
         oauth2: {
           grantType: 'authorization_code',
@@ -74,18 +93,18 @@ export function AuthEditor() {
         },
       });
     } else {
-      setAuth({ ...requestAuth, type });
+      onAuthChange({ ...auth, type });
     }
   };
 
   const updateAuth = (updates: Partial<AuthConfig>) => {
-    setAuth({ ...requestAuth, ...updates });
+    onAuthChange({ ...auth, ...updates });
   };
 
-  const oauth2 = requestAuth.oauth2;
+  const oauth2 = auth.oauth2;
   const updateOAuth2 = (updates: Partial<OAuth2Config>) => {
-    setAuth({
-      ...requestAuth,
+    onAuthChange({
+      ...auth,
       type: 'oauth2',
       oauth2: { ...oauth2!, ...updates },
     });
@@ -200,11 +219,27 @@ export function AuthEditor() {
     }
   };
 
+  const isInheritMode = !!inheritedAuth && displayType === 'none';
+  const inheritedType = inheritedAuth?.auth.type;
+
   return (
     <div className="space-y-4">
-      <div className="flex gap-0.5 p-0.5 rounded-lg bg-bg-secondary/60 w-fit">
-        {AUTH_TYPES.map((t) => {
-          const isActive = displayType === t.id;
+      <div className="flex gap-0.5 p-0.5 rounded-lg bg-bg-secondary/60 w-fit flex-wrap">
+        {inheritedAuth && (
+          <button
+            onClick={() => setType('none')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 ${
+              isInheritMode
+                ? 'bg-bg-tertiary text-text-primary shadow-sm'
+                : 'text-text-muted hover:text-text-secondary'
+            }`}
+          >
+            <Plug size={12} />
+            <span>Inherit from API</span>
+          </button>
+        )}
+        {AUTH_TYPES.filter(t => !inheritedAuth || t.id !== 'none').map((t) => {
+          const isActive = !isInheritMode && displayType === t.id;
           return (
             <button
               key={t.id}
@@ -222,13 +257,49 @@ export function AuthEditor() {
         })}
       </div>
 
-      {displayType === 'none' && (
-        <div className="flex flex-col items-center justify-center py-6 text-center">
-          <Shield size={20} className="text-text-muted/40 mb-2" />
-          <p className="text-xs text-text-muted">
-            This request does not use authentication
-          </p>
+      {isInheritMode && inheritedAuth && (
+        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-accent/5 border border-accent/10">
+          <Plug size={13} className="text-accent shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] text-text-secondary">
+              Inherits <span className="font-medium text-accent/80">{AUTH_TYPE_LABELS[inheritedType!]}</span> from{' '}
+              <span className="font-medium text-text-primary">{inheritedAuth.name}</span>
+            </p>
+            {inheritedType === 'bearer' && inheritedAuth.auth.bearer?.token && (
+              <p className="text-[10px] text-text-muted font-mono mt-0.5 truncate">
+                Token: {inheritedAuth.auth.bearer.token.startsWith('{') ? inheritedAuth.auth.bearer.token : '••••••••'}
+              </p>
+            )}
+            {inheritedType === 'basic' && (
+              <p className="text-[10px] text-text-muted font-mono mt-0.5">
+                {inheritedAuth.auth.basic?.username
+                  ? (inheritedAuth.auth.basic.username.startsWith('{') ? inheritedAuth.auth.basic.username : '••••••••')
+                  : '(no username)'}
+              </p>
+            )}
+            {inheritedType === 'api-key' && inheritedAuth.auth.apiKey && (
+              <p className="text-[10px] text-text-muted font-mono mt-0.5">
+                {inheritedAuth.auth.apiKey.key || '(no key name)'} via {inheritedAuth.auth.apiKey.addTo}
+              </p>
+            )}
+            {inheritedType === 'oauth2' && (
+              <p className="text-[10px] text-text-muted mt-0.5">
+                {inheritedAuth.auth.oauth2?.grantType?.replace('_', ' ') || 'OAuth 2.0'}
+              </p>
+            )}
+          </div>
         </div>
+      )}
+
+      {displayType === 'none' && !isInheritMode && (
+        emptyState || (
+          <div className="flex flex-col items-center justify-center py-6 text-center">
+            <Shield size={20} className="text-text-muted/40 mb-2" />
+            <p className="text-xs text-text-muted">
+              No authentication configured
+            </p>
+          </div>
+        )
       )}
 
       {displayType === 'bearer' && (
@@ -236,10 +307,10 @@ export function AuthEditor() {
           <FieldLabel>Token</FieldLabel>
           <div className="relative">
             <VariableInput
-              value={requestAuth.bearer?.token || ''}
+              value={auth.bearer?.token || ''}
               onChange={(v) => updateAuth({ type: 'bearer', bearer: { token: v } })}
               placeholder="Enter bearer token or {{variable}}"
-              type={showToken ? 'text' : 'password'}
+              type={shouldReveal(auth.bearer?.token || '', showToken)}
               className={INPUT_CLASS + ' pr-9'}
             />
             <button
@@ -262,11 +333,11 @@ export function AuthEditor() {
           <div>
             <FieldLabel>Username</FieldLabel>
             <VariableInput
-              value={requestAuth.basic?.username || ''}
+              value={auth.basic?.username || ''}
               onChange={(v) =>
                 updateAuth({
                   type: 'basic',
-                  basic: { username: v, password: requestAuth.basic?.password || '' },
+                  basic: { username: v, password: auth.basic?.password || '' },
                 })
               }
               placeholder="Username or {{variable}}"
@@ -277,15 +348,15 @@ export function AuthEditor() {
             <FieldLabel>Password</FieldLabel>
             <div className="relative">
               <VariableInput
-                value={requestAuth.basic?.password || ''}
+                value={auth.basic?.password || ''}
                 onChange={(v) =>
                   updateAuth({
                     type: 'basic',
-                    basic: { username: requestAuth.basic?.username || '', password: v },
+                    basic: { username: auth.basic?.username || '', password: v },
                   })
                 }
                 placeholder="Password or {{variable}}"
-                type={showPassword ? 'text' : 'password'}
+                type={shouldReveal(auth.basic?.password || '', showPassword)}
                 className={INPUT_CLASS + ' pr-9'}
               />
               <button
@@ -309,11 +380,11 @@ export function AuthEditor() {
           <div>
             <FieldLabel>Key Name</FieldLabel>
             <VariableInput
-              value={requestAuth.apiKey?.key || ''}
+              value={auth.apiKey?.key || ''}
               onChange={(v) =>
                 updateAuth({
                   type: 'api-key',
-                  apiKey: { key: v, value: requestAuth.apiKey?.value || '', addTo: requestAuth.apiKey?.addTo || 'header' },
+                  apiKey: { key: v, value: auth.apiKey?.value || '', addTo: auth.apiKey?.addTo || 'header' },
                 })
               }
               placeholder="e.g. X-API-Key"
@@ -324,15 +395,15 @@ export function AuthEditor() {
             <FieldLabel>Value</FieldLabel>
             <div className="relative">
               <VariableInput
-                value={requestAuth.apiKey?.value || ''}
+                value={auth.apiKey?.value || ''}
                 onChange={(v) =>
                   updateAuth({
                     type: 'api-key',
-                    apiKey: { key: requestAuth.apiKey?.key || '', value: v, addTo: requestAuth.apiKey?.addTo || 'header' },
+                    apiKey: { key: auth.apiKey?.key || '', value: v, addTo: auth.apiKey?.addTo || 'header' },
                   })
                 }
                 placeholder="API key value or {{variable}}"
-                type={showApiValue ? 'text' : 'password'}
+                type={shouldReveal(auth.apiKey?.value || '', showApiValue)}
                 className={INPUT_CLASS + ' pr-9'}
               />
               <button
@@ -355,11 +426,11 @@ export function AuthEditor() {
                   onClick={() =>
                     updateAuth({
                       type: 'api-key',
-                      apiKey: { ...requestAuth.apiKey!, addTo: loc },
+                      apiKey: { ...auth.apiKey!, addTo: loc },
                     })
                   }
                   className={`px-2 py-0.5 text-[10px] font-medium rounded capitalize transition-all duration-150 ${
-                    requestAuth.apiKey?.addTo === loc
+                    auth.apiKey?.addTo === loc
                       ? 'bg-bg-tertiary text-text-primary shadow-sm'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
@@ -412,7 +483,7 @@ export function AuthEditor() {
                 value={oauth2.clientSecret || ''}
                 onChange={(v) => updateOAuth2({ clientSecret: v })}
                 placeholder="Client secret or {{variable}}"
-                type="password"
+                type={shouldReveal(oauth2.clientSecret || '', false)}
                 className={INPUT_CLASS}
               />
             </div>
@@ -501,7 +572,7 @@ export function AuthEditor() {
                   value={oauth2.password || ''}
                   onChange={(v) => updateOAuth2({ password: v })}
                   placeholder="Password or {{variable}}"
-                  type="password"
+                  type={shouldReveal(oauth2.password || '', false)}
                   className={INPUT_CLASS}
                 />
               </div>
@@ -530,7 +601,7 @@ export function AuthEditor() {
                   value={oauth2.accessToken}
                   onChange={(v) => updateOAuth2({ accessToken: v })}
                   placeholder=""
-                  type={showOAuthToken ? 'text' : 'password'}
+                  type={shouldReveal(oauth2.accessToken, showOAuthToken)}
                   className={INPUT_CLASS + ' pr-9'}
                 />
                 <button
@@ -559,5 +630,28 @@ export function AuthEditor() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Request-level auth editor with connection inheritance UX.
+ * Used in RequestBuilder and GrpcRequestBuilder.
+ */
+export function AuthEditor() {
+  const activeRequest = useRequestStore((s) => s.activeRequest);
+  const setAuth = useRequestStore((s) => s.setAuth);
+
+  const linkedConnection = activeRequest.connectionId
+    ? useConnectionStore.getState().getConnection(activeRequest.connectionId)
+    : undefined;
+  const connectionAuth = linkedConnection?.auth;
+  const connectionHasAuth = connectionAuth && connectionAuth.type !== 'none';
+
+  return (
+    <AuthEditorCore
+      auth={activeRequest.auth}
+      onAuthChange={setAuth}
+      inheritedAuth={connectionHasAuth ? { auth: connectionAuth!, name: linkedConnection!.name } : undefined}
+    />
   );
 }
