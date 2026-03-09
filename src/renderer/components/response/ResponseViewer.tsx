@@ -7,8 +7,8 @@ import { Clock, HardDrive, ArrowDown, ChevronDown, History } from 'lucide-react'
 
 function statusColor(status: number) {
   if (status >= 200 && status < 300) return 'text-success';
-  if (status >= 400) return 'text-error';
-  if (status >= 300) return 'text-warning';
+  if (status >= 300 && status < 400) return 'text-warning';
+  if (status >= 400 && status < 500) return 'text-warning';
   return 'text-error';
 }
 

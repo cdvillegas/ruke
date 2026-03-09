@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { useRequestStore } from '../../stores/requestStore';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
-import { Play, CheckCircle2, XCircle, AlertTriangle, Sparkles } from 'lucide-react';
+import { EditorView } from '@codemirror/view';
+import { appEditorTheme, blockEditorExtensions } from '../shared/editorTheme';
+import {
+  Play, CheckCircle2, XCircle, AlertTriangle,
+  Code, ChevronDown, Timer, Variable, TestTube2, Link2,
+} from 'lucide-react';
 import type { TestResult, ScriptConfig } from '@shared/types';
 
 const SCRIPT_TEMPLATES = {
@@ -50,6 +55,15 @@ const POST_TEMPLATES: Record<string, string> = {
   'Response time check': SCRIPT_TEMPLATES['Response time check'],
 };
 
+const TEMPLATE_ICONS: Record<string, typeof Code> = {
+  'Dynamic timestamp': Timer,
+  'Set variable from response': Variable,
+  'Validate status code': CheckCircle2,
+  'Validate response body': TestTube2,
+  'Chain requests': Link2,
+  'Response time check': Timer,
+};
+
 export function ScriptEditor() {
   const activeRequest = useRequestStore((s) => s.activeRequest);
   const updateActiveRequest = useRequestStore((s) => s.updateActiveRequest);
@@ -58,9 +72,13 @@ export function ScriptEditor() {
   const [lastLogs, setLastLogs] = useState<string[]>([]);
   const [lastError, setLastError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [showRef, setShowRef] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const scripts: ScriptConfig = activeRequest.scripts || {};
   const currentScript = activeTab === 'pre' ? (scripts.preRequest || '') : (scripts.postResponse || '');
+  const hasScript = !!currentScript.trim();
+  const showEditor = hasScript || editing;
 
   const updateScript = (value: string) => {
     const updated: ScriptConfig = { ...scripts };
@@ -70,6 +88,11 @@ export function ScriptEditor() {
       updated.postResponse = value;
     }
     updateActiveRequest({ scripts: updated });
+  };
+
+  const applyTemplate = (code: string) => {
+    updateScript(code);
+    setEditing(true);
   };
 
   const testScript = async () => {
@@ -114,11 +137,11 @@ export function ScriptEditor() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <div className="flex gap-0.5 p-0.5 rounded-lg bg-bg-secondary/60 flex-1">
+      <div className="flex items-center justify-between">
+        <div className="flex gap-0.5 p-0.5 rounded-lg bg-bg-secondary/60 w-fit">
           <button
             onClick={() => setActiveTab('pre')}
-            className={`flex-1 px-3 py-1.5 text-[11px] font-medium rounded-md transition-all ${
+            className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 ${
               activeTab === 'pre' ? 'bg-bg-tertiary text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'
             }`}
           >
@@ -127,7 +150,7 @@ export function ScriptEditor() {
           </button>
           <button
             onClick={() => setActiveTab('post')}
-            className={`flex-1 px-3 py-1.5 text-[11px] font-medium rounded-md transition-all ${
+            className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 ${
               activeTab === 'post' ? 'bg-bg-tertiary text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'
             }`}
           >
@@ -136,63 +159,104 @@ export function ScriptEditor() {
           </button>
         </div>
 
-        <button
-          onClick={testScript}
-          disabled={running || !currentScript.trim()}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-40 transition-colors"
-        >
-          <Play size={11} />
-          Test
-        </button>
-      </div>
-
-      {!currentScript && (
-        <div className="space-y-2">
-          <p className="text-[10px] text-text-muted uppercase tracking-wider font-medium">Templates</p>
-          <div className="flex flex-wrap gap-1.5">
-            {Object.entries(templates).map(([name, code]) => (
-              <button
-                key={name}
-                onClick={() => updateScript(code)}
-                className="px-2.5 py-1.5 text-[10px] rounded-lg bg-bg-tertiary border border-border text-text-secondary hover:text-text-primary hover:border-border-light transition-colors"
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="rounded-lg overflow-hidden border border-border">
-        <CodeMirror
-          value={currentScript}
-          onChange={updateScript}
-          extensions={[javascript()]}
-          height="180px"
-          theme="dark"
-          placeholder={activeTab === 'pre'
-            ? '// Runs before the request is sent\n// Use rk.variables.set(key, value) to set variables'
-            : '// Runs after the response is received\n// Use rk.test(name, fn) to add test assertions\n// Use response.json() to parse the response body'
-          }
-          basicSetup={{
-            lineNumbers: true,
-            foldGutter: false,
-            highlightActiveLine: true,
-            autocompletion: false,
-          }}
-        />
-      </div>
-
-      <div className="text-[10px] text-text-muted space-y-0.5">
-        <p><code className="text-accent/70 bg-accent/8 px-1 rounded">rk.variables.set(key, value)</code> / <code className="text-accent/70 bg-accent/8 px-1 rounded">.get(key)</code> — manage variables</p>
-        <p><code className="text-accent/70 bg-accent/8 px-1 rounded">rk.test(name, fn)</code> / <code className="text-accent/70 bg-accent/8 px-1 rounded">rk.expect(val).toBe(expected)</code> — assertions</p>
-        {activeTab === 'post' && (
-          <p><code className="text-accent/70 bg-accent/8 px-1 rounded">response.json()</code> / <code className="text-accent/70 bg-accent/8 px-1 rounded">response.status</code> / <code className="text-accent/70 bg-accent/8 px-1 rounded">response.headers</code> — response data</p>
+        {showEditor && (
+          <button
+            onClick={testScript}
+            disabled={running || !hasScript}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-40 transition-colors"
+          >
+            <Play size={11} />
+            Test
+          </button>
         )}
       </div>
 
+      {!showEditor && (
+        <div className="py-6 text-center">
+          <div className="w-8 h-8 rounded-lg bg-bg-tertiary flex items-center justify-center mx-auto mb-3">
+            <Code size={16} className="text-text-muted" />
+          </div>
+          <p className="text-xs text-text-secondary mb-1">
+            {activeTab === 'pre' ? 'No pre-request script' : 'No post-response script'}
+          </p>
+          <p className="text-[11px] text-text-muted mb-4 max-w-xs mx-auto">
+            {activeTab === 'pre'
+              ? 'Set variables or modify the request before it is sent.'
+              : 'Validate responses, extract values, and chain requests together.'}
+          </p>
+
+          <div className="flex flex-col gap-1.5 max-w-xs mx-auto">
+            {Object.entries(templates).map(([name, code]) => {
+              const Icon = TEMPLATE_ICONS[name] || Code;
+              return (
+                <button
+                  key={name}
+                  onClick={() => applyTemplate(code)}
+                  className="flex items-center gap-2.5 px-3 py-2 text-left rounded-lg bg-bg-secondary border border-border hover:border-border-light hover:bg-bg-tertiary transition-colors group"
+                >
+                  <Icon size={12} className="text-text-muted group-hover:text-text-secondary shrink-0 transition-colors" />
+                  <span className="text-[11px] text-text-secondary group-hover:text-text-primary transition-colors">{name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => setEditing(true)}
+            className="mt-3 text-[11px] text-accent hover:text-accent-hover transition-colors"
+          >
+            Write from scratch
+          </button>
+        </div>
+      )}
+
+      {showEditor && (
+        <>
+          <div className="rounded-lg bg-bg-secondary border border-border/60 overflow-hidden focus-within:border-border-light transition-colors">
+            <CodeMirror
+              value={currentScript}
+              onChange={updateScript}
+              extensions={[javascript(), blockEditorExtensions, EditorView.lineWrapping]}
+              theme={appEditorTheme}
+              minHeight="80px"
+              maxHeight="300px"
+              placeholder={activeTab === 'pre'
+                ? '// Runs before the request is sent\n// Use rk.variables.set(key, value) to set variables'
+                : '// Runs after the response is received\n// Use rk.test(name, fn) to add test assertions\n// Use response.json() to parse the response body'
+              }
+              basicSetup={{
+                lineNumbers: true,
+                foldGutter: true,
+                bracketMatching: true,
+                closeBrackets: true,
+                highlightActiveLine: false,
+                autocompletion: false,
+              }}
+            />
+          </div>
+
+          <button
+            onClick={() => setShowRef(!showRef)}
+            className="flex items-center gap-1.5 text-[10px] text-text-muted/60 hover:text-text-secondary transition-colors"
+          >
+            <ChevronDown size={10} className={`transition-transform ${showRef ? '' : '-rotate-90'}`} />
+            API Reference
+          </button>
+
+          {showRef && (
+            <div className="text-[10px] text-text-muted space-y-0.5 pl-3.5">
+              <p><code className="text-accent/70 bg-accent/8 px-1 rounded">rk.variables.set(key, value)</code> / <code className="text-accent/70 bg-accent/8 px-1 rounded">.get(key)</code> — manage variables</p>
+              <p><code className="text-accent/70 bg-accent/8 px-1 rounded">rk.test(name, fn)</code> / <code className="text-accent/70 bg-accent/8 px-1 rounded">rk.expect(val).toBe(expected)</code> — assertions</p>
+              {activeTab === 'post' && (
+                <p><code className="text-accent/70 bg-accent/8 px-1 rounded">response.json()</code> / <code className="text-accent/70 bg-accent/8 px-1 rounded">response.status</code> / <code className="text-accent/70 bg-accent/8 px-1 rounded">response.headers</code> — response data</p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
       {(lastResults.length > 0 || lastLogs.length > 0 || lastError) && (
-        <div className="space-y-2 border-t border-border pt-2">
+        <div className="space-y-1.5 border-t border-border/60 pt-2.5">
           {lastError && (
             <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-error/10 border border-error/20">
               <AlertTriangle size={12} className="text-error mt-0.5 shrink-0" />
@@ -219,8 +283,8 @@ export function ScriptEditor() {
           ))}
 
           {lastLogs.length > 0 && (
-            <div className="px-3 py-2 rounded-lg bg-bg-tertiary border border-border">
-              <p className="text-[9px] text-text-muted uppercase tracking-wider font-medium mb-1">Console</p>
+            <div className="px-3 py-2 rounded-lg bg-bg-secondary border border-border/60">
+              <p className="text-[9px] text-text-muted/40 uppercase tracking-wider font-medium mb-1">Console</p>
               {lastLogs.map((log, i) => (
                 <p key={i} className="text-[11px] font-mono text-text-secondary">{log}</p>
               ))}

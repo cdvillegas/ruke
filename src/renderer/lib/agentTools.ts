@@ -221,7 +221,7 @@ const createRequestTool = tool({
     const method = (args.method || 'GET') as HttpMethod;
     const collectionId = args.collection_id || null;
     const connectionId = args.connection_id;
-    const endpointId = args.endpoint_id;
+    let endpointId = args.endpoint_id;
 
     let url = args.url;
 
@@ -231,6 +231,13 @@ const createRequestTool = tool({
         const base = conn.baseUrl.replace(/\/+$/, '');
         if (url.startsWith(base)) {
           url = url.slice(base.length) || '/';
+        }
+        if (!endpointId) {
+          const normalize = (s: string) => s.replace(/\/+$/, '');
+          const match = conn.endpoints.find(
+            e => e.method === method && normalize(e.path) === normalize(url)
+          );
+          if (match) endpointId = match.id;
         }
       }
     }
@@ -299,12 +306,20 @@ const createRequestsTool = tool({
     for (const args of requests) {
       const method = (args.method || 'GET') as HttpMethod;
       let url = args.url;
+      let endpointId = args.endpoint_id;
 
       if (args.connection_id) {
         const conn = useConnectionStore.getState().getConnection(args.connection_id);
         if (conn) {
           const base = conn.baseUrl.replace(/\/+$/, '');
           if (url.startsWith(base)) url = url.slice(base.length) || '/';
+          if (!endpointId) {
+            const normalize = (s: string) => s.replace(/\/+$/, '');
+            const match = conn.endpoints.find(
+              e => e.method === method && normalize(e.path) === normalize(url)
+            );
+            if (match) endpointId = match.id;
+          }
         }
       }
 
@@ -319,7 +334,7 @@ const createRequestsTool = tool({
         body: { type: args.body_type || 'none', raw: compactJson(args.body_content) } as any,
         auth: { type: 'none' as const },
         connectionId: args.connection_id,
-        endpointId: args.endpoint_id,
+        endpointId,
         collectionId: args.collection_id || null,
         sortOrder: 0,
         createdAt: now,

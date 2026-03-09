@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Send, Plus, AlertCircle,
   Plug, Sparkles, Key, ArrowRight, FileUp, X,
@@ -14,7 +14,7 @@ import { useCollectionStore } from '../../stores/collectionStore';
 import { useRequestStore } from '../../stores/requestStore';
 import { useUiStore } from '../../stores/uiStore';
 import { usePlanStore } from '../../stores/planStore';
-import { MessageBubble } from '../shared/MessageBubble';
+import { ConversationTurn } from '../shared/MessageBubble';
 import { ThinkingIndicator } from '../shared/ThinkingIndicator';
 import { AttachmentChip } from '../shared/AttachmentChip';
 import {
@@ -365,104 +365,6 @@ function PlanStepIcon({ status }: { status: string }) {
   }
 }
 
-function planStatusColor(status: string): string {
-  switch (status) {
-    case 'in_progress': return 'bg-amber-400';
-    case 'completed': return 'bg-emerald-400';
-    case 'failed': return 'bg-red-400';
-    default: return 'bg-text-muted/30';
-  }
-}
-
-function PlansPopover({ onClose }: { onClose: () => void }) {
-  const plans = usePlanStore(s => s.plans);
-  const setActivePlan = usePlanStore(s => s.setActivePlan);
-  const deletePlan = usePlanStore(s => s.deletePlan);
-  const loadFromHistory = useChatStore(s => s.loadFromHistory);
-  const popoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    const handleClick = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('keydown', handleKey);
-    setTimeout(() => document.addEventListener('mousedown', handleClick), 0);
-    return () => {
-      document.removeEventListener('keydown', handleKey);
-      document.removeEventListener('mousedown', handleClick);
-    };
-  }, [onClose]);
-
-  const handleSelect = useCallback((plan: Plan) => {
-    setActivePlan(plan.id);
-    loadFromHistory(plan.chatSessionId);
-    onClose();
-  }, [setActivePlan, loadFromHistory, onClose]);
-
-  const inProgress = plans.filter(p => p.status === 'in_progress');
-  const completed = plans.filter(p => p.status === 'completed');
-  const other = plans.filter(p => p.status === 'draft' || p.status === 'failed');
-
-  const groups = [
-    { label: 'In Progress', items: inProgress },
-    { label: 'Completed', items: completed },
-    { label: 'Draft / Failed', items: other },
-  ].filter(g => g.items.length > 0);
-
-  return (
-    <div
-      ref={popoverRef}
-      className="absolute top-full right-0 mt-1 w-72 max-h-[380px] flex flex-col bg-bg-primary rounded-xl border border-border shadow-xl shadow-black/20 z-50 overflow-hidden"
-      style={{ animation: 'popover-in 150ms ease-out' }}
-    >
-      <div className="px-3 pt-2.5 pb-1.5 shrink-0 border-b border-border">
-        <span className="text-xs font-semibold text-text-primary">Plans</span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-1.5 pb-1.5 scrollbar-none">
-        {plans.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-            <ListChecks size={24} className="text-text-muted/30 mb-2" />
-            <p className="text-xs text-text-muted">No plans yet</p>
-            <p className="text-[10px] text-text-muted/60 mt-0.5">Ask the agent to plan a multi-step task</p>
-          </div>
-        ) : (
-          groups.map(group => (
-            <div key={group.label}>
-              <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                {group.label}
-              </div>
-              {group.items.map(plan => {
-                const done = plan.steps.filter(s => s.status === 'done' || s.status === 'skipped').length;
-                const total = plan.steps.length;
-                return (
-                  <div
-                    key={plan.id}
-                    onClick={() => handleSelect(plan)}
-                    className="group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover transition-colors"
-                  >
-                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${planStatusColor(plan.status)}`} />
-                    <span className="flex-1 text-xs truncate min-w-0 text-text-secondary group-hover:text-text-primary">{plan.title}</span>
-                    <span className="text-[10px] text-text-muted shrink-0">{done}/{total}</span>
-                    <button
-                      onClick={e => { e.stopPropagation(); deletePlan(plan.id); }}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-bg-active text-text-muted hover:text-red-400 transition-all shrink-0"
-                      title="Delete plan"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
 function InlinePlanView({ plan, onExecute, onStop }: { plan: Plan; onExecute: () => void; onStop: () => void }) {
   const [collapsed, setCollapsed] = useState(plan.status === 'completed');
   const done = plan.steps.filter(s => s.status === 'done' || s.status === 'skipped').length;
@@ -490,13 +392,13 @@ function InlinePlanView({ plan, onExecute, onStop }: { plan: Plan; onExecute: ()
         : null;
 
   return (
-    <div className={`mx-3 mt-2 mb-1 rounded-xl border bg-bg-secondary/50 transition-all ${borderClass} ${
+    <div className={`rounded-xl border bg-bg-secondary/50 transition-all ${borderClass} ${
       plan.status === 'in_progress' ? 'plan-glow' : ''
     }`}>
       {/* Header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-bg-hover/30 transition-colors"
+        className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-bg-hover/30 transition-colors rounded-t-xl"
       >
         <ListChecks size={14} className={`shrink-0 ${
           plan.status === 'completed' ? 'text-emerald-400' :
@@ -510,13 +412,11 @@ function InlinePlanView({ plan, onExecute, onStop }: { plan: Plan; onExecute: ()
       </button>
 
       {/* Progress bar */}
-      {plan.status !== 'draft' && (
+      {plan.status !== 'draft' && plan.status !== 'completed' && (
         <div className="mx-3.5 h-0.5 rounded-full bg-bg-tertiary overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-500 ${
-              plan.status === 'completed' ? 'bg-emerald-400' :
-              plan.status === 'failed' ? 'bg-red-400' :
-              'bg-accent'
+              plan.status === 'failed' ? 'bg-red-400' : 'bg-accent'
             }`}
             style={{ width: `${pct}%` }}
           />
@@ -585,14 +485,12 @@ export function AgentPanel() {
 
   const plans = usePlanStore(s => s.plans);
   const activePlanId = usePlanStore(s => s.activePlanId);
-  const setActivePlan = usePlanStore(s => s.setActivePlan);
 
   const [input, setInput] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
   const [mentions, setMentions] = useState<ContextMention[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [showPlans, setShowPlans] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showModePicker, setShowModePicker] = useState(false);
   const [showMentionMenu, setShowMentionMenu] = useState(false);
@@ -603,6 +501,7 @@ export function AgentPanel() {
   const [filesExpanded, setFilesExpanded] = useState(false);
   const dragCounter = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRafRef = useRef<number | null>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
@@ -630,7 +529,7 @@ export function AgentPanel() {
 
   const activePlan = useMemo(() => {
     if (activePlanId) {
-      const p = plans.find(pl => pl.id === activePlanId);
+      const p = plans.find(pl => pl.id === activePlanId && pl.chatSessionId === activeSessionId);
       if (p) return p;
     }
     return plans.find(p => p.chatSessionId === activeSessionId) || null;
@@ -645,6 +544,22 @@ export function AgentPanel() {
     () => activeSession ? activeSession.messages.filter(m => m.role !== 'tool') : [],
     [activeSession]
   );
+  const conversationTurns = useMemo(() => {
+    const turns: { userMessage: typeof visibleMessages[0]; assistantMessages: typeof visibleMessages }[] = [];
+    let currentTurn: typeof turns[0] | null = null;
+    for (const msg of visibleMessages) {
+      if (msg.role === 'user') {
+        currentTurn = { userMessage: msg, assistantMessages: [] };
+        turns.push(currentTurn);
+      } else if (msg.role === 'assistant' && currentTurn) {
+        currentTurn.assistantMessages.push(msg);
+      } else if (msg.role === 'assistant') {
+        turns.push({ userMessage: msg, assistantMessages: [] });
+      }
+    }
+    return turns;
+  }, [visibleMessages]);
+
   const hasActiveTab = !!activeSession && openTabIds.includes(activeSessionId);
   const isEmpty = visibleMessages.length === 0 && !isRunning && !activePlan;
   const canSend = hasActiveTab && (input.trim() || attachedFiles.length > 0);
@@ -754,16 +669,6 @@ export function AgentPanel() {
     }
   }, [openTabIds.length, setAiPanelOpen]);
 
-  useLayoutEffect(() => {
-    if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = null;
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      }
-    });
-  }, [activeSession?.messages, isRunning, streamTick]);
-
   useEffect(() => {
     return () => {
       if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
@@ -779,6 +684,24 @@ export function AgentPanel() {
   useEffect(() => {
     inputRef.current?.focus();
   }, [activeSessionId]);
+
+  const userAtBottom = useRef(true);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      userAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (userAtBottom.current) {
+      bottomRef.current?.scrollIntoView({ block: 'end' });
+    }
+  }, [visibleMessages.length, streamTick, showThinking]);
 
   const handleSend = useCallback(async () => {
     if (!canSend) return;
@@ -810,8 +733,11 @@ export function AgentPanel() {
     sendMessage(prompt, undefined, agentMode);
   }, [sendMessage, agentMode]);
 
+  const handleResend = useCallback((content: string) => {
+    sendMessage(content, undefined, agentMode);
+  }, [sendMessage, agentMode]);
+
   const executePlan = useCallback((plan: Plan) => {
-    setAgentMode('agent');
     const currentSessionId = useChatStore.getState().activeSessionId;
     if (currentSessionId && plan.chatSessionId !== currentSessionId) {
       usePlanStore.getState().updatePlanSession(plan.id, currentSessionId);
@@ -938,7 +864,7 @@ export function AgentPanel() {
     >
 
       {/* Session tabs */}
-      <div className="flex items-center gap-1 px-1.5 py-1.5 border-b border-border shrink-0 bg-bg-secondary/40">
+      <div className="flex items-center gap-1 px-1.5 py-1.5 shrink-0 bg-bg-secondary/40">
         <div ref={tabsRef} className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto scrollbar-none">
           {openTabs.map(s => (
             <SessionTab
@@ -959,26 +885,10 @@ export function AgentPanel() {
           >
             <Plus size={15} />
           </button>
-          {plans.length > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => { setShowPlans(!showPlans); setShowHistory(false); }}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  showPlans
-                    ? 'text-accent bg-accent/10'
-                    : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
-                }`}
-                title="Plans"
-              >
-                <ListChecks size={15} />
-              </button>
-              {showPlans && <PlansPopover onClose={() => setShowPlans(false)} />}
-            </div>
-          )}
           {hasHistory && (
             <div className="relative">
               <button
-                onClick={() => { setShowHistory(!showHistory); setShowPlans(false); }}
+                onClick={() => setShowHistory(!showHistory)}
                 className={`p-1.5 rounded-lg transition-colors ${
                   showHistory
                     ? 'text-accent bg-accent/10'
@@ -1064,79 +974,10 @@ export function AgentPanel() {
           </div>
         </div>
       ) : (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto py-3 relative z-0">
-          <div className="space-y-3 px-3">
-            {(() => {
-              const planCard = activePlan ? (
-                <InlinePlanView
-                  key={`plan-${activePlan.id}`}
-                  plan={activePlan}
-                  onExecute={() => executePlan(activePlan)}
-                  onStop={() => {
-                    stopGeneration();
-                    usePlanStore.getState().updatePlanStatus(activePlan.id, 'draft');
-                  }}
-                />
-              ) : null;
-
-              const isExecuting = activePlan?.status === 'in_progress';
-
-              const insertAfterIdx = activePlan && !isExecuting
-                ? (() => {
-                    let idx = -1;
-                    for (let i = 0; i < visibleMessages.length; i++) {
-                      if (visibleMessages[i].timestamp <= activePlan.createdAt) idx = i;
-                      else break;
-                    }
-                    return idx;
-                  })()
-                : -1;
-
-              const showInline = !isExecuting && !!planCard;
-              const splitAt = showInline ? insertAfterIdx + 1 : visibleMessages.length;
-              const before = visibleMessages.slice(0, splitAt);
-              const after = visibleMessages.slice(splitAt);
-
-              const renderMsg = (msg: typeof visibleMessages[0]) => (
-                <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  isStreaming={msg.id === streamingMessageId}
-                  maxWidth="max-w-[90%]"
-                  userMaxWidth="max-w-[85%]"
-                />
-              );
-
-              return (
-                <>
-                  {before.map(renderMsg)}
-                  {showInline && planCard}
-                  {after.map(renderMsg)}
-                </>
-              );
-            })()}
-            {showThinking && (
-              <div className="flex justify-start">
-                <div className="flex items-center gap-1.5 px-3 py-2">
-                  <span className="flex items-center gap-[3px]">
-                    <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:0ms]" />
-                    <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:150ms]" />
-                    <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:300ms]" />
-                  </span>
-                </div>
-              </div>
-            )}
-            {error && (
-              <div className="flex justify-start">
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
-                  <AlertCircle size={14} className="text-red-400 shrink-0" />
-                  <span className="text-xs text-red-400">{error}</span>
-                </div>
-              </div>
-            )}
-          </div>
-          {activePlan?.status === 'in_progress' && (
-            <div className="sticky bottom-0 z-10">
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+          {/* Pinned plan banner */}
+          {activePlan && (
+            <div className="shrink-0 z-10 border-b border-border shadow-sm">
               <InlinePlanView
                 plan={activePlan}
                 onExecute={() => executePlan(activePlan)}
@@ -1147,6 +988,41 @@ export function AgentPanel() {
               />
             </div>
           )}
+
+          <div ref={scrollRef} className="flex-1 overflow-y-auto relative z-0">
+            <div>
+              {conversationTurns.map((turn, i) => (
+                <ConversationTurn
+                  key={turn.userMessage.id}
+                  userMessage={turn.userMessage}
+                  assistantMessages={turn.assistantMessages}
+                  streamingMessageId={streamingMessageId}
+                  onResend={turn.userMessage.role === 'user' ? handleResend : undefined}
+                  isLast={i === conversationTurns.length - 1}
+                />
+              ))}
+              {showThinking && (
+                <div className="flex justify-start px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="flex items-center gap-[3px]">
+                      <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:0ms]" />
+                      <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:150ms]" />
+                      <span className="w-[5px] h-[5px] rounded-full bg-accent animate-bounce [animation-delay:300ms]" />
+                    </span>
+                  </div>
+                </div>
+              )}
+              {error && (
+                <div className="flex justify-start px-3 py-2">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
+                    <AlertCircle size={14} className="text-red-400 shrink-0" />
+                    <span className="text-xs text-red-400">{error}</span>
+                  </div>
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+          </div>
         </div>
       )}
 
