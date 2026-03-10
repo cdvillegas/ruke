@@ -226,6 +226,9 @@ const localRepo: Record<string, (...args: any[]) => any> = {
     const reqs = getStore('requests').map((r: any) => r.id === id ? { ...r, archived: false, updatedAt: new Date().toISOString() } : r);
     setStore('requests', reqs);
   },
+  clearArchivedRequests: () => {
+    setStore('requests', getStore('requests').filter((r: any) => !r.archived));
+  },
 
   getEnvironments: (workspaceId: string) =>
     getStore('environments').filter((e: any) => e.workspaceId === workspaceId && !e.archived).sort((a: any, b: any) => a.sortOrder - b.sortOrder),
@@ -310,6 +313,139 @@ const localRepo: Record<string, (...args: any[]) => any> = {
     s[key] = value;
     setStoreMap('settings', s);
   },
+
+  // Workflows (persist in localStorage for web mode)
+  getWorkflowCollections: (workspaceId: string) =>
+    getStore('workflow_collections').filter((c: any) => c.workspaceId === workspaceId).sort((a: any, b: any) => a.sortOrder - b.sortOrder),
+  createWorkflowCollection: (id: string, workspaceId: string, name: string, parentId: string | null, sortOrder: number) => {
+    const cols = getStore('workflow_collections');
+    cols.push({ id, workspaceId, name, parentId, sortOrder, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    setStore('workflow_collections', cols);
+  },
+  updateWorkflowCollection: (id: string, data: any) => {
+    const cols = getStore('workflow_collections').map((c: any) => c.id === id ? { ...c, ...data, updatedAt: new Date().toISOString() } : c);
+    setStore('workflow_collections', cols);
+  },
+  deleteWorkflowCollection: (id: string) => {
+    const wfs = getStore('workflows').map((w: any) => w.collectionId === id ? { ...w, collectionId: null } : w);
+    setStore('workflows', wfs);
+    setStore('workflow_collections', getStore('workflow_collections').filter((c: any) => c.id !== id && c.parentId !== id));
+  },
+  getWorkflowsByCollection: (collectionId: string) =>
+    getStore('workflows')
+      .filter((w: any) => w.collectionId === collectionId && !w.archived)
+      .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+  getUncollectedWorkflows: (workspaceId: string) =>
+    getStore('workflows')
+      .filter((w: any) => w.workspaceId === workspaceId && !w.collectionId && !w.archived)
+      .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()),
+  getWorkflows: (workspaceId: string) =>
+    getStore('workflows')
+      .filter((w: any) => w.workspaceId === workspaceId && !w.archived)
+      .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+  getArchivedWorkflows: (workspaceId: string) =>
+    getStore('workflows')
+      .filter((w: any) => w.workspaceId === workspaceId && w.archived)
+      .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+  getWorkflowById: (id: string) => getStore('workflows').find((w: any) => w.id === id) || null,
+  createWorkflow: (id: string, workspaceId: string, name: string, sortOrder: number, collectionId?: string | null) => {
+    const wfs = getStore('workflows');
+    wfs.push({
+      id,
+      workspaceId,
+      collectionId: collectionId ?? null,
+      name,
+      sortOrder,
+      archived: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    setStore('workflows', wfs);
+  },
+  updateWorkflow: (id: string, data: any) => {
+    const wfs = getStore('workflows').map((w: any) => w.id === id ? { ...w, ...data, updatedAt: new Date().toISOString() } : w);
+    setStore('workflows', wfs);
+  },
+  deleteWorkflow: (id: string) => {
+    setStore('workflows', getStore('workflows').filter((w: any) => w.id !== id));
+    setStore('workflow_steps', getStore('workflow_steps').filter((s: any) => s.workflowId !== id));
+    setStore('workflow_inputs', getStore('workflow_inputs').filter((i: any) => i.workflowId !== id));
+  },
+  archiveWorkflow: (id: string) => {
+    const wfs = getStore('workflows').map((w: any) => w.id === id ? { ...w, archived: true, collectionId: null, updatedAt: new Date().toISOString() } : w);
+    setStore('workflows', wfs);
+  },
+  unarchiveWorkflow: (id: string) => {
+    const wfs = getStore('workflows').map((w: any) => w.id === id ? { ...w, archived: false, updatedAt: new Date().toISOString() } : w);
+    setStore('workflows', wfs);
+  },
+  clearArchivedWorkflows: (workspaceId: string) => {
+    setStore('workflows', getStore('workflows').filter((w: any) => !(w.workspaceId === workspaceId && w.archived)));
+  },
+  getWorkflowSteps: (workflowId: string) =>
+    getStore('workflow_steps').filter((s: any) => s.workflowId === workflowId).sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+  addWorkflowStep: (id: string, workflowId: string, requestId: string, sortOrder: number) => {
+    const steps = getStore('workflow_steps');
+    steps.push({ id, workflowId, requestId, sortOrder });
+    setStore('workflow_steps', steps);
+  },
+  deleteWorkflowStep: (id: string) => {
+    setStore('workflow_steps', getStore('workflow_steps').filter((s: any) => s.id !== id));
+  },
+  getWorkflowInputs: (workflowId: string) =>
+    getStore('workflow_inputs').filter((i: any) => i.workflowId === workflowId).sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+  createWorkflowInput: (id: string, workflowId: string, key: string, label: string | null, defaultValue: string | null, isSecret: boolean, sortOrder: number) => {
+    const inputs = getStore('workflow_inputs');
+    inputs.push({ id, workflowId, key, label, defaultValue, isSecret, sortOrder });
+    setStore('workflow_inputs', inputs);
+  },
+  updateWorkflowInput: (id: string, data: any) => {
+    const inputs = getStore('workflow_inputs').map((i: any) => i.id === id ? { ...i, ...data } : i);
+    setStore('workflow_inputs', inputs);
+  },
+  deleteWorkflowInput: (id: string) => {
+    setStore('workflow_inputs', getStore('workflow_inputs').filter((i: any) => i.id !== id));
+  },
+  reorderWorkflowInputs: (workflowId: string, inputIdsInOrder: string[]) => {
+    const inputs = getStore('workflow_inputs').filter((i: any) => i.workflowId === workflowId);
+    inputIdsInOrder.forEach((inputId, i) => {
+      const inp = inputs.find((x: any) => x.id === inputId);
+      if (inp) inp.sortOrder = i;
+    });
+    const all = getStore('workflow_inputs').filter((i: any) => i.workflowId !== workflowId);
+    setStore('workflow_inputs', [...all, ...inputs.map((i: any) => ({ ...i, sortOrder: inputIdsInOrder.indexOf(i.id) })).filter((i: any) => i.sortOrder >= 0)]);
+  },
+  updateWorkflowStep: (id: string, data: any) => {
+    const steps = getStore('workflow_steps').map((s: any) => s.id === id ? { ...s, ...data } : s);
+    setStore('workflow_steps', steps);
+  },
+  reorderWorkflowSteps: (workflowId: string, stepIdsInOrder: string[]) => {
+    const steps = getStore('workflow_steps').filter((s: any) => s.workflowId === workflowId);
+    const reordered = stepIdsInOrder.map((stepId, i) => {
+      const st = steps.find((x: any) => x.id === stepId);
+      return st ? { ...st, sortOrder: i } : null;
+    }).filter(Boolean);
+    const other = getStore('workflow_steps').filter((s: any) => s.workflowId !== workflowId);
+    setStore('workflow_steps', [...other, ...reordered]);
+  },
+  getWorkflowStepExtractions: (stepId: string) =>
+    getStore('workflow_step_extractions').filter((e: any) => e.stepId === stepId).sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+  createWorkflowStepExtraction: (id: string, stepId: string, variableName: string, jsonPath: string, sortOrder: number) => {
+    const exts = getStore('workflow_step_extractions');
+    exts.push({ id, stepId, variableName, jsonPath, sortOrder });
+    setStore('workflow_step_extractions', exts);
+  },
+  deleteWorkflowStepExtraction: (id: string) => {
+    setStore('workflow_step_extractions', getStore('workflow_step_extractions').filter((e: any) => e.id !== id));
+  },
+  getWorkflowsContainingRequest: (requestId: string) =>
+    getStore('workflow_steps')
+      .filter((s: any) => s.requestId === requestId)
+      .map((s: any) => getStore('workflows').find((w: any) => w.id === s.workflowId))
+      .filter(Boolean)
+      .filter((w: any) => !w?.archived),
+  getWorkflowRuns: () => [],
+  addWorkflowRun: () => {},
 };
 
 async function browserSendRequest(request: any): Promise<ApiResponse> {

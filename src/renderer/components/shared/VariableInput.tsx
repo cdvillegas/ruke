@@ -10,9 +10,11 @@ interface VariableInputProps {
   placeholder?: string;
   className?: string;
   type?: string;
+  /** When provided, use these keys for {{var}} suggestions instead of environment variables. Used for workflow step editing. */
+  suggestionKeys?: string[];
 }
 
-export function VariableInput({ value, onChange, onKeyDown, onPaste, placeholder, className = '', type = 'text' }: VariableInputProps) {
+export function VariableInput({ value, onChange, onKeyDown, onPaste, placeholder, className = '', type = 'text', suggestionKeys }: VariableInputProps) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [cursorPos, setCursorPos] = useState(0);
@@ -20,7 +22,11 @@ export function VariableInput({ value, onChange, onKeyDown, onPaste, placeholder
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const getAllVariableKeys = useEnvironmentStore((s) => s.getAllVariableKeys);
-  const allKeys = useMemo(() => getAllVariableKeys(), [getAllVariableKeys]);
+  const envKeys = useMemo(() => getAllVariableKeys(), [getAllVariableKeys]);
+  const allKeys = useMemo(
+    () => (suggestionKeys !== undefined ? suggestionKeys : envKeys),
+    [suggestionKeys, envKeys]
+  );
 
   const getVariableContext = useCallback((): { isInVariable: boolean; prefix: string; startIdx: number } => {
     const beforeCursor = value.substring(0, cursorPos);

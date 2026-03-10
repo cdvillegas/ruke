@@ -7,12 +7,15 @@ import { RequestsView } from './components/requests/RequestsView';
 import { RequestSidebar } from './components/requests/RequestSidebar';
 import { ConnectionsSidebar, ConnectionsMain } from './components/connections/ConnectionsView';
 import { EnvironmentsSidebar, EnvironmentsMain } from './components/environment/EnvironmentsView';
+import { WorkflowsSidebar, WorkflowsMain } from './components/workflows/WorkflowsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { NavRail } from './components/layout/NavRail';
 import { Onboarding } from './components/onboarding/Onboarding';
 import { CommandPalette } from './components/layout/CommandPalette';
 import { AgentPanel } from './components/requests/AgentPanel';
 import { useEnvironmentStore } from './stores/environmentStore';
+import { useWorkflowStore } from './stores/workflowStore';
+import { useWorkflowCollectionStore } from './stores/workflowCollectionStore';
 import { Sparkles } from 'lucide-react';
 
 const AGENT_WIDTH_KEY = 'ruke:agent_panel_width';
@@ -61,7 +64,11 @@ function AppInner() {
   useEffect(() => {
     loadWorkspaces().then(() => {
       const wsId = useCollectionStore.getState().activeWorkspaceId;
-      if (wsId) useEnvironmentStore.getState().loadEnvironments(wsId);
+      if (wsId) {
+        useEnvironmentStore.getState().loadEnvironments(wsId);
+        useWorkflowStore.getState().loadWorkflows(wsId);
+        useWorkflowCollectionStore.getState().loadWorkflowCollections(wsId);
+      }
     });
     loadHistory();
     loadConnections();
@@ -70,7 +77,11 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
-    if (activeWorkspaceId) useEnvironmentStore.getState().loadEnvironments(activeWorkspaceId);
+    if (activeWorkspaceId) {
+      useEnvironmentStore.getState().loadEnvironments(activeWorkspaceId);
+      useWorkflowStore.getState().loadWorkflows(activeWorkspaceId);
+      useWorkflowCollectionStore.getState().loadWorkflowCollections(activeWorkspaceId);
+    }
   }, [activeWorkspaceId]);
 
   useEffect(() => {
@@ -192,6 +203,7 @@ function AppInner() {
                 {(activeView === 'chats' || activeView === 'requests') && <RequestSidebar />}
                 {activeView === 'connections' && <ConnectionsSidebar />}
                 {activeView === 'environments' && <EnvironmentsSidebar />}
+                {activeView === 'workflows' && <WorkflowsSidebar />}
               </div>
               <div
                 onMouseDown={handleSidebarResize}
@@ -205,6 +217,7 @@ function AppInner() {
             {(activeView === 'chats' || activeView === 'requests') && <RequestsView />}
             {activeView === 'connections' && <ConnectionsMain />}
             {activeView === 'environments' && <EnvironmentsMain />}
+            {activeView === 'workflows' && <WorkflowsMain />}
             {activeView === 'settings' && <SettingsView />}
           </div>
 

@@ -91,6 +91,71 @@ export function initDatabase(dbPath: string): Database.Database {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS workflow_collections (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      parent_id TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_id) REFERENCES workflow_collections(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS workflows (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      archived INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS workflow_steps (
+      id TEXT PRIMARY KEY,
+      workflow_id TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE,
+      FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS workflow_inputs (
+      id TEXT PRIMARY KEY,
+      workflow_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      label TEXT,
+      default_value TEXT,
+      is_secret INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS workflow_runs (
+      id TEXT PRIMARY KEY,
+      workflow_id TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL,
+      duration_ms REAL NOT NULL,
+      status TEXT NOT NULL,
+      inputs_json TEXT NOT NULL DEFAULT '{}',
+      outputs_json TEXT NOT NULL DEFAULT '{}',
+      log_json TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS workflow_step_extractions (
+      id TEXT PRIMARY KEY,
+      step_id TEXT NOT NULL,
+      variable_name TEXT NOT NULL,
+      json_path TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (step_id) REFERENCES workflow_steps(id) ON DELETE CASCADE
+    );
   `);
 
   // Migrations: add new columns safely
@@ -116,6 +181,15 @@ export function initDatabase(dbPath: string): Database.Database {
   }
   if (!reqColNames.has('endpoint_id')) {
     db.exec("ALTER TABLE requests ADD COLUMN endpoint_id TEXT");
+  }
+
+  const wfColumns = db.prepare("PRAGMA table_info(workflows)").all() as { name: string }[];
+  const wfColNames = new Set(wfColumns.map(c => c.name));
+  if (!wfColNames.has('output_keys')) {
+    db.exec("ALTER TABLE workflows ADD COLUMN output_keys TEXT");
+  }
+  if (!wfColNames.has('collection_id')) {
+    db.exec("ALTER TABLE workflows ADD COLUMN collection_id TEXT REFERENCES workflow_collections(id) ON DELETE SET NULL");
   }
 
   const wsCount = db.prepare('SELECT COUNT(*) as count FROM workspaces').get() as { count: number };

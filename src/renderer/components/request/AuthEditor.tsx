@@ -40,13 +40,18 @@ function generateCodeVerifier(): string {
 }
 
 const INPUT_CLASS =
-  'w-full px-3 py-2 text-[11px] rounded-lg bg-bg-secondary border border-border/60 font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-border-light transition-colors';
+  'w-full px-3 py-2 text-[11px] bg-transparent border-none font-mono text-text-primary placeholder:text-text-muted/30 focus:outline-none transition-colors';
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block text-xs font-medium text-text-secondary mb-1.5">
-      {children}
-    </label>
+    <div className="grid grid-cols-[120px_1fr] items-center border-b border-border/50 last:border-b-0 hover:bg-bg-hover/30 transition-colors">
+      <div className="px-3 py-2 text-[10px] text-text-muted uppercase tracking-wider font-semibold border-r border-border/50 shrink-0">
+        {label}
+      </div>
+      <div className="relative min-w-0">
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -303,135 +308,126 @@ export function AuthEditorCore({ auth, onAuthChange, emptyState, inheritedAuth }
       )}
 
       {displayType === 'bearer' && (
-        <div className="max-w-sm">
-          <FieldLabel>Token</FieldLabel>
-          <div className="relative">
-            <VariableInput
-              value={auth.bearer?.token || ''}
-              onChange={(v) => updateAuth({ type: 'bearer', bearer: { token: v } })}
-              placeholder="Enter bearer token or {{variable}}"
-              type={shouldReveal(auth.bearer?.token || '', showToken)}
-              className={INPUT_CLASS + ' pr-9'}
-            />
-            <button
-              type="button"
-              onClick={() => setShowToken(!showToken)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
-              tabIndex={-1}
-            >
-              {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
+        <div className="rounded-lg border border-border/60 overflow-hidden bg-bg-secondary">
+          <div className="px-3 py-1.5 border-b border-border bg-bg-tertiary/50">
+            <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Bearer Token</span>
           </div>
-          <p className="text-[10px] text-text-muted mt-1.5">
-            Sent as <code className="text-accent/70 bg-accent/8 px-1 rounded">Authorization: Bearer &lt;token&gt;</code>
-          </p>
+          <FieldRow label="Token">
+            <div className="flex items-center">
+              <VariableInput
+                value={auth.bearer?.token || ''}
+                onChange={(v) => updateAuth({ type: 'bearer', bearer: { token: v } })}
+                placeholder="Enter token or {{variable}}"
+                type={shouldReveal(auth.bearer?.token || '', showToken)}
+                className={INPUT_CLASS + ' flex-1'}
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="px-2.5 text-text-muted/40 hover:text-text-secondary transition-colors shrink-0"
+                tabIndex={-1}
+              >
+                {showToken ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
+            </div>
+          </FieldRow>
+          <div className="px-3 py-2 bg-bg-tertiary/30 border-t border-border/30">
+            <p className="text-[10px] text-text-muted">
+              Sent as <code className="text-accent/70 bg-accent/8 px-1 rounded">Authorization: Bearer &lt;token&gt;</code>
+            </p>
+          </div>
         </div>
       )}
 
       {displayType === 'basic' && (
-        <div className="max-w-sm space-y-3">
-          <div>
-            <FieldLabel>Username</FieldLabel>
+        <div className="rounded-lg border border-border/60 overflow-hidden bg-bg-secondary">
+          <div className="px-3 py-1.5 border-b border-border bg-bg-tertiary/50">
+            <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Basic Auth</span>
+          </div>
+          <FieldRow label="Username">
             <VariableInput
               value={auth.basic?.username || ''}
               onChange={(v) =>
-                updateAuth({
-                  type: 'basic',
-                  basic: { username: v, password: auth.basic?.password || '' },
-                })
+                updateAuth({ type: 'basic', basic: { username: v, password: auth.basic?.password || '' } })
               }
               placeholder="Username or {{variable}}"
               className={INPUT_CLASS}
             />
-          </div>
-          <div>
-            <FieldLabel>Password</FieldLabel>
-            <div className="relative">
+          </FieldRow>
+          <FieldRow label="Password">
+            <div className="flex items-center">
               <VariableInput
                 value={auth.basic?.password || ''}
                 onChange={(v) =>
-                  updateAuth({
-                    type: 'basic',
-                    basic: { username: auth.basic?.username || '', password: v },
-                  })
+                  updateAuth({ type: 'basic', basic: { username: auth.basic?.username || '', password: v } })
                 }
                 placeholder="Password or {{variable}}"
                 type={shouldReveal(auth.basic?.password || '', showPassword)}
-                className={INPUT_CLASS + ' pr-9'}
+                className={INPUT_CLASS + ' flex-1'}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+                className="px-2.5 text-text-muted/40 hover:text-text-secondary transition-colors shrink-0"
                 tabIndex={-1}
               >
-                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
               </button>
             </div>
+          </FieldRow>
+          <div className="px-3 py-2 bg-bg-tertiary/30 border-t border-border/30">
+            <p className="text-[10px] text-text-muted">
+              Sent as <code className="text-accent/70 bg-accent/8 px-1 rounded">Authorization: Basic base64(username:password)</code>
+            </p>
           </div>
-          <p className="text-[10px] text-text-muted">
-            Sent as <code className="text-accent/70 bg-accent/8 px-1 rounded">Authorization: Basic base64(username:password)</code>
-          </p>
         </div>
       )}
 
       {displayType === 'api-key' && (
-        <div className="max-w-sm space-y-3">
-          <div>
-            <FieldLabel>Key Name</FieldLabel>
+        <div className="rounded-lg border border-border/60 overflow-hidden bg-bg-secondary">
+          <div className="px-3 py-1.5 border-b border-border bg-bg-tertiary/50">
+            <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">API Key</span>
+          </div>
+          <FieldRow label="Key Name">
             <VariableInput
               value={auth.apiKey?.key || ''}
               onChange={(v) =>
-                updateAuth({
-                  type: 'api-key',
-                  apiKey: { key: v, value: auth.apiKey?.value || '', addTo: auth.apiKey?.addTo || 'header' },
-                })
+                updateAuth({ type: 'api-key', apiKey: { key: v, value: auth.apiKey?.value || '', addTo: auth.apiKey?.addTo || 'header' } })
               }
               placeholder="e.g. X-API-Key"
               className={INPUT_CLASS}
             />
-          </div>
-          <div>
-            <FieldLabel>Value</FieldLabel>
-            <div className="relative">
+          </FieldRow>
+          <FieldRow label="Value">
+            <div className="flex items-center">
               <VariableInput
                 value={auth.apiKey?.value || ''}
                 onChange={(v) =>
-                  updateAuth({
-                    type: 'api-key',
-                    apiKey: { key: auth.apiKey?.key || '', value: v, addTo: auth.apiKey?.addTo || 'header' },
-                  })
+                  updateAuth({ type: 'api-key', apiKey: { key: auth.apiKey?.key || '', value: v, addTo: auth.apiKey?.addTo || 'header' } })
                 }
                 placeholder="API key value or {{variable}}"
                 type={shouldReveal(auth.apiKey?.value || '', showApiValue)}
-                className={INPUT_CLASS + ' pr-9'}
+                className={INPUT_CLASS + ' flex-1'}
               />
               <button
                 type="button"
                 onClick={() => setShowApiValue(!showApiValue)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+                className="px-2.5 text-text-muted/40 hover:text-text-secondary transition-colors shrink-0"
                 tabIndex={-1}
               >
-                {showApiValue ? <EyeOff size={14} /> : <Eye size={14} />}
+                {showApiValue ? <EyeOff size={13} /> : <Eye size={13} />}
               </button>
             </div>
-          </div>
-
-          <div>
-            <FieldLabel>Add to</FieldLabel>
-            <div className="inline-flex gap-0.5 p-0.5 rounded-md bg-bg-secondary/60">
+          </FieldRow>
+          <FieldRow label="Add To">
+            <div className="flex gap-0.5 p-1 pl-2">
               {(['header', 'query'] as const).map((loc) => (
                 <button
                   key={loc}
-                  onClick={() =>
-                    updateAuth({
-                      type: 'api-key',
-                      apiKey: { ...auth.apiKey!, addTo: loc },
-                    })
-                  }
+                  onClick={() => updateAuth({ type: 'api-key', apiKey: { ...auth.apiKey!, addTo: loc } })}
                   className={`px-2 py-0.5 text-[10px] font-medium rounded capitalize transition-all duration-150 ${
                     auth.apiKey?.addTo === loc
-                      ? 'bg-bg-tertiary text-text-primary shadow-sm'
+                      ? 'bg-bg-tertiary text-text-primary shadow-sm border border-border/60'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
                 >
@@ -439,22 +435,25 @@ export function AuthEditorCore({ auth, onAuthChange, emptyState, inheritedAuth }
                 </button>
               ))}
             </div>
-          </div>
+          </FieldRow>
         </div>
       )}
 
       {displayType === 'oauth2' && oauth2 && (
-        <div className="max-w-sm space-y-3">
-          <div>
-            <FieldLabel>Grant Type</FieldLabel>
-            <div className="flex flex-wrap gap-0.5 p-0.5 rounded-md bg-bg-secondary/60">
+        <div className="rounded-lg border border-border/60 overflow-hidden bg-bg-secondary">
+          <div className="px-3 py-1.5 border-b border-border bg-bg-tertiary/50">
+            <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">OAuth 2.0</span>
+          </div>
+
+          <FieldRow label="Grant Type">
+            <div className="flex flex-wrap gap-0.5 p-1 pl-2">
               {GRANT_TYPES.map((g) => (
                 <button
                   key={g.id}
                   onClick={() => updateOAuth2({ grantType: g.id })}
                   className={`px-2 py-0.5 text-[10px] font-medium rounded capitalize transition-all duration-150 ${
                     oauth2.grantType === g.id
-                      ? 'bg-bg-tertiary text-text-primary shadow-sm'
+                      ? 'bg-bg-tertiary text-text-primary shadow-sm border border-border/60'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
                 >
@@ -462,23 +461,21 @@ export function AuthEditorCore({ auth, onAuthChange, emptyState, inheritedAuth }
                 </button>
               ))}
             </div>
-          </div>
+          </FieldRow>
 
-          <div>
-            <FieldLabel>Client ID</FieldLabel>
+          <FieldRow label="Client ID">
             <VariableInput
               value={oauth2.clientId}
               onChange={(v) => updateOAuth2({ clientId: v })}
               placeholder="Client ID or {{variable}}"
               className={INPUT_CLASS}
             />
-          </div>
+          </FieldRow>
 
           {(oauth2.grantType === 'authorization_code' ||
             oauth2.grantType === 'client_credentials' ||
             oauth2.grantType === 'password') && (
-            <div>
-              <FieldLabel>Client Secret</FieldLabel>
+            <FieldRow label="Client Secret">
               <VariableInput
                 value={oauth2.clientSecret || ''}
                 onChange={(v) => updateOAuth2({ clientSecret: v })}
@@ -486,88 +483,84 @@ export function AuthEditorCore({ auth, onAuthChange, emptyState, inheritedAuth }
                 type={shouldReveal(oauth2.clientSecret || '', false)}
                 className={INPUT_CLASS}
               />
-            </div>
+            </FieldRow>
           )}
 
           {(oauth2.grantType === 'authorization_code' || oauth2.grantType === 'implicit') && (
             <>
-              <div>
-                <FieldLabel>Authorization URL</FieldLabel>
+              <FieldRow label="Auth URL">
                 <VariableInput
                   value={oauth2.authorizationUrl || ''}
                   onChange={(v) => updateOAuth2({ authorizationUrl: v })}
                   placeholder="https://auth.example.com/authorize"
                   className={INPUT_CLASS}
                 />
-              </div>
-              <div>
-                <FieldLabel>Redirect URI</FieldLabel>
+              </FieldRow>
+              <FieldRow label="Redirect URI">
                 <VariableInput
                   value={oauth2.redirectUri || 'http://localhost/callback'}
                   onChange={(v) => updateOAuth2({ redirectUri: v })}
                   placeholder="http://localhost/callback"
                   className={INPUT_CLASS}
                 />
-              </div>
+              </FieldRow>
             </>
           )}
 
           {(oauth2.grantType === 'authorization_code' ||
             oauth2.grantType === 'client_credentials' ||
             oauth2.grantType === 'password') && (
-            <div>
-              <FieldLabel>Token URL</FieldLabel>
+            <FieldRow label="Token URL">
               <VariableInput
                 value={oauth2.tokenUrl || ''}
                 onChange={(v) => updateOAuth2({ tokenUrl: v })}
                 placeholder="https://auth.example.com/token"
                 className={INPUT_CLASS}
               />
-            </div>
+            </FieldRow>
           )}
 
           {(oauth2.grantType === 'authorization_code' ||
             oauth2.grantType === 'client_credentials' ||
             oauth2.grantType === 'implicit') && (
-            <div>
-              <FieldLabel>Scope</FieldLabel>
+            <FieldRow label="Scope">
               <VariableInput
                 value={oauth2.scope || ''}
                 onChange={(v) => updateOAuth2({ scope: v })}
                 placeholder="e.g. read write"
                 className={INPUT_CLASS}
               />
-            </div>
+            </FieldRow>
           )}
 
           {oauth2.grantType === 'authorization_code' && (
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="oauth-pkce"
-                checked={oauth2.usePkce || false}
-                onChange={(e) => updateOAuth2({ usePkce: e.target.checked })}
-                className="rounded border-border/60 bg-bg-secondary text-accent focus:ring-accent"
-              />
-              <label htmlFor="oauth-pkce" className="text-xs text-text-secondary">
-                Use PKCE
-              </label>
-            </div>
+            <FieldRow label="PKCE">
+              <div className="flex items-center gap-2 px-2 py-2">
+                <input
+                  type="checkbox"
+                  id="oauth-pkce"
+                  checked={oauth2.usePkce || false}
+                  onChange={(e) => updateOAuth2({ usePkce: e.target.checked })}
+                  className="w-3.5 h-3.5 rounded border-border accent-accent cursor-pointer"
+                />
+                <label htmlFor="oauth-pkce" className="text-[11px] text-text-secondary cursor-pointer">
+                  Use PKCE
+                </label>
+              </div>
+            </FieldRow>
           )}
 
           {oauth2.grantType === 'password' && (
             <>
-              <div>
-                <FieldLabel>Username</FieldLabel>
+              <FieldRow label="Username">
                 <VariableInput
                   value={oauth2.username || ''}
                   onChange={(v) => updateOAuth2({ username: v })}
                   placeholder="Username or {{variable}}"
                   className={INPUT_CLASS}
                 />
-              </div>
-              <div>
-                <FieldLabel>Password</FieldLabel>
+              </FieldRow>
+              <FieldRow label="Password">
                 <VariableInput
                   value={oauth2.password || ''}
                   onChange={(v) => updateOAuth2({ password: v })}
@@ -575,16 +568,16 @@ export function AuthEditorCore({ auth, onAuthChange, emptyState, inheritedAuth }
                   type={shouldReveal(oauth2.password || '', false)}
                   className={INPUT_CLASS}
                 />
-              </div>
+              </FieldRow>
             </>
           )}
 
-          <div className="flex flex-col gap-2 pt-1">
+          <div className="flex items-center gap-3 px-3 py-2 border-t border-border/50 bg-bg-tertiary/30">
             <button
               type="button"
               onClick={getOAuthToken}
               disabled={oauthLoading}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-accent/90 hover:bg-accent text-white disabled:opacity-50 transition-colors"
+              className="px-3 py-1.5 text-[11px] font-medium rounded-lg bg-accent/90 hover:bg-accent text-white disabled:opacity-50 transition-colors"
             >
               {oauthLoading ? 'Getting token...' : 'Get Token'}
             </button>
@@ -594,38 +587,44 @@ export function AuthEditorCore({ auth, onAuthChange, emptyState, inheritedAuth }
           </div>
 
           {oauth2.accessToken && (
-            <div className="pt-2 border-t border-border/40 space-y-1.5">
-              <FieldLabel>Access Token</FieldLabel>
-              <div className="relative">
-                <VariableInput
-                  value={oauth2.accessToken}
-                  onChange={(v) => updateOAuth2({ accessToken: v })}
-                  placeholder=""
-                  type={shouldReveal(oauth2.accessToken, showOAuthToken)}
-                  className={INPUT_CLASS + ' pr-9'}
-                />
+            <>
+              <div className="px-3 py-1.5 border-t border-border bg-bg-tertiary/50">
+                <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Access Token</span>
+              </div>
+              <FieldRow label="Token">
+                <div className="flex items-center">
+                  <VariableInput
+                    value={oauth2.accessToken}
+                    onChange={(v) => updateOAuth2({ accessToken: v })}
+                    placeholder=""
+                    type={shouldReveal(oauth2.accessToken, showOAuthToken)}
+                    className={INPUT_CLASS + ' flex-1'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOAuthToken(!showOAuthToken)}
+                    className="px-2.5 text-text-muted/40 hover:text-text-secondary transition-colors shrink-0"
+                    tabIndex={-1}
+                  >
+                    {showOAuthToken ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                </div>
+              </FieldRow>
+              <div className="flex items-center justify-between px-3 py-2 border-t border-border/30 bg-bg-tertiary/30">
+                {oauth2.tokenExpiry && (
+                  <p className="text-[10px] text-text-muted">
+                    Expires: {new Date(oauth2.tokenExpiry).toLocaleString()}
+                  </p>
+                )}
                 <button
                   type="button"
-                  onClick={() => setShowOAuthToken(!showOAuthToken)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
-                  tabIndex={-1}
+                  onClick={() => updateOAuth2({ accessToken: undefined, refreshToken: undefined, tokenExpiry: undefined })}
+                  className="text-[10px] text-text-muted hover:text-red-500/90 transition-colors ml-auto"
                 >
-                  {showOAuthToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                  Clear Token
                 </button>
               </div>
-              {oauth2.tokenExpiry && (
-                <p className="text-[10px] text-text-muted">
-                  Expires: {new Date(oauth2.tokenExpiry).toLocaleString()}
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={() => updateOAuth2({ accessToken: undefined, refreshToken: undefined, tokenExpiry: undefined })}
-                className="text-[10px] text-text-muted hover:text-red-500/90 transition-colors"
-              >
-                Clear Token
-              </button>
-            </div>
+            </>
           )}
         </div>
       )}

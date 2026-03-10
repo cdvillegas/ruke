@@ -5,7 +5,7 @@ import { useUiStore } from '../../stores/uiStore';
 import {
   Plus, Trash2, Eye, EyeOff, MoreHorizontal,
   Layers, Search, FileText, Copy, Pencil, Check,
-  Archive, ArchiveRestore, ChevronDown, ChevronRight,
+  Archive, ArchiveRestore, ChevronDown, ChevronRight, Variable,
 } from 'lucide-react';
 import type { Environment } from '@shared/types';
 
@@ -253,7 +253,9 @@ export function EnvironmentsMain() {
     <div className="h-full overflow-y-auto">
       {selectedEnv ? (
         <div className="p-5 pb-2">
+          {/* Row 1: Environment name (like request/workflow) */}
           <div className="flex items-center gap-2 mb-2 min-w-0">
+            <Layers size={16} className="text-text-muted shrink-0" />
             <div className="flex-1 min-w-0">
               {editingName ? (
                 <input
@@ -284,31 +286,44 @@ export function EnvironmentsMain() {
             </div>
           </div>
 
+          {/* Row 2: Active/Set Active on left, variable count + Add variable on right (like requests) */}
           <div className="flex items-center gap-2 mb-3">
             {selectedEnv.id === activeEnvironmentId ? (
-              <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium bg-success/10 border-success/20 text-success">
+              <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium bg-success/10 border-success/20 text-success shrink-0">
                 <div className="w-1.5 h-1.5 rounded-full bg-success" />
                 Active
               </span>
             ) : activeWorkspaceId ? (
               <button
                 onClick={() => setActiveEnvironment(activeWorkspaceId, selectedEnv.id)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium bg-bg-tertiary border-border text-text-muted hover:bg-success/10 hover:border-success/20 hover:text-success transition-all"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium bg-bg-tertiary border-border text-text-muted hover:bg-success/10 hover:border-success/20 hover:text-success transition-all shrink-0"
               >
                 <Check size={12} />
                 Set Active
               </button>
             ) : null}
-            <span className="text-xs text-text-muted">
+
+            <div className="flex-1" />
+
+            <span className="text-xs text-text-muted shrink-0">
               {variables.length} variable{variables.length !== 1 ? 's' : ''}
             </span>
+
+            <button
+              onClick={handleAddVariable}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg text-white font-medium text-sm transition-all shrink-0 bg-accent hover:bg-accent-hover"
+            >
+              <Plus size={15} />
+              Add variable
+            </button>
           </div>
 
           <div className="mt-4 border-t border-border pt-3">
             <div className="space-y-2">
               <div className="rounded-lg border border-border overflow-hidden bg-bg-secondary">
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-tertiary/50 border-b border-border/50">
-                  <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Variables</span>
+                <div className="flex items-center gap-2 px-3 py-2 bg-bg-tertiary/50 border-b border-border/50">
+                  <Variable size={12} className="text-text-muted" />
+                  <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">Variables</span>
                   {variables.length > 0 && (
                     <span className="text-[9px] text-text-muted/50 font-mono">{variables.length}</span>
                   )}

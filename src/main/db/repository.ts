@@ -1,8 +1,19 @@
 import Database from 'better-sqlite3';
 import type {
   Workspace, Collection, ApiRequest, Environment,
-  EnvVariable, HistoryEntry, AiConversation,
+  EnvVariable, HistoryEntry, AiConversation, Workflow, WorkflowStep,
+  WorkflowStepExtraction, WorkflowInput, WorkflowRun, WorkflowCollection,
 } from '../../shared/types';
+
+function parseWorkflowRow(r: any): Workflow {
+  const outputKeys = r.outputKeys != null && r.outputKeys !== '' ? JSON.parse(r.outputKeys) : undefined;
+  return {
+    ...r,
+    collectionId: r.collectionId ?? null,
+    archived: !!r.archived,
+    outputKeys: Array.isArray(outputKeys) ? outputKeys : undefined,
+  };
+}
 
 export function createRepository(db: Database.Database) {
   return {
@@ -79,7 +90,7 @@ export function createRepository(db: Database.Database) {
          created_at as createdAt, updated_at as updatedAt
          FROM requests
          WHERE collection_id IS NULL AND (archived = 0 OR archived IS NULL)
-         ORDER BY updated_at DESC`
+         ORDER BY sort_order, updated_at DESC`
       ).all() as any[];
       return rows.map(parseRequestRow);
     },
@@ -152,6 +163,10 @@ export function createRepository(db: Database.Database) {
 
     deleteRequest(id: string): void {
       db.prepare('DELETE FROM requests WHERE id = ?').run(id);
+    },
+
+    clearArchivedRequests(): void {
+      db.prepare('DELETE FROM requests WHERE archived = 1').run();
     },
 
     // ── Environments ──
@@ -246,6 +261,276 @@ export function createRepository(db: Database.Database) {
 
     deleteVariable(id: string): void {
       db.prepare('DELETE FROM env_variables WHERE id = ?').run(id);
+    },
+
+    // ── Workflow collections ──
+    getWorkflowCollections(workspaceId: string): WorkflowCollection[] {
+      return db.prepare(
+        `SELECT id, workspace_id as workspaceId, name, parent_id as parentId,
+         sort_order as sortOrder, created_at as createdAt, updated_at as updatedAt
+         FROM workflow_collections WHERE workspace_id = ? ORDER BY sort_order`
+      ).all(workspaceId) as WorkflowCollection[];
+    },
+
+    createWorkflowCollection(id: string, workspaceId: string, name: string, parentId: string | null, sortOrder: number): void {
+      db.prepare(
+        'INSERT INTO workflow_collections (id, workspace_id, name, parent_id, sort_order) VALUES (?, ?, ?, ?, ?)'
+      ).run(id, workspaceId, name, parentId, sortOrder);
+    },
+
+    updateWorkflowCollection(id: string, data: Partial<WorkflowCollection>): void {
+      const sets: string[] = [];
+      const values: any[] = [];
+      if (data.name !== undefined) { sets.push('name = ?'); values.push(data.name); }
+      if (data.parentId !== undefined) { sets.push('parent_id = ?'); values.push(data.parentId); }
+      if (data.sortOrder !== undefined) { sets.push('sort_order = ?'); values.push(data.sortOrder); }
+      sets.push("updated_at = datetime('now')");
+      values.push(id);
+      db.prepare(`UPDATE workflow_collections SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    },
+
+    deleteWorkflowCollection(id: string): void {
+      db.prepare("UPDATE workflows SET collection_id = NULL WHERE collection_id = ?").run(id);
+      db.prepare('DELETE FROM workflow_collections WHERE parent_id = ?').run(id);
+      db.prepare('DELETE FROM workflow_collections WHERE id = ?').run(id);
+    },
+
+    getWorkflowsByCollection(collectionId: string): Workflow[] {
+      const rows = db.prepare(
+        `SELECT id, workspace_id as workspaceId, collection_id as collectionId, name, sort_order as sortOrder,
+         archived, output_keys as outputKeys, created_at as createdAt, updated_at as updatedAt
+         FROM workflows WHERE collection_id = ? AND (archived = 0 OR archived IS NULL) ORDER BY sort_order`
+      ).all(collectionId) as any[];
+      return rows.map((r: any) => parseWorkflowRow(r));
+    },
+
+    getUncollectedWorkflows(workspaceId: string): Workflow[] {
+      const rows = db.prepare(
+        `SELECT id, workspace_id as workspaceId, collection_id as collectionId, name, sort_order as sortOrder,
+         archived, output_keys as outputKeys, created_at as createdAt, updated_at as updatedAt
+         FROM workflows
+         WHERE workspace_id = ? AND (collection_id IS NULL OR collection_id = '') AND (archived = 0 OR archived IS NULL)
+         ORDER BY sort_order, updated_at DESC`
+      ).all(workspaceId) as any[];
+      return rows.map((r: any) => parseWorkflowRow(r));
+    },
+
+    // ── Workflows ──
+    getWorkflows(workspaceId: string): Workflow[] {
+      const rows = db.prepare(
+        `SELECT id, workspace_id as workspaceId, collection_id as collectionId, name, sort_order as sortOrder,
+         archived, output_keys as outputKeys, created_at as createdAt, updated_at as updatedAt
+         FROM workflows WHERE workspace_id = ? AND (archived = 0 OR archived IS NULL) ORDER BY sort_order`
+      ).all(workspaceId) as any[];
+      return rows.map((r: any) => parseWorkflowRow(r));
+    },
+
+    getArchivedWorkflows(workspaceId: string): Workflow[] {
+      const rows = db.prepare(
+        `SELECT id, workspace_id as workspaceId, collection_id as collectionId, name, sort_order as sortOrder,
+         archived, output_keys as outputKeys, created_at as createdAt, updated_at as updatedAt
+         FROM workflows WHERE workspace_id = ? AND archived = 1 ORDER BY sort_order`
+      ).all(workspaceId) as any[];
+      return rows.map((r: any) => parseWorkflowRow(r));
+    },
+
+    getWorkflowById(id: string): Workflow | null {
+      const row = db.prepare(
+        `SELECT id, workspace_id as workspaceId, collection_id as collectionId, name, sort_order as sortOrder,
+         archived, output_keys as outputKeys, created_at as createdAt, updated_at as updatedAt
+         FROM workflows WHERE id = ?`
+      ).get(id) as any;
+      return row ? parseWorkflowRow(row) : null;
+    },
+
+    createWorkflow(id: string, workspaceId: string, name: string, sortOrder: number, collectionId?: string | null): void {
+      db.prepare(
+        'INSERT INTO workflows (id, workspace_id, name, sort_order, collection_id) VALUES (?, ?, ?, ?, ?)'
+      ).run(id, workspaceId, name, sortOrder, collectionId ?? null);
+    },
+
+    updateWorkflow(id: string, data: Partial<Workflow>): void {
+      const sets: string[] = [];
+      const values: any[] = [];
+      if (data.name !== undefined) { sets.push('name = ?'); values.push(data.name); }
+      if (data.sortOrder !== undefined) { sets.push('sort_order = ?'); values.push(data.sortOrder); }
+      if (data.collectionId !== undefined) { sets.push('collection_id = ?'); values.push(data.collectionId); }
+      if (data.archived !== undefined) { sets.push('archived = ?'); values.push(data.archived ? 1 : 0); }
+      if (data.outputKeys !== undefined) { sets.push('output_keys = ?'); values.push(JSON.stringify(data.outputKeys)); }
+      sets.push("updated_at = datetime('now')");
+      values.push(id);
+      db.prepare(`UPDATE workflows SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    },
+
+    deleteWorkflow(id: string): void {
+      db.prepare('DELETE FROM workflows WHERE id = ?').run(id);
+    },
+
+    archiveWorkflow(id: string): void {
+      db.prepare("UPDATE workflows SET archived = 1, updated_at = datetime('now') WHERE id = ?").run(id);
+    },
+
+    unarchiveWorkflow(id: string): void {
+      db.prepare("UPDATE workflows SET archived = 0, updated_at = datetime('now') WHERE id = ?").run(id);
+    },
+
+    clearArchivedWorkflows(workspaceId: string): void {
+      db.prepare('DELETE FROM workflows WHERE workspace_id = ? AND archived = 1').run(workspaceId);
+    },
+
+    getWorkflowSteps(workflowId: string): WorkflowStep[] {
+      return db.prepare(
+        `SELECT id, workflow_id as workflowId, request_id as requestId, sort_order as sortOrder
+         FROM workflow_steps WHERE workflow_id = ? ORDER BY sort_order`
+      ).all(workflowId) as WorkflowStep[];
+    },
+
+    addWorkflowStep(id: string, workflowId: string, requestId: string, sortOrder: number): void {
+      db.prepare(
+        'INSERT INTO workflow_steps (id, workflow_id, request_id, sort_order) VALUES (?, ?, ?, ?)'
+      ).run(id, workflowId, requestId, sortOrder);
+    },
+
+    updateWorkflowStep(id: string, data: Partial<WorkflowStep>): void {
+      const sets: string[] = [];
+      const values: any[] = [];
+      if (data.requestId !== undefined) { sets.push('request_id = ?'); values.push(data.requestId); }
+      if (data.sortOrder !== undefined) { sets.push('sort_order = ?'); values.push(data.sortOrder); }
+      values.push(id);
+      if (sets.length > 0) {
+        db.prepare(`UPDATE workflow_steps SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+      }
+    },
+
+    deleteWorkflowStep(id: string): void {
+      db.prepare('DELETE FROM workflow_steps WHERE id = ?').run(id);
+    },
+
+    reorderWorkflowSteps(workflowId: string, stepIdsInOrder: string[]): void {
+      stepIdsInOrder.forEach((stepId, i) => {
+        db.prepare('UPDATE workflow_steps SET sort_order = ? WHERE id = ? AND workflow_id = ?').run(i, stepId, workflowId);
+      });
+    },
+
+    // ── Workflow step extractions ──
+    getWorkflowStepExtractions(stepId: string): WorkflowStepExtraction[] {
+      return db.prepare(
+        `SELECT id, step_id as stepId, variable_name as variableName, json_path as jsonPath, sort_order as sortOrder
+         FROM workflow_step_extractions WHERE step_id = ? ORDER BY sort_order`
+      ).all(stepId) as WorkflowStepExtraction[];
+    },
+
+    createWorkflowStepExtraction(id: string, stepId: string, variableName: string, jsonPath: string, sortOrder: number): void {
+      db.prepare(
+        'INSERT INTO workflow_step_extractions (id, step_id, variable_name, json_path, sort_order) VALUES (?, ?, ?, ?, ?)'
+      ).run(id, stepId, variableName, jsonPath, sortOrder);
+    },
+
+    deleteWorkflowStepExtraction(id: string): void {
+      db.prepare('DELETE FROM workflow_step_extractions WHERE id = ?').run(id);
+    },
+
+    getWorkflowsContainingRequest(requestId: string): Workflow[] {
+      const rows = db.prepare(
+        `SELECT w.id, w.workspace_id as workspaceId, w.name, w.sort_order as sortOrder,
+         w.archived, w.output_keys as outputKeys, w.created_at as createdAt, w.updated_at as updatedAt
+         FROM workflows w
+         INNER JOIN workflow_steps s ON s.workflow_id = w.id
+         WHERE s.request_id = ? AND (w.archived = 0 OR w.archived IS NULL)
+         ORDER BY w.sort_order`
+      ).all(requestId) as any[];
+      return rows.map((r: any) => parseWorkflowRow(r));
+    },
+
+    // ── Workflow inputs ──
+    getWorkflowInputs(workflowId: string): WorkflowInput[] {
+      const rows = db.prepare(
+        `SELECT id, workflow_id as workflowId, key, label, default_value as defaultValue,
+         is_secret as isSecret, sort_order as sortOrder
+         FROM workflow_inputs WHERE workflow_id = ? ORDER BY sort_order`
+      ).all(workflowId) as any[];
+      return rows.map((r: any) => ({ ...r, isSecret: !!r.isSecret }));
+    },
+
+    createWorkflowInput(id: string, workflowId: string, key: string, label: string | null, defaultValue: string | null, isSecret: boolean, sortOrder: number): void {
+      db.prepare(
+        'INSERT INTO workflow_inputs (id, workflow_id, key, label, default_value, is_secret, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(id, workflowId, key, label, defaultValue, isSecret ? 1 : 0, sortOrder);
+    },
+
+    updateWorkflowInput(id: string, data: Partial<WorkflowInput>): void {
+      const sets: string[] = [];
+      const values: any[] = [];
+      if (data.key !== undefined) { sets.push('key = ?'); values.push(data.key); }
+      if (data.label !== undefined) { sets.push('label = ?'); values.push(data.label); }
+      if (data.defaultValue !== undefined) { sets.push('default_value = ?'); values.push(data.defaultValue); }
+      if (data.isSecret !== undefined) { sets.push('is_secret = ?'); values.push(data.isSecret ? 1 : 0); }
+      if (data.sortOrder !== undefined) { sets.push('sort_order = ?'); values.push(data.sortOrder); }
+      values.push(id);
+      if (sets.length > 0) {
+        db.prepare(`UPDATE workflow_inputs SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+      }
+    },
+
+    deleteWorkflowInput(id: string): void {
+      db.prepare('DELETE FROM workflow_inputs WHERE id = ?').run(id);
+    },
+
+    reorderWorkflowInputs(workflowId: string, inputIdsInOrder: string[]): void {
+      inputIdsInOrder.forEach((inputId, i) => {
+        db.prepare('UPDATE workflow_inputs SET sort_order = ? WHERE id = ? AND workflow_id = ?').run(i, inputId, workflowId);
+      });
+    },
+
+    // ── Workflow runs ──
+    addWorkflowRun(run: { id: string; workflowId: string; startedAt: string; completedAt: string; durationMs: number; status: string; inputsJson: string; outputsJson: string; logJson: string }): void {
+      db.prepare(
+        `INSERT INTO workflow_runs (id, workflow_id, started_at, completed_at, duration_ms, status, inputs_json, outputs_json, log_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(run.id, run.workflowId, run.startedAt, run.completedAt, run.durationMs, run.status, run.inputsJson, run.outputsJson, run.logJson);
+    },
+
+    getWorkflowRuns(workflowId: string, limit: number = 50): WorkflowRun[] {
+      const rows = db.prepare(
+        `SELECT id, workflow_id as workflowId, started_at as startedAt, completed_at as completedAt,
+         duration_ms as durationMs, status, inputs_json as inputsJson, outputs_json as outputsJson, log_json as logJson
+         FROM workflow_runs WHERE workflow_id = ? ORDER BY started_at DESC LIMIT ?`
+      ).all(workflowId, limit) as any[];
+      return rows.map((r: any) => {
+        const log = JSON.parse(r.logJson || '{}');
+        return {
+          id: r.id,
+          workflowId: r.workflowId,
+          startedAt: r.startedAt,
+          completedAt: r.completedAt,
+          durationMs: r.durationMs,
+          status: r.status,
+          inputs: JSON.parse(r.inputsJson || '{}'),
+          outputs: JSON.parse(r.outputsJson || '{}'),
+          steps: log.steps || [],
+        };
+      });
+    },
+
+    getWorkflowRunById(runId: string): WorkflowRun | null {
+      const row = db.prepare(
+        `SELECT id, workflow_id as workflowId, started_at as startedAt, completed_at as completedAt,
+         duration_ms as durationMs, status, inputs_json as inputsJson, outputs_json as outputsJson, log_json as logJson
+         FROM workflow_runs WHERE id = ?`
+      ).get(runId) as any;
+      if (!row) return null;
+      const log = JSON.parse(row.logJson || '{}');
+      return {
+        id: row.id,
+        workflowId: row.workflowId,
+        startedAt: row.startedAt,
+        completedAt: row.completedAt,
+        durationMs: row.durationMs,
+        status: row.status,
+        inputs: JSON.parse(row.inputsJson || '{}'),
+        outputs: JSON.parse(row.outputsJson || '{}'),
+        steps: log.steps || [],
+      };
     },
 
     // ── History ──

@@ -229,7 +229,7 @@ function MethodSelect({ value, onChange }: { value: HttpMethod; onChange: (m: Ht
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 px-3 pr-2.5 py-2 rounded-lg bg-bg-tertiary border border-border text-sm font-mono font-bold focus:outline-none focus:border-accent transition-colors cursor-pointer hover:border-border-light"
-        style={{ color: MUTED_METHOD_COLORS[value] || '#8b8fa0' }}
+        style={{ color: METHOD_COLORS[value] || '#6b7280' }}
       >
         {value}
         <ChevronDown size={13} className="text-text-muted" />
@@ -243,7 +243,7 @@ function MethodSelect({ value, onChange }: { value: HttpMethod; onChange: (m: Ht
               className={`w-full text-left px-3 py-2 text-sm font-mono font-bold transition-colors ${
                 m === value ? 'bg-bg-active' : 'hover:bg-bg-hover'
               }`}
-              style={{ color: MUTED_METHOD_COLORS[m] || '#8b8fa0' }}
+              style={{ color: METHOD_COLORS[m] || '#6b7280' }}
             >
               {m}
             </button>
@@ -338,7 +338,13 @@ function ResolvedUrlPreview({
   );
 }
 
-export function RequestBuilder() {
+interface RequestBuilderProps {
+  /** When true, hides request name row and environment selector. Used when embedded in workflow step. */
+  embeddedInWorkflow?: boolean;
+}
+
+export function RequestBuilder(props: RequestBuilderProps = {}) {
+  const { embeddedInWorkflow = false } = props;
   const activeRequest = useRequestStore((s) => s.activeRequest);
   const setMethod = useRequestStore((s) => s.setMethod);
   const setUrl = useRequestStore((s) => s.setUrl);
@@ -492,48 +498,49 @@ export function RequestBuilder() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 mb-2 min-w-0">
-        {collectionName && (
-          <>
-            <span className="text-text-muted text-xs truncate max-w-40">{collectionName}</span>
-            <ChevronRight size={12} className="text-text-muted/50 shrink-0" />
-          </>
-        )}
-
-        <div className="flex-1 min-w-0">
-          {editingName ? (
-            <input
-              ref={nameInputRef}
-              type="text"
-              value={activeRequest.name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={() => setEditingName(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === 'Escape') setEditingName(false);
-              }}
-              placeholder="Request name"
-              className="w-full px-1.5 py-0.5 text-sm font-semibold text-text-primary bg-bg-tertiary border border-accent/50 rounded-md focus:outline-none focus:border-accent"
-              autoFocus
-            />
-          ) : (
-            <button
-              onClick={() => {
-                setEditingName(true);
-                setTimeout(() => nameInputRef.current?.select(), 10);
-              }}
-              className="group flex items-center gap-1 text-sm font-semibold text-text-primary hover:text-accent truncate max-w-full transition-colors"
-              title="Click to rename"
-            >
-              <span className="truncate">{activeRequest.name || 'New Request'}</span>
-            </button>
+      {!embeddedInWorkflow && (
+        <div className="flex items-center gap-2 mb-2 min-w-0">
+          <Send size={16} className="text-text-muted shrink-0" />
+          {collectionName && (
+            <>
+              <span className="text-text-muted text-xs truncate max-w-40">{collectionName}</span>
+              <ChevronRight size={12} className="text-text-muted/50 shrink-0" />
+            </>
           )}
+          <div className="flex-1 min-w-0">
+            {editingName ? (
+              <input
+                ref={nameInputRef}
+                type="text"
+                value={activeRequest.name}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={() => setEditingName(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === 'Escape') setEditingName(false);
+                }}
+                placeholder="Request name"
+                className="w-full px-1.5 py-0.5 text-sm font-semibold text-text-primary bg-bg-tertiary border border-accent/50 rounded-md focus:outline-none focus:border-accent"
+                autoFocus
+              />
+            ) : (
+              <button
+                onClick={() => {
+                  setEditingName(true);
+                  setTimeout(() => nameInputRef.current?.select(), 10);
+                }}
+                className="group flex items-center gap-1 text-sm font-semibold text-text-primary hover:text-accent truncate max-w-full transition-colors"
+                title="Click to rename"
+              >
+                <span className="truncate">{activeRequest.name || 'New Request'}</span>
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Connection + Env on left, Save status + Send on right */}
-      <div className="flex items-center gap-2 mb-3">
+      <div className={`flex items-center gap-2 ${embeddedInWorkflow ? 'mb-2' : 'mb-3'}`}>
         <ConnectionSelector />
-        <EnvironmentPill />
+        {!embeddedInWorkflow && <EnvironmentPill />}
 
         <div className="flex-1" />
 

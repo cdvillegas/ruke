@@ -78,11 +78,17 @@ interface RequestState {
 
   selectRequest: (req: ApiRequest) => void;
   newRequest: (collectionId?: string | null) => Promise<void>;
+  /** Create and persist a new request without switching to it. Used by workflows to add steps. */
+  createAndSaveRequest: (collectionId?: string | null) => Promise<ApiRequest>;
+  /** Update a request by ID (DB + in-memory cache). Used by workflow inline editor. */
+  updateRequestById: (id: string, updates: Partial<ApiRequest>) => Promise<void>;
 
   loadUncollectedRequests: () => Promise<void>;
   loadArchivedRequests: () => Promise<void>;
+  reorderRequests: (orderedIds: string[]) => Promise<void>;
   archiveRequest: (id: string) => Promise<void>;
   unarchiveRequest: (id: string) => Promise<void>;
+  clearArchivedRequests: () => Promise<void>;
   moveToCollection: (id: string, collectionId: string) => Promise<void>;
 
   openTab: (req: ApiRequest) => void;
@@ -297,6 +303,46 @@ export const useRequestStore = create<RequestState>((set, get) => {
       await get().loadUncollectedRequests();
     },
 
+    createAndSaveRequest: async (collectionId = null) => {
+      const req = createEmptyRequest(collectionId);
+      try {
+        await window.ruke.db.query('createRequest', req);
+      } catch {}
+      await get().loadUncollectedRequests();
+      return req;
+    },
+
+    updateRequestById: async (id, updates) => {
+      try {
+        const req = await window.ruke.db.query('getRequestById', id);
+        if (!req) return;
+        const merged = { ...req, ...updates, updatedAt: new Date().toISOString() };
+        await window.ruke.db.query('updateRequest', id, merged);
+      } catch {}
+      set((s) => ({
+        uncollectedRequests: s.uncollectedRequests.map((r) =>
+          r.id === id ? { ...r, ...updates } : r
+        ),
+      }));
+      try {
+        const { useCollectionStore } = await import('./collectionStore');
+        const state = useCollectionStore.getState();
+        for (const [colId, reqs] of Object.entries(state.requests)) {
+          if (reqs.some((r) => r.id === id)) {
+            useCollectionStore.setState((s) => ({
+              requests: {
+                ...s.requests,
+                [colId]: (s.requests[colId] || []).map((r) =>
+                  r.id === id ? { ...r, ...updates } : r
+                ),
+              },
+            }));
+            break;
+          }
+        }
+      } catch {}
+    },
+
     loadUncollectedRequests: async () => {
       try {
         const reqs = await window.ruke.db.query('getUncollectedRequests');
@@ -325,6 +371,18 @@ export const useRequestStore = create<RequestState>((set, get) => {
       } catch {}
     },
 
+    reorderRequests: async (orderedIds) => {
+      if (!orderedIds.length) return;
+      try {
+        await Promise.all(
+          orderedIds.map((id, i) => window.ruke.db.query('updateRequest', id, { sortOrder: i }))
+        );
+        await get().loadUncollectedRequests();
+      } catch {
+        await get().loadUncollectedRequests();
+      }
+    },
+
     archiveRequest: async (id) => {
       try {
         await window.ruke.db.query('archiveRequest', id);
@@ -349,6 +407,13 @@ export const useRequestStore = create<RequestState>((set, get) => {
         await window.ruke.db.query('unarchiveRequest', id);
       } catch {}
       await get().loadUncollectedRequests();
+      await get().loadArchivedRequests();
+    },
+
+    clearArchivedRequests: async () => {
+      try {
+        await window.ruke.db.query('clearArchivedRequests');
+      } catch {}
       await get().loadArchivedRequests();
     },
 

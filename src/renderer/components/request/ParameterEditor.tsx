@@ -139,10 +139,10 @@ function ParamRow({
   };
 
   return (
-    <div className={`group grid grid-cols-subgrid col-span-5 gap-0 items-stretch border-b border-border/30 last:border-b-0 transition-colors ${
-      isDisabled ? 'opacity-40' : 'hover:bg-bg-hover/20'
+    <div className={`group grid grid-cols-subgrid col-span-5 gap-0 items-stretch border-b border-border/50 last:border-b-0 transition-colors ${
+      isDisabled ? 'opacity-40' : 'hover:bg-bg-hover/30'
     }`}>
-      <div className="flex items-center justify-center">
+      <div className="flex items-center justify-center border-r border-border/50">
         {row.source === 'path' ? (
           <div className="w-4 h-4 rounded bg-accent flex items-center justify-center">
             <Lock size={8} className="text-white" strokeWidth={2.5} />
@@ -157,7 +157,7 @@ function ParamRow({
         )}
       </div>
 
-      <div className="flex items-center border-l border-border/30">
+      <div className="flex items-center border-r border-border/50">
         {isEditable ? (
           <InlineEditor
             value={row.key}
@@ -198,13 +198,13 @@ function ParamRow({
         )}
       </div>
 
-      <div className="flex items-center justify-center px-2.5 border-l border-border/30">
+      <div className="flex items-center justify-center px-2.5 border-r border-border/50">
         <span className={`text-[10px] font-mono leading-none px-1.5 py-0.5 rounded shrink-0 ${typeBadgeStyle(row.type)}`}>
           {row.type}
         </span>
       </div>
 
-      <div className="relative border-l border-border/30 min-w-0">
+      <div className="relative min-w-0">
         {renderValue()}
         {resolvedValue && resolvedValue !== row.value && (
           <div className="absolute bottom-0.5 left-3 text-[9px] text-accent/70 font-mono truncate max-w-[calc(100%-24px)]">
@@ -229,8 +229,8 @@ function ParamRow({
 
 function SectionHeader({ label, count, badge }: { label: string; count?: number; badge?: string }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40">
-      <span className="text-[10.5px] text-text-secondary uppercase tracking-wider font-semibold">{label}</span>
+    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-tertiary/50">
+      <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">{label}</span>
       {badge && (
         <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-accent/10 text-accent font-medium">{badge}</span>
       )}
@@ -342,14 +342,14 @@ export function ParameterEditor({ paramRefs }: ParameterEditorProps) {
   return (
     <div className="space-y-4">
       {hasPathSection && (
-        <div className="rounded-lg border border-border/60 overflow-hidden">
+        <div className="rounded-lg border border-border/60 overflow-hidden bg-bg-secondary">
           <SectionHeader label="Path Parameters" badge="required" />
           <div className="grid grid-cols-[28px_auto_auto_1fr_28px]">
-            <div className="grid grid-cols-subgrid col-span-5 border-b border-border/30">
+            <div className="grid grid-cols-subgrid col-span-5 border-b border-border bg-bg-tertiary/50">
               <div className="py-1.5" />
-              <div className="px-3 py-1.5 text-[10px] text-text-muted/50 uppercase tracking-wider font-medium border-l border-border/30">Name</div>
-              <div className="px-2.5 py-1.5 text-[10px] text-text-muted/50 uppercase tracking-wider font-medium border-l border-border/30 text-center">Type</div>
-              <div className="px-3 py-1.5 text-[10px] text-text-muted/50 uppercase tracking-wider font-medium border-l border-border/30">Value</div>
+              <div className="px-3 py-1.5 text-[10px] text-text-muted uppercase tracking-wider font-semibold border-r border-border/50">Name</div>
+              <div className="px-2.5 py-1.5 text-[10px] text-text-muted uppercase tracking-wider font-semibold border-r border-border/50 text-center">Type</div>
+              <div className="px-3 py-1.5 text-[10px] text-text-muted uppercase tracking-wider font-semibold">Value</div>
               <div />
             </div>
             {pathRows.map((row, idx) => (
@@ -364,16 +364,16 @@ export function ParameterEditor({ paramRefs }: ParameterEditorProps) {
         </div>
       )}
 
-      <div className="rounded-lg border border-border/60 overflow-hidden">
+      <div className="rounded-lg border border-border/60 overflow-hidden bg-bg-secondary">
         <SectionHeader label="Query Parameters" count={queryAndCustomRows.filter(r => r.enabled).length} />
 
         {queryAndCustomRows.length > 0 && (
           <div className="grid grid-cols-[28px_auto_auto_1fr_28px]">
-            <div className="grid grid-cols-subgrid col-span-5 border-b border-border/30">
+            <div className="grid grid-cols-subgrid col-span-5 border-b border-border bg-bg-tertiary/50">
               <div className="py-1.5" />
-              <div className="px-3 py-1.5 text-[10px] text-text-muted/50 uppercase tracking-wider font-medium border-l border-border/30">Name</div>
-              <div className="px-2.5 py-1.5 text-[10px] text-text-muted/50 uppercase tracking-wider font-medium border-l border-border/30 text-center">Type</div>
-              <div className="px-3 py-1.5 text-[10px] text-text-muted/50 uppercase tracking-wider font-medium border-l border-border/30">Value</div>
+              <div className="px-3 py-1.5 text-[10px] text-text-muted uppercase tracking-wider font-semibold border-r border-border/50">Name</div>
+              <div className="px-2.5 py-1.5 text-[10px] text-text-muted uppercase tracking-wider font-semibold border-r border-border/50 text-center">Type</div>
+              <div className="px-3 py-1.5 text-[10px] text-text-muted uppercase tracking-wider font-semibold">Value</div>
               <div />
             </div>
 
@@ -396,10 +396,10 @@ export function ParameterEditor({ paramRefs }: ParameterEditorProps) {
           </div>
         )}
 
-        <div className={queryAndCustomRows.length > 0 ? 'border-t border-border/30' : ''}>
+        <div className={queryAndCustomRows.length > 0 ? 'border-t border-border/50' : ''}>
           <button
             onClick={addCustomParam}
-            className="flex items-center gap-1.5 w-full px-3 py-2.5 text-[11px] text-text-muted hover:text-accent hover:bg-accent/5 transition-colors"
+            className="flex items-center gap-1.5 w-full px-3 py-2 text-[11px] text-text-muted hover:text-text-primary hover:bg-bg-hover/50 transition-colors"
           >
             <Plus size={12} />
             <span>Add query parameter</span>

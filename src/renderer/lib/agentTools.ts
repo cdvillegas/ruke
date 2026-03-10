@@ -4,6 +4,7 @@ import { useRequestStore } from '../stores/requestStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
+import { useWorkflowStore } from '../stores/workflowStore';
 import { useGrpcStore } from '../stores/grpcStore';
 import { useUiStore } from '../stores/uiStore';
 import { usePlanStore } from '../stores/planStore';
@@ -978,7 +979,9 @@ const getAppInfoTool = tool({
     const provider = localStorage.getItem('ruke:ai_provider') || 'openai';
     const model = localStorage.getItem('ruke:ai_model') || 'gpt-4o';
     const tests = loadTests();
-    const workflows = loadWorkflows();
+    const wsId = useCollectionStore.getState().activeWorkspaceId;
+    if (wsId) await useWorkflowStore.getState().loadWorkflows(wsId);
+    const workflowCount = useWorkflowStore.getState().workflows.length;
     return JSON.stringify({
       theme: uiState.theme,
       activeView: uiState.activeView,
@@ -989,7 +992,7 @@ const getAppInfoTool = tool({
       requestCount: reqStore.uncollectedRequests.length,
       environmentCount: envStore.environments.length,
       testCount: tests.length,
-      workflowCount: workflows.length,
+      workflowCount,
     });
   },
 });
@@ -1910,112 +1913,200 @@ const runCollectionTestsTool = tool({
   },
 });
 
-// ── P1: Workflows / Request Chaining ──
+// ── P1: Workflows / Request Chaining (DB-backed) ──
 
-interface WorkflowStep { requestMatch: string; extractVariables?: Array<{ name: string; jsonPath: string }>; condition?: { jsonPath: string; operator: 'equals' | 'not_equals' | 'exists'; value?: string }; delay?: number; }
-interface WorkflowDefinition { id: string; name: string; steps: WorkflowStep[]; createdAt: string; }
-
-const WORKFLOW_STORAGE_KEY = 'ruke:workflows';
-function loadWorkflows(): WorkflowDefinition[] { try { return JSON.parse(localStorage.getItem(WORKFLOW_STORAGE_KEY) || '[]'); } catch { return []; } }
-function saveWorkflows(workflows: WorkflowDefinition[]) { localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(workflows)); }
-
-function extractJsonPath(body: string, path: string): string | undefined {
-  try {
-    const parsed = JSON.parse(body);
-    const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.');
-    let val: unknown = parsed;
-    for (const p of parts) { if (val == null || typeof val !== 'object') return undefined; val = (val as Record<string, unknown>)[p]; }
-    return val === undefined ? undefined : (typeof val === 'object' ? JSON.stringify(val) : String(val));
-  } catch { return undefined; }
+async function findWorkflowByMatch(match: string): Promise<{ id: string; name: string; outputKeys?: string[] } | null> {
+  const wsId = useCollectionStore.getState().activeWorkspaceId;
+  if (!wsId) return null;
+  await useWorkflowStore.getState().loadWorkflows(wsId);
+  const workflows = useWorkflowStore.getState().workflows;
+  const archived = useWorkflowStore.getState().archivedWorkflows;
+  const matchStr = match.toLowerCase();
+  const w = [...workflows, ...archived].find(
+    (x) => x.id === match || x.name.toLowerCase().includes(matchStr)
+  );
+  return w ? { id: w.id, name: w.name, outputKeys: w.outputKeys } : null;
 }
 
 const createWorkflowTool = tool({
-  description: 'Create a workflow (request chain). Steps execute sequentially; each step can extract response data into variables for subsequent steps via {{variable}} interpolation.',
+  description: 'Create a workflow (request chain). Steps must reference existing requests only; use list_requests or search_requests to find request IDs or names. Steps execute sequentially; use post-response scripts on requests to set variables for the next step via {{variable}}.',
   inputSchema: z.object({
     name: z.string().describe('Workflow name'),
     steps: z.array(z.object({
-      request_match: z.string().describe('Request name or ID to execute'),
-      extract_variables: z.array(z.object({
-        name: z.string().describe('Variable name to set'),
-        json_path: z.string().describe('JSON path to extract from response body'),
-      })).optional(),
-      condition: z.object({
-        json_path: z.string(), operator: z.enum(['equals', 'not_equals', 'exists']),
-        value: z.string().optional(),
-      }).optional(),
-      delay: z.number().optional().describe('Ms to wait before next step'),
+      request_id: z.string().optional().describe('Existing request ID'),
+      request_match: z.string().optional().describe('Existing request name or ID (if request_id not set)'),
     })).min(1),
   }),
   execute: async ({ name, steps }) => {
-    const { nanoid } = await import('nanoid');
-    const workflow: WorkflowDefinition = {
-      id: nanoid(), name,
-      steps: steps.map(s => ({
-        requestMatch: s.request_match,
-        extractVariables: s.extract_variables?.map(v => ({ name: v.name, jsonPath: v.json_path })),
-        condition: s.condition ? { jsonPath: s.condition.json_path, operator: s.condition.operator, value: s.condition.value } : undefined,
-        delay: s.delay,
-      })),
-      createdAt: new Date().toISOString(),
-    };
-    const workflows = loadWorkflows(); workflows.push(workflow); saveWorkflows(workflows);
-    return JSON.stringify({ success: true, workflowId: workflow.id, name: workflow.name, stepCount: workflow.steps.length });
+    const wsId = useCollectionStore.getState().activeWorkspaceId;
+    if (!wsId) return JSON.stringify({ success: false, error: 'No active workspace.' });
+    await useWorkflowStore.getState().loadWorkflows(wsId);
+    const w = await useWorkflowStore.getState().createWorkflow(wsId, name);
+    const added: string[] = [];
+    for (const s of steps) {
+      const requestId = s.request_id || (s.request_match ? findRequest(s.request_match)?.id : undefined);
+      if (!requestId) {
+        return JSON.stringify({ success: false, error: `Step "${s.request_match || s.request_id}" did not match an existing request. Use list_requests or search_requests to find requests.` });
+      }
+      await useWorkflowStore.getState().addStep(w.id, requestId);
+      added.push(requestId);
+    }
+    return JSON.stringify({ success: true, workflowId: w.id, name: w.name, stepCount: added.length });
   },
 });
 
 const runWorkflowTool = tool({
-  description: 'Run a workflow (request chain). Executes steps sequentially, passing extracted variables between steps.',
+  description: 'Run a workflow. Pass inputs as key-value pairs if the workflow defines inputs. Returns runId and structured log for debugging.',
   inputSchema: z.object({
     match: z.string().describe('Workflow name or ID'),
-    initial_variables: z.record(z.string(), z.string()).optional().describe('Initial variables for all steps'),
+    inputs: z.record(z.string()).optional().describe('Input parameters (e.g. { username: "x", password: "y" })'),
   }),
-  execute: async ({ match, initial_variables }) => {
-    const workflows = loadWorkflows();
-    const matchStr = match.toLowerCase();
-    const workflow = workflows.find(w => w.id === match || w.name.toLowerCase().includes(matchStr));
-    if (!workflow) return JSON.stringify({ success: false, error: `No workflow matching "${match}" found.` });
-    const runtimeVars: Record<string, string> = Object.assign({}, initial_variables || {});
-    const stepResults: Array<{ step: number; requestName: string; status: number; duration: number; extracted?: Record<string, string>; skipped?: boolean; skipReason?: string }> = [];
-    for (let i = 0; i < workflow.steps.length; i++) {
-      const step = workflow.steps[i];
-      let requestMatchStr = step.requestMatch;
-      for (const [k, v] of Object.entries(runtimeVars)) requestMatchStr = requestMatchStr.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
-      const req = findRequest(requestMatchStr);
-      if (!req) { stepResults.push({ step: i + 1, requestName: requestMatchStr, status: 0, duration: 0, skipped: true, skipReason: `Request not found` }); continue; }
-      const allRequests = [...useRequestStore.getState().uncollectedRequests, ...useRequestStore.getState().archivedRequests];
-      for (const reqs of Object.values(useCollectionStore.getState().requests)) allRequests.push(...reqs);
-      const fullReq = allRequests.find(r => r.id === req.id);
-      if (!fullReq) { stepResults.push({ step: i + 1, requestName: req.name, status: 0, duration: 0, skipped: true, skipReason: 'Could not load request' }); continue; }
-      const interpolated = { ...fullReq };
-      for (const [k, v] of Object.entries(runtimeVars)) {
-        interpolated.url = interpolated.url.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
-        if (interpolated.body?.raw) interpolated.body = { ...interpolated.body, raw: interpolated.body.raw.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v) };
-      }
-      useRequestStore.getState().selectRequest(interpolated);
-      await useRequestStore.getState().sendRequest({ ...useEnvironmentStore.getState().resolveVariables(), ...runtimeVars });
-      const { response } = useRequestStore.getState();
-      if (!response) { stepResults.push({ step: i + 1, requestName: req.name, status: 0, duration: 0, skipped: true, skipReason: 'Request failed' }); continue; }
-      const extracted: Record<string, string> = {};
-      if (step.extractVariables) { for (const ev of step.extractVariables) { const val = extractJsonPath(response.body, ev.jsonPath); if (val !== undefined) { runtimeVars[ev.name] = val; extracted[ev.name] = val; } } }
-      stepResults.push({ step: i + 1, requestName: req.name, status: response.status, duration: response.duration, extracted: Object.keys(extracted).length > 0 ? extracted : undefined });
-      if (step.condition) {
-        const condVal = extractJsonPath(response.body, step.condition.jsonPath);
-        let condMet = false;
-        switch (step.condition.operator) { case 'equals': condMet = condVal === step.condition.value; break; case 'not_equals': condMet = condVal !== step.condition.value; break; case 'exists': condMet = condVal !== undefined && condVal !== ''; break; }
-        if (!condMet) { stepResults.push({ step: i + 2, requestName: '(skipped)', status: 0, duration: 0, skipped: true, skipReason: `Condition not met` }); break; }
-      }
-      if (step.delay && step.delay > 0) await new Promise(resolve => setTimeout(resolve, Math.min(step.delay ?? 0, 10000)));
-    }
-    return JSON.stringify({ success: true, workflow: workflow.name, summary: { totalSteps: workflow.steps.length, executed: stepResults.filter(s => !s.skipped).length, skipped: stepResults.filter(s => s.skipped).length }, variables: runtimeVars, steps: stepResults });
+  execute: async ({ match, inputs }) => {
+    const w = await findWorkflowByMatch(match);
+    if (!w) return JSON.stringify({ success: false, error: `No workflow matching "${match}" found.` });
+    const result = await useWorkflowStore.getState().runWorkflow(w.id, inputs);
+    if (!result) return JSON.stringify({ success: false, error: 'Workflow run failed or workflow has no steps.' });
+    return JSON.stringify({
+      success: true,
+      workflowId: w.id,
+      runId: result.runId,
+      workflow: result.workflowName,
+      summary: { total: result.total, passed: result.passed, failed: result.failed, duration: result.duration },
+      steps: result.results.map((r) => ({ requestName: r.requestName, method: r.method, status: r.status, duration: r.duration, passed: r.passed, error: r.error })),
+    });
   },
 });
 
 const listWorkflowsTool = tool({
-  description: 'List all defined workflows.',
+  description: 'List all workflows in the active workspace.',
   inputSchema: z.object({}),
   execute: async () => {
-    const workflows = loadWorkflows();
-    return JSON.stringify({ workflows: workflows.map(w => ({ id: w.id, name: w.name, stepCount: w.steps.length, createdAt: w.createdAt })), total: workflows.length });
+    const wsId = useCollectionStore.getState().activeWorkspaceId;
+    if (!wsId) return JSON.stringify({ workflows: [], total: 0 });
+    await useWorkflowStore.getState().loadWorkflows(wsId);
+    const workflows = useWorkflowStore.getState().workflows;
+    return JSON.stringify({
+      workflows: workflows.map((w) => ({ id: w.id, name: w.name, createdAt: w.createdAt })),
+      total: workflows.length,
+    });
+  },
+});
+
+const getWorkflowTool = tool({
+  description: 'Get workflow details: inputs (signature), output_keys, ordered steps. Use to see current state and call run_workflow with correct inputs.',
+  inputSchema: z.object({
+    match: z.string().describe('Workflow name or ID'),
+  }),
+  execute: async ({ match }) => {
+    const w = await findWorkflowByMatch(match);
+    if (!w) return JSON.stringify({ success: false, error: `No workflow matching "${match}" found.` });
+    const steps = await window.ruke.db.query('getWorkflowSteps', w.id);
+    const inputs = await window.ruke.db.query('getWorkflowInputs', w.id);
+    const stepList = Array.isArray(steps) ? steps : [];
+    const stepsWithNames = await Promise.all(
+      stepList.map(async (s: { id: string; requestId: string; sortOrder: number }) => {
+        const req = await window.ruke.db.query('getRequestById', s.requestId);
+        return { stepId: s.id, requestId: s.requestId, sortOrder: s.sortOrder, requestName: req?.name ?? '(deleted)', method: req?.method ?? '?' };
+      })
+    );
+    const inputList = Array.isArray(inputs) ? inputs : [];
+    const lastRuns = await window.ruke.db.query('getWorkflowRuns', w.id, 1);
+    const lastRunId = Array.isArray(lastRuns) && lastRuns.length > 0 ? (lastRuns[0] as { id: string }).id : null;
+    return JSON.stringify({
+      success: true,
+      workflowId: w.id,
+      name: w.name,
+      inputs: inputList.map((inp: { key: string; label?: string; defaultValue?: string }) => ({
+        key: inp.key,
+        label: inp.label,
+        default: inp.defaultValue,
+      })),
+      output_keys: w.outputKeys ?? [],
+      steps: stepsWithNames,
+      lastRunId,
+    });
+  },
+});
+
+const addWorkflowStepTool = tool({
+  description: 'Add a step to an existing workflow. Steps must reference existing requests only; use list_requests or search_requests to find the request. Fails if request not found.',
+  inputSchema: z.object({
+    workflow_match: z.string().describe('Workflow name or ID'),
+    request_id: z.string().optional().describe('Existing request ID'),
+    request_match: z.string().optional().describe('Existing request name or ID (if request_id not set)'),
+    position: z.number().optional().describe('Insert at this index (0-based); default appends at end'),
+  }),
+  execute: async ({ workflow_match, request_id, request_match, position }) => {
+    const w = await findWorkflowByMatch(workflow_match);
+    if (!w) return JSON.stringify({ success: false, error: `No workflow matching "${workflow_match}" found.` });
+    const rid = request_id || (request_match ? findRequest(request_match)?.id : undefined);
+    if (!rid) return JSON.stringify({ success: false, error: `Request "${request_match || request_id}" not found. Use list_requests or search_requests.` });
+    const steps = await window.ruke.db.query('getWorkflowSteps', w.id);
+    const currentSteps = Array.isArray(steps) ? steps : [];
+    await useWorkflowStore.getState().addStep(w.id, rid);
+    if (position !== undefined && position >= 0 && currentSteps.length > 0) {
+      const newSteps = await window.ruke.db.query('getWorkflowSteps', w.id);
+      const ids = (newSteps as { id: string }[]).map((s) => s.id);
+      const newId = ids[ids.length - 1];
+      const fromIdx = ids.length - 1;
+      if (fromIdx !== position && position < ids.length) {
+        ids.splice(fromIdx, 1);
+        ids.splice(position, 0, newId);
+        await useWorkflowStore.getState().reorderSteps(w.id, ids);
+      }
+    }
+    return JSON.stringify({ success: true, workflowId: w.id, addedRequestId: rid });
+  },
+});
+
+const removeWorkflowStepTool = tool({
+  description: 'Remove a step from a workflow by step index (0-based) or step ID.',
+  inputSchema: z.object({
+    workflow_match: z.string().describe('Workflow name or ID'),
+    step_index: z.number().optional().describe('Step index (0-based) to remove'),
+    step_id: z.string().optional().describe('Step ID to remove (if step_index not set)'),
+  }),
+  execute: async ({ workflow_match, step_index, step_id }) => {
+    const w = await findWorkflowByMatch(workflow_match);
+    if (!w) return JSON.stringify({ success: false, error: `No workflow matching "${workflow_match}" found.` });
+    const steps = await window.ruke.db.query('getWorkflowSteps', w.id);
+    const stepList = Array.isArray(steps) ? steps : [];
+    const step = step_id
+      ? stepList.find((s: { id: string }) => s.id === step_id)
+      : step_index !== undefined && step_index >= 0 && step_index < stepList.length
+        ? stepList[step_index]
+        : null;
+    if (!step) return JSON.stringify({ success: false, error: 'Step not found.' });
+    await useWorkflowStore.getState().removeStep(w.id, step.id);
+    return JSON.stringify({ success: true, workflowId: w.id, removedStepId: step.id });
+  },
+});
+
+const reorderWorkflowStepsTool = tool({
+  description: 'Reorder workflow steps. Provide the ordered list of step indices (0-based) or step IDs.',
+  inputSchema: z.object({
+    workflow_match: z.string().describe('Workflow name or ID'),
+    step_ids_in_order: z.array(z.string()).describe('Ordered list of step IDs'),
+  }),
+  execute: async ({ workflow_match, step_ids_in_order }) => {
+    const w = await findWorkflowByMatch(workflow_match);
+    if (!w) return JSON.stringify({ success: false, error: `No workflow matching "${workflow_match}" found.` });
+    await useWorkflowStore.getState().reorderSteps(w.id, step_ids_in_order);
+    return JSON.stringify({ success: true, workflowId: w.id });
+  },
+});
+
+const updateWorkflowTool = tool({
+  description: 'Rename a workflow.',
+  inputSchema: z.object({
+    workflow_match: z.string().describe('Workflow name or ID'),
+    name: z.string().describe('New name'),
+  }),
+  execute: async ({ workflow_match, name }) => {
+    const w = await findWorkflowByMatch(workflow_match);
+    if (!w) return JSON.stringify({ success: false, error: `No workflow matching "${workflow_match}" found.` });
+    await useWorkflowStore.getState().updateWorkflow(w.id, { name });
+    return JSON.stringify({ success: true, workflowId: w.id, name });
   },
 });
 
@@ -2023,12 +2114,42 @@ const deleteWorkflowTool = tool({
   description: 'Delete a workflow by name or ID.',
   inputSchema: z.object({ match: z.string().describe('Workflow name or ID') }),
   execute: async ({ match }) => {
-    const workflows = loadWorkflows();
-    const matchStr = match.toLowerCase();
-    const idx = workflows.findIndex(w => w.id === match || w.name.toLowerCase().includes(matchStr));
-    if (idx === -1) return JSON.stringify({ success: false, error: `No workflow matching "${match}" found.` });
-    const removed = workflows.splice(idx, 1)[0]; saveWorkflows(workflows);
-    return JSON.stringify({ success: true, deleted: { id: removed.id, name: removed.name } });
+    const w = await findWorkflowByMatch(match);
+    if (!w) return JSON.stringify({ success: false, error: `No workflow matching "${match}" found.` });
+    await useWorkflowStore.getState().deleteWorkflow(w.id);
+    return JSON.stringify({ success: true, deleted: { id: w.id, name: w.name } });
+  },
+});
+
+const getWorkflowRunLogTool = tool({
+  description: 'Get structured run log for a workflow. Use to debug failed runs (e.g. "step 2 failed with connection refused"). If run_id omitted, returns last run.',
+  inputSchema: z.object({
+    workflow_match: z.string().describe('Workflow name or ID'),
+    run_id: z.string().optional().describe('Run ID (omit for last run)'),
+  }),
+  execute: async ({ workflow_match, run_id }) => {
+    const w = await findWorkflowByMatch(workflow_match);
+    if (!w) return JSON.stringify({ success: false, error: `No workflow matching "${workflow_match}" found.` });
+    let run;
+    if (run_id) {
+      run = await window.ruke.db.query('getWorkflowRunById', run_id);
+    } else {
+      const runs = await window.ruke.db.query('getWorkflowRuns', w.id, 1);
+      run = Array.isArray(runs) && runs.length > 0 ? runs[0] : null;
+    }
+    if (!run) return JSON.stringify({ success: false, error: 'No run found for this workflow.' });
+    return JSON.stringify({
+      success: true,
+      runId: (run as { id: string }).id,
+      workflowId: (run as { workflowId: string }).workflowId,
+      startedAt: (run as { startedAt: string }).startedAt,
+      completedAt: (run as { completedAt: string }).completedAt,
+      durationMs: (run as { durationMs: number }).durationMs,
+      status: (run as { status: string }).status,
+      inputs: (run as { inputs: Record<string, string> }).inputs,
+      outputs: (run as { outputs: Record<string, string> }).outputs,
+      steps: (run as { steps: unknown[] }).steps,
+    });
   },
 });
 
@@ -2096,7 +2217,9 @@ const analyzeWorkspaceTool = tool({
     const colStore = useCollectionStore.getState();
     const envStore = useEnvironmentStore.getState();
     const tests = loadTests();
-    const workflows = loadWorkflows();
+    const wsId = colStore.activeWorkspaceId;
+    if (wsId) await useWorkflowStore.getState().loadWorkflows(wsId);
+    const workflows = useWorkflowStore.getState().workflows;
 
     await reqStore.loadUncollectedRequests();
     await reqStore.loadArchivedRequests();
@@ -2340,6 +2463,12 @@ export const AGENT_TOOLS = {
   create_workflow: createWorkflowTool,
   run_workflow: runWorkflowTool,
   list_workflows: listWorkflowsTool,
+  get_workflow: getWorkflowTool,
+  get_workflow_run_log: getWorkflowRunLogTool,
+  add_workflow_step: addWorkflowStepTool,
+  remove_workflow_step: removeWorkflowStepTool,
+  reorder_workflow_steps: reorderWorkflowStepsTool,
+  update_workflow: updateWorkflowTool,
   delete_workflow: deleteWorkflowTool,
   // Documentation
   generate_docs: generateDocsTool,
@@ -2381,6 +2510,7 @@ export const ASK_TOOLS = {
   list_grpc_services: listGrpcServicesTool,
   list_tests: listTestsTool,
   list_workflows: listWorkflowsTool,
+  get_workflow: getWorkflowTool,
   export_curl: exportCurlTool,
   analyze_workspace: analyzeWorkspaceTool,
   recall_memory: recallMemoryTool,
@@ -2454,6 +2584,12 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   create_workflow: 'Creating workflow',
   run_workflow: 'Running workflow',
   list_workflows: 'Listing workflows',
+  get_workflow: 'Getting workflow details',
+  get_workflow_run_log: 'Getting workflow run log',
+  add_workflow_step: 'Adding workflow step',
+  remove_workflow_step: 'Removing workflow step',
+  reorder_workflow_steps: 'Reordering workflow steps',
+  update_workflow: 'Updating workflow',
   delete_workflow: 'Deleting workflow',
   generate_docs: 'Generating documentation',
   import_curl: 'Importing cURL',

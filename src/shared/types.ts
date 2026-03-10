@@ -169,6 +169,110 @@ export interface EnvVariable {
   createdAt: string;
 }
 
+export interface WorkflowInput {
+  id: string;
+  workflowId: string;
+  key: string;
+  label?: string;
+  defaultValue?: string;
+  isSecret?: boolean;
+  sortOrder: number;
+}
+
+export interface WorkflowCollection {
+  id: string;
+  workspaceId: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowCollectionTreeNode {
+  collection: WorkflowCollection;
+  children: WorkflowCollectionTreeNode[];
+  workflows: Workflow[];
+}
+
+export interface Workflow {
+  id: string;
+  workspaceId: string;
+  collectionId?: string | null;
+  name: string;
+  sortOrder: number;
+  archived?: boolean;
+  outputKeys?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowStep {
+  id: string;
+  workflowId: string;
+  requestId: string;
+  sortOrder: number;
+}
+
+export interface WorkflowStepExtraction {
+  id: string;
+  stepId: string;
+  variableName: string;
+  jsonPath: string;
+  sortOrder: number;
+}
+
+export interface WorkflowRunEntry {
+  requestId: string;
+  requestName: string;
+  method: HttpMethod;
+  url: string;
+  status: number;
+  statusText: string;
+  duration: number;
+  passed: boolean;
+  error?: string;
+}
+
+export interface WorkflowRunResult {
+  workflowId: string;
+  workflowName: string;
+  runId?: string;
+  startedAt: string;
+  completedAt: string;
+  duration: number;
+  total: number;
+  passed: number;
+  failed: number;
+  results: WorkflowRunEntry[];
+  /** Variables after the run (env + input + any set by post-response scripts). Useful for extracted/improved results. */
+  finalVariables?: Record<string, string>;
+}
+
+export type WorkflowRunStatus = 'success' | 'partial' | 'failed';
+
+export interface WorkflowRun {
+  id: string;
+  workflowId: string;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  status: WorkflowRunStatus;
+  inputs: Record<string, string>;
+  outputs: Record<string, string>;
+  steps: Array<{
+    index: number;
+    requestName: string;
+    method: HttpMethod;
+    status: number;
+    statusCode?: number;
+    duration: number;
+    error?: string;
+    passed: boolean;
+    varsSet?: string[];
+  }>;
+}
+
 export interface AiConversation {
   id: string;
   requestId: string | null;
@@ -299,7 +403,7 @@ export interface GrpcResponse {
   timestamp: string;
 }
 
-export type AppView = 'chats' | 'requests' | 'history' | 'environments' | 'connections' | 'settings';
+export type AppView = 'chats' | 'requests' | 'history' | 'environments' | 'connections' | 'workflows' | 'settings';
 
 export interface ChatToolCall {
   id: string;

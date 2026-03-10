@@ -7,11 +7,49 @@ import {
   MoreHorizontal, Trash2, ArchiveRestore, Pencil, Send,
   FolderPlus, FolderOpen, Loader2, FolderInput,
 } from 'lucide-react';
-import { groupByTime } from '../../lib/timeGroups';
 import { METHOD_COLORS } from '@shared/constants';
 import type { ApiRequest, CollectionTreeNode } from '@shared/types';
 
-const RECENT_LIMIT = 15;
+function methodDisplay(m: string): string {
+  if (m === 'DELETE') return 'DEL';
+  if (m === 'PATCH') return 'PAT';
+  if (m === 'OPTIONS') return 'OPT';
+  return m;
+}
+
+function ArchiveMenu({ onEmptyArchive }: { onEmptyArchive: () => void | Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="p-1 rounded opacity-0 group-hover/arch:opacity-100 hover:bg-bg-hover text-text-muted transition-all"
+        title="Archive options"
+      >
+        <MoreHorizontal size={12} />
+      </button>
+      {open && (
+        <div className="absolute right-0 bottom-full mb-1 w-40 py-1 bg-bg-secondary border border-border rounded-lg shadow-xl z-50">
+          <button
+            onClick={async () => { setOpen(false); await onEmptyArchive(); }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <Trash2 size={12} /> Empty Archive
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function RequestItemMenu({
   req,
@@ -131,24 +169,24 @@ function RequestItem({
   const preview = req.url || null;
 
   return (
-    <div className="relative group" draggable={!isRenaming} onDragStart={handleDragStart}>
+    <div className="relative group min-h-[36px] rounded-lg" draggable={!isRenaming} onDragStart={handleDragStart}>
       <button
         onClick={handleSelect}
-        className={`w-full text-left px-3 py-2 pr-8 rounded-lg transition-colors ${
+        className={`w-full text-left rounded-lg transition-colors cursor-pointer flex flex-col items-stretch px-3 py-2.5 ${
           isActive
-            ? 'bg-accent/10 text-text-primary'
+            ? 'bg-accent/10 text-text-primary ring-1 ring-accent/30 ring-inset'
             : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
         }`}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0 min-w-0">
           {isAiCreated && (
             <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
           )}
           <span
-            className="font-mono font-bold text-[9px] w-8 shrink-0"
+            className="font-mono font-bold text-[10px] w-7 shrink-0"
             style={{ color: METHOD_COLORS[req.method] || '#6b7280' }}
           >
-            {req.method}
+            {methodDisplay(req.method)}
           </span>
           {isRenaming ? (
             <input
@@ -161,14 +199,19 @@ function RequestItem({
                 if (e.key === 'Escape') setIsRenaming(false);
               }}
               onClick={(e) => e.stopPropagation()}
-              className="flex-1 text-xs bg-bg-tertiary border border-accent px-1.5 py-0.5 rounded text-text-primary focus:outline-none min-w-0"
+              className="flex-1 text-[13px] bg-bg-tertiary border border-accent px-1.5 py-0.5 rounded text-text-primary focus:outline-none min-w-0"
             />
           ) : (
-            <span className="text-xs font-medium truncate flex-1">{req.name || 'Untitled'}</span>
+            <span
+              className="text-[13px] font-medium truncate flex-1 min-w-0"
+              onDoubleClick={(e) => { e.stopPropagation(); setRenameValue(req.name || ''); setIsRenaming(true); }}
+            >
+              {req.name || 'Untitled'}
+            </span>
           )}
         </div>
         {preview && !isRenaming && (
-          <p className="text-[10px] text-text-muted truncate mt-0.5 ml-10">{preview}</p>
+          <p className="text-[11px] text-text-muted truncate mt-0.5 pl-7">{preview}</p>
         )}
       </button>
       <button
@@ -265,48 +308,53 @@ function CollectionRequestRow({
       {dropPosition === 'above' && (
         <div className="absolute top-0 left-4 right-2 h-0.5 bg-accent rounded-full z-10 -translate-y-px" />
       )}
-      <div
-        onClick={() => onSelect(req)}
-        draggable={!isRenaming}
-        onDragStart={handleDragStart}
-        className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
-          isSelected
-            ? 'bg-accent/10 text-text-primary cursor-pointer'
-            : 'hover:bg-bg-hover text-text-secondary cursor-pointer'
-        }`}
-        style={{ paddingLeft: `${24 + depth * 16}px` }}
-      >
-        <span
-          className="font-mono font-bold text-[9px] w-8 shrink-0"
-          style={{ color: METHOD_COLORS[req.method] || '#6b7280' }}
+      <div className="relative group">
+        <div
+          onClick={() => onSelect(req)}
+          draggable={!isRenaming}
+          onDragStart={handleDragStart}
+          className={`w-full text-left rounded-lg transition-colors flex items-center gap-0 pl-[18px] pr-3 py-2.5 min-h-[36px] cursor-pointer ${
+            isSelected
+              ? 'bg-accent/10 text-text-primary ring-1 ring-accent/30 ring-inset'
+              : 'hover:bg-bg-hover text-text-secondary'
+          }`}
         >
-          {req.method}
-        </span>
-        {isRenaming ? (
-          <input
+          <span
+            className="font-mono font-bold text-[10px] w-7 shrink-0"
+            style={{ color: METHOD_COLORS[req.method] || '#6b7280' }}
+          >
+            {methodDisplay(req.method)}
+          </span>
+          {isRenaming ? (
+            <input
             autoFocus
             value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={handleRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleRename();
-              if (e.key === 'Escape') setIsRenaming(false);
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="flex-1 text-xs bg-bg-tertiary border border-accent px-1.5 py-0.5 rounded text-text-primary focus:outline-none"
-          />
-        ) : (
-          <span className="text-xs truncate flex-1">{req.name || 'Untitled'}</span>
-        )}
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
-            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-bg-active text-text-muted transition-all"
-          >
-            <MoreHorizontal size={12} />
-          </button>
-          {showMenu && (
-            <div className="absolute right-0 top-full mt-1 w-36 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 py-1 animate-fade-in">
+              onChange={(e) => setRenameValue(e.target.value)}
+              onBlur={handleRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleRename();
+                if (e.key === 'Escape') setIsRenaming(false);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 text-[13px] bg-bg-tertiary border border-accent px-1.5 py-0.5 rounded text-text-primary focus:outline-none min-w-0"
+            />
+          ) : (
+            <span
+              className="text-[13px] font-medium truncate flex-1 min-w-0"
+              onDoubleClick={(e) => { e.stopPropagation(); setRenameValue(req.name || ''); setIsRenaming(true); }}
+            >
+              {req.name || 'Untitled'}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md transition-all opacity-0 group-hover:opacity-100 hover:bg-bg-hover text-text-muted"
+        >
+          <MoreHorizontal size={12} />
+        </button>
+        {showMenu && (
+          <div ref={menuRef} className="absolute right-0 top-full mt-1 w-36 bg-bg-secondary border border-border rounded-lg shadow-xl z-50 py-1 animate-fade-in">
               <button
                 onClick={(e) => { e.stopPropagation(); setIsRenaming(true); setRenameValue(req.name || ''); setShowMenu(false); }}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
@@ -320,14 +368,18 @@ function CollectionRequestRow({
                 <Archive size={12} /> Archive
               </button>
             </div>
-          )}
-        </div>
+        )}
       </div>
       {dropPosition === 'below' && (
         <div className="absolute bottom-0 left-4 right-2 h-0.5 bg-accent rounded-full z-10 translate-y-px" />
       )}
     </div>
   );
+}
+
+function nodeContainsRequest(n: CollectionTreeNode, reqId: string): boolean {
+  if (n.requests.some((r) => r.id === reqId)) return true;
+  return n.children.some((child) => nodeContainsRequest(child, reqId));
 }
 
 function CollectionNode({
@@ -357,6 +409,7 @@ function CollectionNode({
   const isAiCreated = useUiStore(s => s.aiCreatedItems.includes(node.collection.id));
   const clearAiCreated = useUiStore(s => s.clearAiCreated);
   const isExpanded = expandedIds.includes(node.collection.id);
+  const containsSelected = selectedRequestId ? nodeContainsRequest(node, selectedRequestId) : false;
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(node.collection.name);
   const [showMenu, setShowMenu] = useState(false);
@@ -483,10 +536,12 @@ function CollectionNode({
         ref={headerRef}
         draggable={!isRenaming}
         onDragStart={handleCollectionDragStart}
-        className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${
+        className={`group flex items-center gap-2 px-2.5 py-2 min-h-[36px] rounded-lg transition-colors cursor-pointer ${
           dragOver
             ? 'bg-accent/15 ring-1 ring-accent/40 ring-inset'
-            : 'hover:bg-bg-hover'
+            : containsSelected && !isExpanded
+              ? 'bg-accent/10 ring-1 ring-accent/30 ring-inset'
+              : 'hover:bg-bg-hover'
         }`}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
         onClick={() => { if (isAiCreated) clearAiCreated(node.collection.id); toggleExpanded(node.collection.id); }}
@@ -497,9 +552,8 @@ function CollectionNode({
           <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_4px_rgba(59,130,246,0.6)] animate-pulse shrink-0" />
         )}
         <span className="text-text-muted shrink-0">
-          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </span>
-        <FolderOpen size={13} className="text-text-muted shrink-0" />
         {isRenaming ? (
           <input
             autoFocus
@@ -511,12 +565,17 @@ function CollectionNode({
               if (e.key === 'Escape') setIsRenaming(false);
             }}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 text-xs bg-bg-tertiary border border-accent px-1.5 py-0.5 rounded text-text-primary focus:outline-none"
+            className="flex-1 text-[13px] bg-bg-tertiary border border-accent px-1.5 py-0.5 rounded text-text-primary focus:outline-none"
           />
         ) : (
-          <span className="text-xs font-medium text-text-primary truncate flex-1">{node.collection.name}</span>
+          <span
+            className="text-[13px] font-medium text-text-primary truncate flex-1"
+            onDoubleClick={(e) => { e.stopPropagation(); setRenameValue(node.collection.name); setIsRenaming(true); }}
+          >
+            {node.collection.name}
+          </span>
         )}
-        <span className="text-[9px] text-text-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <span className="text-[10px] text-text-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
           {node.requests.length > 0 ? node.requests.length : 'Empty'}
         </span>
         <div className="relative" ref={menuRef}>
@@ -553,6 +612,7 @@ function CollectionNode({
 
       {isExpanded && (
         <div
+          className="pl-2 space-y-1"
           onDragOver={(e) => {
             if (e.dataTransfer.types.includes('application/ruke-request-id')) {
               e.preventDefault();
@@ -600,24 +660,31 @@ export function RequestSidebar() {
   const loadUncollectedRequests = useRequestStore((s) => s.loadUncollectedRequests);
   const loadArchivedRequests = useRequestStore((s) => s.loadArchivedRequests);
   const saveRequest = useRequestStore((s) => s.saveRequest);
+  const reorderUncollectedRequests = useRequestStore((s) => s.reorderRequests);
 
   const collections = useCollectionStore((s) => s.collections);
   const requests = useCollectionStore((s) => s.requests);
   const createCollection = useCollectionStore((s) => s.createCollection);
   const loadRequests = useCollectionStore((s) => s.loadRequests);
   const reorderCollections = useCollectionStore((s) => s.reorderCollections);
+  const toggleExpanded = useCollectionStore((s) => s.toggleExpanded);
 
   const [search, setSearch] = useState('');
-  const [showAllRecent, setShowAllRecent] = useState(false);
   const [archiveExpanded, setArchiveExpanded] = useState(false);
-  const [isCreatingCollection, setIsCreatingCollection] = useState(false);
-  const [newCollectionName, setNewCollectionName] = useState('');
   const [colDropTarget, setColDropTarget] = useState<{ colId: string; position: 'above' | 'below' } | null>(null);
+  const [reqDropTarget, setReqDropTarget] = useState<{ reqId: string; position: 'above' | 'below' } | null>(null);
 
   const handleDragOverCollection = useCallback((colId: string, position: 'above' | 'below') => {
     setColDropTarget((prev) => {
       if (prev?.colId === colId && prev?.position === position) return prev;
       return { colId, position };
+    });
+  }, []);
+
+  const handleDragOverUncollected = useCallback((reqId: string, position: 'above' | 'below') => {
+    setReqDropTarget((prev) => {
+      if (prev?.reqId === reqId && prev?.position === position) return prev;
+      return { reqId, position };
     });
   }, []);
 
@@ -682,28 +749,46 @@ export function RequestSidebar() {
     return tree.map(filterNode).filter(Boolean) as CollectionTreeNode[];
   }, [tree, search]);
 
-  const groups = useMemo(() => groupByTime(filteredUncollected, r => r.updatedAt), [filteredUncollected]);
-
-  const truncatedGroups = useMemo(() => {
-    if (showAllRecent) return groups;
-    let count = 0;
-    const result: typeof groups = [];
-    for (const group of groups) {
-      if (count >= RECENT_LIMIT) break;
-      const remaining = RECENT_LIMIT - count;
-      if (group.items.length <= remaining) {
-        result.push(group);
-        count += group.items.length;
-      } else {
-        result.push({ label: group.label, items: group.items.slice(0, remaining) });
-        count = RECENT_LIMIT;
-      }
-    }
-    return result;
-  }, [groups, showAllRecent]);
-
   const totalUncollected = filteredUncollected.length;
-  const hiddenCount = showAllRecent ? 0 : Math.max(0, totalUncollected - RECENT_LIMIT);
+
+  const handleUncollectedDrop = useCallback(async (e: React.DragEvent, targetReqId: string, position: 'above' | 'below') => {
+    e.preventDefault();
+    setReqDropTarget(null);
+    const requestId = e.dataTransfer.getData('application/ruke-request-id') || e.dataTransfer.getData('text/plain');
+    const sourceCollection = e.dataTransfer.getData('application/ruke-source-collection');
+    if (!requestId) return;
+
+    const ids = filteredUncollected.map((r) => r.id);
+    const targetIdx = ids.indexOf(targetReqId);
+    if (targetIdx < 0) return;
+    const insertIdx = position === 'below' ? targetIdx + 1 : targetIdx;
+
+    if (sourceCollection) {
+      try {
+        await window.ruke.db.query('updateRequest', requestId, { collectionId: null });
+        loadUncollectedRequests();
+        loadRequests(sourceCollection);
+      } catch {}
+      const fresh = useRequestStore.getState().uncollectedRequests;
+      const freshIds = fresh.map((r) => r.id);
+      const movedIdx = freshIds.indexOf(requestId);
+      if (movedIdx >= 0) {
+        const reordered = [...freshIds];
+        reordered.splice(movedIdx, 1);
+        const newIdx = reordered.indexOf(targetReqId);
+        const insertAt = position === 'below' ? newIdx + 1 : newIdx;
+        reordered.splice(Math.max(0, insertAt), 0, requestId);
+        await reorderUncollectedRequests(reordered);
+      }
+    } else {
+      const fromIdx = ids.indexOf(requestId);
+      if (fromIdx < 0) return;
+      const reordered = [...ids];
+      reordered.splice(fromIdx, 1);
+      reordered.splice(insertIdx, 0, requestId);
+      await reorderUncollectedRequests(reordered);
+    }
+  }, [filteredUncollected, reorderUncollectedRequests, loadUncollectedRequests, loadRequests]);
 
   const handleNewRequest = useCallback(() => {
     newRequest();
@@ -721,15 +806,14 @@ export function RequestSidebar() {
   }, [selectRequest]);
 
   const handleCreateCollection = useCallback(async () => {
-    if (newCollectionName.trim()) {
-      await createCollection(newCollectionName.trim());
-      setNewCollectionName('');
-      setIsCreatingCollection(false);
+    const col = await createCollection('New Collection');
+    if (!useCollectionStore.getState().expandedIds.includes(col.id)) {
+      toggleExpanded(col.id);
     }
-  }, [newCollectionName, createCollection]);
+  }, [createCollection, toggleExpanded]);
 
   return (
-    <>
+    <div className="h-full flex flex-col min-h-0">
       {/* Header */}
       <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
         <div className="flex items-center justify-between">
@@ -743,7 +827,7 @@ export function RequestSidebar() {
               <Plus size={14} />
             </button>
             <button
-              onClick={() => setIsCreatingCollection(true)}
+              onClick={handleCreateCollection}
               className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
               title="New Collection"
             >
@@ -765,7 +849,7 @@ export function RequestSidebar() {
 
       {/* Content */}
       <div
-        className="flex-1 overflow-y-auto px-2 pb-2 min-h-0"
+        className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 space-y-1"
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes('application/ruke-request-id') &&
               e.dataTransfer.types.includes('application/ruke-source-collection')) {
@@ -786,7 +870,7 @@ export function RequestSidebar() {
           }
         }}
       >
-        {/* Uncollected Requests - grouped by time */}
+        {/* Uncollected requests — flat orderable list */}
         {totalUncollected === 0 && !search && collections.length === 0 && (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <Send size={20} className="text-text-muted mb-2" />
@@ -798,60 +882,44 @@ export function RequestSidebar() {
           <p className="text-xs text-text-muted text-center py-4">No results</p>
         )}
 
-        {truncatedGroups.map(group => (
-          <div key={group.label} className="mb-1">
-            <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wider px-3 py-1.5">
-              {group.label}
-            </p>
-            <div className="space-y-0.5">
-              {group.items.map(r => (
-                <RequestItem
-                  key={r.id}
-                  req={r}
-                  isActive={activeRequest.id === r.id}
-                  collections={collectionList}
-                />
-              ))}
-            </div>
+        <div className="space-y-1">
+        {filteredUncollected.map(r => (
+          <div
+            key={r.id}
+            className="relative"
+            onDragOver={(e) => {
+              const hasRequest = e.dataTransfer.types.includes('application/ruke-request-id') || e.dataTransfer.types.includes('text/plain');
+              if (!hasRequest) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              const midY = rect.top + rect.height / 2;
+              handleDragOverUncollected(r.id, e.clientY < midY ? 'above' : 'below');
+            }}
+            onDragLeave={(e) => {
+              if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setReqDropTarget(null);
+            }}
+            onDrop={(e) => {
+              const pos = reqDropTarget?.reqId === r.id ? reqDropTarget.position : 'below';
+              handleUncollectedDrop(e, r.id, pos);
+            }}
+          >
+            {reqDropTarget?.reqId === r.id && reqDropTarget?.position === 'above' && (
+              <div className="absolute top-0 left-4 right-2 h-0.5 bg-accent rounded-full z-10 -translate-y-px pointer-events-none" />
+            )}
+            <RequestItem
+              req={r}
+              isActive={activeRequest.id === r.id}
+              collections={collectionList}
+            />
+            {reqDropTarget?.reqId === r.id && reqDropTarget?.position === 'below' && (
+              <div className="absolute bottom-0 left-4 right-2 h-0.5 bg-accent rounded-full z-10 translate-y-px pointer-events-none" />
+            )}
           </div>
         ))}
-
-        {hiddenCount > 0 && (
-          <button
-            onClick={() => setShowAllRecent(true)}
-            className="w-full text-center py-2 text-[10px] text-accent hover:text-accent-hover transition-colors"
-          >
-            Show {hiddenCount} older request{hiddenCount !== 1 ? 's' : ''}
-          </button>
-        )}
-
-        {showAllRecent && totalUncollected > RECENT_LIMIT && (
-          <button
-            onClick={() => setShowAllRecent(false)}
-            className="w-full text-center py-2 text-[10px] text-text-muted hover:text-text-primary transition-colors"
-          >
-            Show less
-          </button>
-        )}
+        </div>
 
         {/* Collections — inline in the main list */}
-        {isCreatingCollection && (
-          <div className="flex items-center gap-1.5 px-2 py-1.5 mb-1">
-            <FolderPlus size={13} className="text-accent shrink-0" />
-            <input
-              autoFocus
-              value={newCollectionName}
-              onChange={(e) => setNewCollectionName(e.target.value)}
-              onBlur={handleCreateCollection}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreateCollection();
-                if (e.key === 'Escape') setIsCreatingCollection(false);
-              }}
-              placeholder="Collection name..."
-              className="flex-1 text-xs bg-bg-tertiary border border-accent px-2 py-1 rounded text-text-primary placeholder:text-text-muted focus:outline-none"
-            />
-          </div>
-        )}
         <div
           onDragOver={(e) => {
             if (e.dataTransfer.types.includes('application/ruke-collection-id')) {
@@ -895,34 +963,48 @@ export function RequestSidebar() {
             />
           ))}
         </div>
+      </div>
 
-        {/* Archive */}
-        {archivedRequests.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-border/60">
+      {/* Archive — stuck at bottom, expand up to 50vh */}
+      {archivedRequests.length > 0 && (
+        <div className="shrink-0 border-t border-border/60 bg-bg-secondary/50 flex flex-col">
+          <div className="flex items-center group/arch">
             <button
               onClick={() => setArchiveExpanded(!archiveExpanded)}
-              className="flex items-center gap-1.5 w-full px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider hover:text-text-secondary transition-colors"
+              className="flex items-center gap-1.5 flex-1 px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wider hover:text-text-secondary transition-colors"
             >
               {archiveExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
               <Archive size={10} />
               Archive ({filteredArchived.length})
             </button>
-            {archiveExpanded && (
-              <div className="space-y-0.5 mt-1">
-                {filteredArchived.map(r => (
+            <ArchiveMenu
+              onEmptyArchive={async () => {
+                if (confirm(`Permanently delete all ${filteredArchived.length} archived requests? This cannot be undone.`)) {
+                  await useRequestStore.getState().clearArchivedRequests();
+                  setArchiveExpanded(false);
+                }
+              }}
+            />
+          </div>
+          {archiveExpanded && (
+            <div
+              className="overflow-y-auto px-2 pb-2"
+              style={{ maxHeight: '50vh' }}
+            >
+              {filteredArchived.map(r => (
+                <div key={r.id} className="py-1.5">
                   <RequestItem
-                    key={r.id}
                     req={r}
                     isActive={activeRequest.id === r.id}
                     isArchived
                     collections={collectionList}
                   />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,11 +1,12 @@
 import { useUiStore } from '../../stores/uiStore';
-import { MessageSquare, Send, Plug, Layers, Settings } from 'lucide-react';
+import { MessageSquare, Send, Plug, Layers, GitBranch, Settings } from 'lucide-react';
 import type { AppView } from '@shared/types';
 
 const MAIN_NAV: { id: AppView; icon: typeof MessageSquare; label: string }[] = [
   { id: 'requests', icon: Send, label: 'Requests' },
   { id: 'connections', icon: Plug, label: 'APIs' },
   { id: 'environments', icon: Layers, label: 'Environments' },
+  { id: 'workflows', icon: GitBranch, label: 'Workflows' },
 ];
 
 const BOTTOM_NAV: { id: AppView; icon: typeof MessageSquare; label: string }[] = [

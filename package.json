@@ -15,6 +15,7 @@
     "build:renderer": "vite build",
     "build:cli": "tsc -p tsconfig.cli.json",
     "start": "electron dist/main/index.js",
+    "debug": "electron --inspect dist/main/index.js",
     "dist": "npm run build && electron-builder",
     "typecheck": "tsc --noEmit"
   },
